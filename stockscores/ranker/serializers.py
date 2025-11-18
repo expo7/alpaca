@@ -1,4 +1,7 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core import exceptions as django_exceptions
 from .models import StockScore
 
 # [NOTE-WATCHLIST-SERIALIZERS]
@@ -18,6 +21,8 @@ from .models import BacktestRun
 from rest_framework import serializers
 from .models import UserPreference
 
+User = get_user_model()
+
 
 class UserPreferenceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -27,6 +32,37 @@ class UserPreferenceSerializer(serializers.ModelSerializer):
             "daily_scan_min_score",
             "daily_scan_max_ideas",
         ]
+
+
+class UserSignupSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    password_confirm = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ["username", "email", "password", "password_confirm"]
+        extra_kwargs = {
+            "email": {"required": False, "allow_blank": True},
+        }
+
+    def validate(self, attrs):
+        pw = attrs.get("password")
+        pw2 = attrs.pop("password_confirm", None)
+        if pw != pw2:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+
+        try:
+            validate_password(pw)
+        except django_exceptions.ValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User.objects.create_user(password=password, **validated_data)
+        return user
 
 
 class BacktestRunSerializer(serializers.ModelSerializer):

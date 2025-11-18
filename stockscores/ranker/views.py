@@ -60,7 +60,32 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import UserPreference
-from .serializers import UserPreferenceSerializer
+from .serializers import UserPreferenceSerializer, UserSignupSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class RegisterView(APIView):
+    """
+    POST /api/register/
+    Create a user and return tokens so the UI can immediately sign in.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = UserSignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "id": user.id,
+                "username": user.get_username(),
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class UserPreferenceView(APIView):
@@ -121,7 +146,7 @@ class BacktestConfigViewSet(viewsets.ModelViewSet):
 
 class BacktestRunListView(generics.ListAPIView):
     """
-    GET /api/backtests/  -> list of this user's previous runs
+    GET /api/backtests/history/  -> list of this user's previous runs
     (most recent first)
     """
 
