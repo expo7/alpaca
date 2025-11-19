@@ -17,6 +17,7 @@ from .views import (
     BacktestConfigViewSet,
     UserPreferenceView,
     RegisterView,
+    AggressiveSmallCapsView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -109,4 +110,9 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("backtest/", BacktestView.as_view(), name="backtest"),
     path("backtests/history/", BacktestRunListView.as_view(), name="backtest-runs"),
+    path(
+        "default-tickers/aggressive-small-caps/",
+        AggressiveSmallCapsView.as_view(),
+        name="aggressive-small-caps",
+    ),
 ]

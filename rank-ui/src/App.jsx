@@ -38,6 +38,48 @@ const DEFAULT_TA = {
   meanreversion: 0.1,
 };
 
+const SCREEN_CHOICES = [
+  "aggressive_small_caps",
+  "conservative_foreign_funds",
+  "day_gainers",
+  "day_losers",
+  "growth_technology_stocks",
+  "high_yield_bond",
+  "most_actives",
+  "most_shorted_stocks",
+  "portfolio_anchors",
+  "small_cap_gainers",
+  "top_mutual_funds",
+  "undervalued_growth_stocks",
+  "undervalued_large_caps",
+];
+
+function IndicatorCell({
+  value,
+  delta,
+  precision = 0,
+  deltaPrecision = 1,
+}) {
+  const isNumber = typeof value === "number";
+  const formattedValue = isNumber ? Number(value).toFixed(precision) : value ?? "-";
+  const showDelta = typeof delta === "number" && delta !== 0;
+  return (
+    <div className="flex items-center gap-1">
+      <span>{formattedValue}</span>
+      {showDelta && (
+        <span
+          className={`text-xs ${
+            delta > 0 ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
+          {delta > 0 ? "+" : ""}
+          {delta.toFixed(deltaPrecision)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const { token, user, logout } = useAuth();
 
@@ -59,6 +101,10 @@ export default function App() {
   const [saveListId, setSaveListId] = useState(null);
   const [saveListName, setSaveListName] = useState("");
   const [sparkMap, setSparkMap] = useState({}); // { AAPL: [closes...] }
+  const [watchlistOptions, setWatchlistOptions] = useState([]);
+  const [screenCache, setScreenCache] = useState({});
+  const [screenLoading, setScreenLoading] = useState(false);
+  const [screenErr, setScreenErr] = useState("");
 
   const [tickers, setTickers] = useState(
     localStorage.getItem("tickers") || DEFAULT_TICKERS
@@ -186,6 +232,7 @@ export default function App() {
       const data = await apiFetch("/api/watchlists/", { token });
       const list = Array.isArray(data) ? data : data.results || [];
       setListsForSave(list);
+      setWatchlistOptions(list);
       if (!saveListId && list.length) {
         setSaveListId(list[0].id);
       }
@@ -203,6 +250,13 @@ export default function App() {
     }
   }, [saveOpen]);
 
+  useEffect(() => {
+    if (token) {
+      fetchWatchlistsForSave();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   // refetch sparklines when period changes
   useEffect(() => {
     if (rows.length) {
@@ -210,6 +264,49 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sparkPeriod]);
+
+  function applyTickerList(symbols) {
+    if (!Array.isArray(symbols) || !symbols.length) return;
+    setTickers(symbols.join(", "));
+  }
+
+  function handleWatchlistSelect(e) {
+    const val = e.target.value;
+    if (!val) return;
+    const selected = watchlistOptions.find((wl) => String(wl.id) === val);
+    if (selected && Array.isArray(selected.items)) {
+      applyTickerList(selected.items.map((item) => item.symbol).filter(Boolean));
+    }
+    e.target.value = "";
+  }
+
+  async function handleScreenSelect(e) {
+    const screen = e.target.value;
+    if (!screen) return;
+    setScreenErr("");
+    if (screenCache[screen]?.length) {
+      applyTickerList(screenCache[screen]);
+      e.target.value = "";
+      return;
+    }
+    setScreenLoading(true);
+    try {
+      const data = await apiFetch(
+        `/api/default-tickers/aggressive-small-caps/?screen=${encodeURIComponent(
+          screen
+        )}`,
+        { token }
+      );
+      const symbols = data?.symbols || [];
+      setScreenCache((prev) => ({ ...prev, [screen]: symbols }));
+      applyTickerList(symbols);
+    } catch (err) {
+      setScreenErr(err.message || String(err));
+    } finally {
+      setScreenLoading(false);
+      e.target.value = "";
+    }
+  }
   // [NOTE-QUICK-ALERT-ACTION]
   async function createQuickAlert() {
     if (!quickAlertSym) return;
@@ -396,7 +493,7 @@ export default function App() {
 
             {/* Controls */}
             <section className="grid lg:grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+              <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <label className="block text-sm mb-1">
                   Tickers (comma-separated)
                 </label>
@@ -406,6 +503,40 @@ export default function App() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   placeholder="AAPL, MSFT, NVDA, TSLA, AMD"
                 />
+                <div className="flex flex-col gap-2">
+                  <select
+                    defaultValue=""
+                    onChange={handleWatchlistSelect}
+                    className="bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                  >
+                    <option value="">Load one of your watchlists…</option>
+                    {watchlistOptions.map((wl) => (
+                      <option key={wl.id} value={wl.id}>
+                        {wl.name} ({(wl.items || []).length})
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    defaultValue=""
+                    onChange={handleScreenSelect}
+                    disabled={screenLoading}
+                    className="bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm disabled:opacity-60"
+                  >
+                    <option value="">
+                      {screenLoading
+                        ? "Loading screen..."
+                        : "Load a Yahoo Finance screen…"}
+                    </option>
+                    {SCREEN_CHOICES.map((screen) => (
+                      <option key={screen} value={screen}>
+                        {screen.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {screenErr && (
+                  <p className="text-xs text-rose-400">{screenErr}</p>
+                )}
                 <div className="grid grid-cols-2 gap-3 mt-4">
                   <NumberInput
                     label="Tech weight"
@@ -510,6 +641,7 @@ export default function App() {
                 <tbody>
                   {rows.map((r) => {
                     const t = r.components?.technical || {};
+                    const deltas = r.technical_deltas || {};
                     return (
                       <tr
                         key={r.symbol}
@@ -519,15 +651,46 @@ export default function App() {
                         <Td>
                           <Sparkline data={sparkMap[r.symbol]} />
                         </Td>
-                        <Td>{number(r.tech_score)}</Td>
+                        <Td>
+                          <IndicatorCell
+                            value={
+                              typeof r.tech_score === "number"
+                                ? r.tech_score
+                                : Number(r.tech_score)
+                            }
+                            delta={r.tech_score_delta}
+                            precision={1}
+                            deltaPrecision={1}
+                          />
+                        </Td>
                         <Td>{number(r.fundamental_score)}</Td>
                         <Td>
                           <ScorePill value={number(r.final_score)} />
                         </Td>
-                        <Td>{t.trend_raw ?? "-"}</Td>
-                        <Td>{t.momentum_raw ?? "-"}</Td>
-                        <Td>{t.volume_raw ?? "-"}</Td>
-                        <Td>{t.meanreversion_raw ?? "-"}</Td>
+                        <Td>
+                          <IndicatorCell
+                            value={t.trend_raw}
+                            delta={deltas.trend_raw}
+                          />
+                        </Td>
+                        <Td>
+                          <IndicatorCell
+                            value={t.momentum_raw}
+                            delta={deltas.momentum_raw}
+                          />
+                        </Td>
+                        <Td>
+                          <IndicatorCell
+                            value={t.volume_raw}
+                            delta={deltas.volume_raw}
+                          />
+                        </Td>
+                        <Td>
+                          <IndicatorCell
+                            value={t.meanreversion_raw}
+                            delta={deltas.meanreversion_raw}
+                          />
+                        </Td>
                         <Td className="text-right">
                           <div className="inline-flex gap-2">
                             <button

@@ -11,7 +11,9 @@ def compute_and_store(symbol: str, tech_weight=0.5, fund_weight=0.5, extra=None)
     if cached:
         return cached
 
-    final, tech, fund, comps = blended_score(symbol, tech_weight, fund_weight, ta_weights=ta_weights)
+    final, tech, fund, comps = blended_score(
+        symbol, tech_weight, fund_weight, ta_weights=ta_weights
+    )
     obj, _ = StockScore.objects.update_or_create(
         symbol=symbol.upper(),
         defaults={

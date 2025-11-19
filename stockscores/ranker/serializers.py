@@ -199,6 +199,9 @@ class WatchlistSerializer(serializers.ModelSerializer):
 
 
 class StockScoreSerializer(serializers.ModelSerializer):
+    technical_deltas = serializers.SerializerMethodField()
+    tech_score_delta = serializers.SerializerMethodField()
+
     class Meta:
         model = StockScore
         fields = [
@@ -208,4 +211,26 @@ class StockScoreSerializer(serializers.ModelSerializer):
             "fundamental_score",
             "final_score",
             "components",
+            "technical_deltas",
+            "tech_score_delta",
         ]
+
+    def get_technical_deltas(self, obj):
+        tech = (obj.components or {}).get("technical") or {}
+        deltas = tech.get("deltas")
+        if isinstance(deltas, dict):
+            return deltas
+        return {
+            "trend_raw": None,
+            "momentum_raw": None,
+            "volume_raw": None,
+            "volatility_raw": None,
+            "meanreversion_raw": None,
+        }
+
+    def get_tech_score_delta(self, obj):
+        tech = (obj.components or {}).get("technical") or {}
+        delta = tech.get("score_delta")
+        if isinstance(delta, (int, float)):
+            return round(float(delta), 2)
+        return None

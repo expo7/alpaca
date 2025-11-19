@@ -161,6 +161,25 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # settings.py
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
+HTTP_PROXY = os.getenv("HTTP_PROXY", "")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")
+WEBSHARE_PROXY = os.getenv("WEBSHARE_PROXY", "")
+
+if WEBSHARE_PROXY:
+    os.environ.setdefault("HTTP_PROXY", WEBSHARE_PROXY)
+    os.environ.setdefault("HTTPS_PROXY", WEBSHARE_PROXY)
+elif HTTP_PROXY:
+    os.environ.setdefault("HTTP_PROXY", HTTP_PROXY)
+if HTTPS_PROXY:
+    os.environ.setdefault("HTTPS_PROXY", HTTPS_PROXY)
+
 
 # --- Daily autoscan config ---
 AUTOSCAN_TICKERS = [

@@ -17,6 +17,9 @@ from .serializers import WatchlistSerializer, WatchlistItemSerializer
 
 # --- Sparkline endpoint (add near other imports) ---
 import yfinance as yf
+from yfinance import cache as yf_cache
+import tempfile
+from pathlib import Path
 from .models import Alert
 from .models import AlertEvent
 from .serializers import AlertSerializer
@@ -63,6 +66,22 @@ from .models import UserPreference
 from .serializers import UserPreferenceSerializer, UserSignupSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+SCREEN_CHOICES = [
+    "aggressive_small_caps",
+    "conservative_foreign_funds",
+    "day_gainers",
+    "day_losers",
+    "growth_technology_stocks",
+    "high_yield_bond",
+    "most_actives",
+    "most_shorted_stocks",
+    "portfolio_anchors",
+    "small_cap_gainers",
+    "top_mutual_funds",
+    "undervalued_growth_stocks",
+    "undervalued_large_caps",
+]
+
 
 class RegisterView(APIView):
     """
@@ -86,6 +105,38 @@ class RegisterView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class AggressiveSmallCapsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        screen = request.query_params.get("screen", "aggressive_small_caps")
+        if screen not in SCREEN_CHOICES:
+            return Response(
+                {"error": f"screen must be one of {SCREEN_CHOICES}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cache_dir = Path(tempfile.gettempdir()) / "yfinance-cache"
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        yf_cache.set_cache_location(str(cache_dir))
+        try:
+            data = yf.screen(screen)
+            quotes = data.get("quotes") or []
+            symbols = [
+                quote.get("symbol")
+                for quote in quotes
+                if quote.get("symbol")
+            ]
+            return Response({"screen": screen, "symbols": symbols})
+        except Exception as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class UserPreferenceView(APIView):
