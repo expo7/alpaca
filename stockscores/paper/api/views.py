@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import viewsets, mixins, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
 
 from paper.models import (
     PaperPortfolio,
@@ -12,6 +13,8 @@ from paper.models import (
     Strategy,
     LeaderboardSeason,
     LeaderboardEntry,
+    PaperPosition,
+    PortfolioResetLog,
 )
 from .serializers import (
     PaperPortfolioSerializer,
@@ -21,6 +24,8 @@ from .serializers import (
     LeaderboardSeasonSerializer,
     LeaderboardEntrySerializer,
     PerformanceSnapshotSerializer,
+    PaperPositionSerializer,
+    PortfolioResetLogSerializer,
 )
 
 
@@ -42,6 +47,32 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def reset(self, request, pk=None):
+        """
+        Reset a portfolio to its starting balance, wipe positions, and log the action.
+        """
+        portfolio = self.get_object()
+        reason = request.data.get("reason", "")
+        with transaction.atomic():
+            previous_cash = portfolio.cash_balance
+            previous_equity = portfolio.equity
+            portfolio.positions.all().delete()
+            portfolio.cash_balance = portfolio.starting_balance
+            portfolio.equity = portfolio.starting_balance
+            portfolio.realized_pnl = Decimal("0")
+            portfolio.unrealized_pnl = Decimal("0")
+            portfolio.save(update_fields=["cash_balance", "equity", "realized_pnl", "unrealized_pnl"])
+            log = PortfolioResetLog.objects.create(
+                portfolio=portfolio,
+                performed_by=request.user if request.user.is_authenticated else None,
+                reset_to=portfolio.starting_balance,
+                previous_cash=previous_cash,
+                previous_equity=previous_equity,
+                reason=reason,
+            )
+        return Response(PortfolioResetLogSerializer(log).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"])
     def performance(self, request, pk=None):
@@ -111,6 +142,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         portfolio = serializer.validated_data["portfolio"]
         if portfolio.user != self.request.user:
             raise permissions.PermissionDenied("Cannot place orders on this portfolio")
+        # Enforce max positions cap if configured
+        if portfolio.max_positions:
+            existing = portfolio.positions.count()
+            symbol = serializer.validated_data.get("symbol")
+            has_symbol = portfolio.positions.filter(symbol=symbol).exists()
+            if not has_symbol and existing >= portfolio.max_positions:
+                raise permissions.PermissionDenied("Portfolio position cap reached.")
         serializer.save()
 
 
@@ -169,4 +207,16 @@ class LeaderboardEntryViewSet(viewsets.ReadOnlyModelViewSet):
         if metric:
             qs = qs.filter(metric=metric)
         return qs
+
+
+class PositionViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = PaperPositionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            PaperPosition.objects.filter(portfolio__user=self.request.user)
+            .select_related("portfolio", "instrument")
+            .order_by("symbol")
+        )
 from paper.engine.runner import StrategyRunner

@@ -15,6 +15,7 @@ Progress so far (complete)
 - Tests: model uniqueness/serializer validation; execution engine flows (iceberg, conditions, chains, algos, TIF); strategy runner template merge/frequency/multi-symbol.
 - Leaderboards: computed and scheduled (return_pct/sharpe/consistency across 7d/30d/since-join + active seasons).
 - Leaderboard metrics: real recomputation for 7d/30d/since-join/season with return_pct, time-weighted return, sharpe, sortino, volatility, consistency, max_drawdown_pct, win_rate, profit_factor; stale entries pruned.
+- Portfolio ops: instrument model ready; positions API exposed; per-portfolio caps (max positions) enforced on order creation; portfolio reset endpoint clears positions and logs audits.
 
 Open todo / gaps (prioritized)
 1) Portfolio management & instruments
@@ -33,4 +34,4 @@ Open todo / gaps (prioritized)
    - Env flags for fees/slippage/delays, worker/beat process docs in top-level README, seed scripts for seasons + demo data, monitoring hooks.
 
 Next actionable step (not started)
-- Implement portfolio/instrument foundations: create instrument table, wire positions API, and add exposure caps + portfolio reset (with audit) as in item 1. This unblocks realistic portfolio management and prepares for risk controls.
+- Expand risk controls: enforce exposure caps (single-position %, gross %), add deposits/withdrawals endpoints, and tie instruments into market data provider abstraction (delayed/live toggle).

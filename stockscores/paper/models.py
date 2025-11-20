@@ -61,13 +61,44 @@ class PaperPortfolio(models.Model):
     unrealized_pnl = models.DecimalField(
         max_digits=18, decimal_places=2, default=Decimal("0")
     )
+    max_positions = models.PositiveIntegerField(null=True, blank=True)
+    max_single_position_pct = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )  # pct of equity allowed per position
+    max_gross_exposure_pct = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )  # pct of equity for gross exposure cap
     status = models.CharField(
         max_length=16, choices=[("active", "Active"), ("archived", "Archived")]
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class Instrument(models.Model):
+    ASSET_CLASS_CHOICES = [
+        ("equity", "Equity"),
+        ("etf", "ETF"),
+        ("adr", "ADR"),
+        ("crypto", "Crypto"),
+        ("fx", "FX"),
+        ("bond", "Bond"),
+    ]
+
+    symbol = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=128, blank=True)
+    exchange = models.CharField(max_length=32, blank=True)
+    asset_class = models.CharField(max_length=16, choices=ASSET_CLASS_CHOICES, default="equity")
+    currency = models.CharField(max_length=8, default="USD")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.symbol
+
+
 class PaperPosition(models.Model):
+    instrument = models.ForeignKey(
+        Instrument, null=True, blank=True, related_name="positions", on_delete=models.SET_NULL
+    )
     portfolio = models.ForeignKey(
         PaperPortfolio, related_name="positions", on_delete=models.CASCADE
     )
@@ -196,6 +227,9 @@ class PaperTrade(models.Model):
     order = models.ForeignKey(
         PaperOrder, related_name="trades", on_delete=models.CASCADE
     )
+    instrument = models.ForeignKey(
+        Instrument, null=True, blank=True, related_name="trades", on_delete=models.SET_NULL
+    )
     portfolio = models.ForeignKey(
         PaperPortfolio, related_name="trades", on_delete=models.CASCADE
     )
@@ -249,6 +283,24 @@ class StrategyRunLog(models.Model):
         default="success",
     )
     error_message = models.TextField(blank=True)
+
+
+class PortfolioResetLog(models.Model):
+    portfolio = models.ForeignKey(
+        PaperPortfolio, related_name="reset_logs", on_delete=models.CASCADE
+    )
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portfolio_resets",
+    )
+    reset_to = models.DecimalField(max_digits=18, decimal_places=2)
+    previous_cash = models.DecimalField(max_digits=18, decimal_places=2)
+    previous_equity = models.DecimalField(max_digits=18, decimal_places=2)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class PerformanceSnapshot(models.Model):

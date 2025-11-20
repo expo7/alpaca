@@ -10,6 +10,8 @@ from paper.models import (
     StrategyRule,
     LeaderboardSeason,
     LeaderboardEntry,
+    Instrument,
+    PortfolioResetLog,
 )
 
 
@@ -25,17 +27,30 @@ class PaperPortfolioSerializer(serializers.ModelSerializer):
             "equity",
             "realized_pnl",
             "unrealized_pnl",
+            "max_positions",
+            "max_single_position_pct",
+            "max_gross_exposure_pct",
             "status",
             "created_at",
         ]
-        read_only_fields = ["cash_balance", "equity", "realized_pnl", "unrealized_pnl"]
+        read_only_fields = ["cash_balance", "equity", "realized_pnl", "unrealized_pnl", "created_at"]
+
+
+class InstrumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Instrument
+        fields = ["id", "symbol", "name", "exchange", "asset_class", "currency", "created_at"]
+        read_only_fields = ["created_at"]
 
 
 class PaperPositionSerializer(serializers.ModelSerializer):
+    instrument = InstrumentSerializer(read_only=True)
+
     class Meta:
         model = PaperPosition
         fields = [
             "id",
+            "instrument",
             "symbol",
             "quantity",
             "avg_price",
@@ -145,12 +160,15 @@ class PaperOrderSerializer(serializers.ModelSerializer):
 
 
 class PaperTradeSerializer(serializers.ModelSerializer):
+    instrument = InstrumentSerializer(read_only=True)
+
     class Meta:
         model = PaperTrade
         fields = [
             "id",
             "order",
             "portfolio",
+            "instrument",
             "symbol",
             "side",
             "quantity",
@@ -244,3 +262,19 @@ class PerformanceSnapshotSerializer(serializers.ModelSerializer):
             "leverage",
             "metadata",
         ]
+
+
+class PortfolioResetLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PortfolioResetLog
+        fields = [
+            "id",
+            "portfolio",
+            "performed_by",
+            "reset_to",
+            "previous_cash",
+            "previous_equity",
+            "reason",
+            "created_at",
+        ]
+        read_only_fields = ["performed_by", "created_at"]
