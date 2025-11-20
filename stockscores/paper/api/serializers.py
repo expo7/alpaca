@@ -130,6 +130,8 @@ class PaperOrderSerializer(serializers.ModelSerializer):
     )
     backtest_fill_mode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     audit_events = serializers.SerializerMethodField(read_only=True)
+    recent_trades = serializers.SerializerMethodField(read_only=True)
+    recent_children = serializers.SerializerMethodField(read_only=True)
 
     ADVANCED_FIELDS = [
         "slippage_mode",
@@ -188,6 +190,8 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "min_fill_size",
             "backtest_fill_mode",
             "audit_events",
+            "recent_trades",
+            "recent_children",
         ]
         read_only_fields = [
             "status",
@@ -196,6 +200,8 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "algo_next_run_at",
             "algo_slice_index",
             "audit_events",
+            "recent_trades",
+            "recent_children",
         ]
 
     def validate(self, attrs):
@@ -256,6 +262,14 @@ class PaperOrderSerializer(serializers.ModelSerializer):
         return sorted(
             events, key=lambda evt: evt.get("timestamp") or "", reverse=False
         )
+
+    def get_recent_trades(self, instance):
+        trades = instance.trades.order_by("-created_at")[:5]
+        return PaperTradeSerializer(trades, many=True).data
+
+    def get_recent_children(self, instance):
+        children = instance.children.order_by("-created_at")[:5]
+        return PaperOrderSerializer(children, many=True, context=self.context).data
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

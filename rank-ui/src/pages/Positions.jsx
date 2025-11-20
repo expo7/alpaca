@@ -30,6 +30,17 @@ export default function Positions() {
   const [pageLoading, setPageLoading] = useState(false);
   const [auditState, setAuditState] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
+  const capBanner = useMemo(() => {
+    const banners = portfolios
+      .filter((p) => p.max_single_position_pct || p.max_gross_exposure_pct)
+      .map(
+        (p) =>
+          `${p.name}: single ${
+            p.max_single_position_pct || "—"
+          }%, gross ${p.max_gross_exposure_pct || "—"}%`
+      );
+    return banners.join(" | ");
+  }, [portfolios]);
   const liveQuotes = useQuotes(positions.map((p) => p.symbol));
   const [pagination, setPagination] = useState({
     next: null,
@@ -157,11 +168,27 @@ export default function Positions() {
 
   if (!token) return null;
 
-  const callAction = async (id, action, body = {}) => {
+  const callAction = async (pos, action, body = {}) => {
     setActionErr("");
     setActionMsg("");
+    if (action === "rebalance") {
+      const caps = capsByPortfolio[pos.portfolio] || {};
+      const equity = caps.equity || 0;
+      const targetPct = Number(body.target_pct || 0);
+      if (equity && targetPct) {
+        const desiredValue = equity * (targetPct / 100);
+        const singleCap = caps.maxSingle && desiredValue > equity * (caps.maxSingle / 100);
+        const newGross =
+          (grossByPortfolio[pos.portfolio] || 0) - Math.abs(Number(pos.market_value || 0)) + desiredValue;
+        const grossCap = caps.maxGross && newGross > equity * (caps.maxGross / 100);
+        if (singleCap || grossCap) {
+          const proceed = window.confirm("Target size may breach exposure caps. Continue?");
+          if (!proceed) return;
+        }
+      }
+    }
     try {
-      await apiFetch(`/api/paper/positions/${id}/${action}/`, {
+      await apiFetch(`/api/paper/positions/${pos.id}/${action}/`, {
         token,
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,6 +208,9 @@ export default function Positions() {
           <p className="text-sm text-slate-400">
             Holdings with instrument metadata and exposure flags.
           </p>
+          {capBanner && (
+            <p className="text-[11px] text-amber-300">Caps: {capBanner}</p>
+          )}
         </div>
         <div className="text-[11px] text-slate-500">
           Market data mode: {import.meta.env.VITE_PAPER_DATA_MODE || "live"}
@@ -455,7 +485,7 @@ export default function Positions() {
                       onClick={() => {
                         const target = prompt("Target % of equity (e.g. 10):", "10");
                         const limit = prompt("Optional limit price (blank for live):", "");
-                        if (target) callAction(pos.id, "rebalance", { target_pct: target, limit_price: limit || undefined });
+                        if (target) callAction(pos, "rebalance", { target_pct: target, limit_price: limit || undefined });
                       }}
                       className="px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
                     >
@@ -464,7 +494,7 @@ export default function Positions() {
                     <button
                       onClick={() => {
                         const limit = prompt("Optional limit price to close (blank for live):", "");
-                        callAction(pos.id, "close", { limit_price: limit || undefined });
+                        callAction(pos, "close", { limit_price: limit || undefined });
                       }}
                       className="px-2 py-1 rounded-lg border border-rose-800 text-rose-200 hover:bg-rose-950"
                     >

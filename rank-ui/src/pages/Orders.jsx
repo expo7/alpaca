@@ -45,6 +45,7 @@ export default function Orders() {
   const [screenFetchError, setScreenFetchError] = useState("");
   const [auditState, setAuditState] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [overrideModal, setOverrideModal] = useState(null);
 
   const childCounts = useMemo(() => {
     const counts = {};
@@ -183,11 +184,24 @@ export default function Orders() {
     setCapsByPortfolio((prev) => ({ ...prev, quotes: liveQuotes }));
   }, [liveQuotes]);
 
-  const loadAudit = async (orderId) => {
+  const loadAudit = async (order) => {
     if (!token) return;
+    // Prefer inline audit data already on the order payload
+    const inline = order
+      ? {
+          order,
+          events: order.audit_events || order.notes?.events || [],
+          trades: order.recent_trades || [],
+          children: order.recent_children || [],
+        }
+      : null;
+    if (inline && inline.events && inline.trades) {
+      setAuditState(inline);
+      return;
+    }
     setAuditLoading(true);
     try {
-      const res = await fetch(`${BASE}/api/paper/orders/${orderId}/audit/`, {
+      const res = await fetch(`${BASE}/api/paper/orders/${order.id}/audit/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed to fetch audit");
@@ -243,6 +257,21 @@ export default function Orders() {
     }
     if ("stop_price" in values && values.stop_price !== "") {
       payload.stop_price = Number(values.stop_price);
+    }
+    // Inline cap check using edit prices + live quotes
+    const caps = capsByPortfolio[order.portfolio] || {};
+    const live = capsByPortfolio.quotes?.[order.symbol] || 0;
+    const priceHint =
+      Number(values.limit_price || values.stop_price || live || order.average_fill_price || 0);
+    const notional = priceHint > 0 ? Number(order.quantity || 0) * priceHint : 0;
+    if (
+      notional &&
+      caps.equity &&
+      ((caps.maxSingle && notional > caps.equity * (caps.maxSingle / 100)) ||
+        (caps.maxGross && notional + Math.abs(order.market_value || 0) > caps.equity * (caps.maxGross / 100)))
+    ) {
+      const proceed = window.confirm("Edited prices may breach exposure caps. Save anyway?");
+      if (!proceed) return;
     }
     [
       "slippage_mode",
@@ -504,7 +533,14 @@ export default function Orders() {
         </button>
         <button
           type="button"
-          onClick={() => loadAudit(order.id)}
+          onClick={() => setOverrideModal(order)}
+          className="px-2 py-1 rounded-lg border border-slate-700"
+        >
+          Overrides
+        </button>
+        <button
+          type="button"
+          onClick={() => loadAudit(order)}
           className="px-2 py-1 rounded-lg border border-slate-700"
         >
           {auditLoading && auditState?.order?.id === order.id ? "Loading…" : "Audit"}
@@ -588,6 +624,11 @@ export default function Orders() {
                 <td className="px-3 py-2">
                   <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
                     {order.status}
+                    {(order.audit_events || []).some((e) => e.event === "liquidity_queue") && (
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-900/50 text-amber-200 text-[10px]">
+                        queued
+                      </span>
+                    )}
                     {order.status === "rejected" &&
                       (order.notes?.detail?.toLowerCase().includes("cap") ? (
                         <span className="text-rose-300">cap</span>
@@ -632,6 +673,17 @@ export default function Orders() {
         }}
         onSuccess={loadOrders}
       />
+      {overrideModal && (
+        <OverrideModal
+          order={overrideModal}
+          onClose={() => setOverrideModal(null)}
+          onChange={(payload) => handleEditChange(overrideModal.id, payload.field, payload.value)}
+          onSave={() => {
+            submitEdit(overrideModal);
+            setOverrideModal(null);
+          }}
+        />
+      )}
       {auditState && (
         <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
           <div className="flex items-center justify-between">
@@ -646,6 +698,11 @@ export default function Orders() {
               Close
             </button>
           </div>
+          {(auditState.events || []).some((e) => e.event === "liquidity_queue") && (
+            <div className="text-[11px] px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-800 text-amber-100">
+              Queued for liquidity — waiting for next bar (see events timeline).
+            </div>
+          )}
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <div className="text-[11px] uppercase text-slate-400 mb-1">Events</div>
@@ -728,6 +785,16 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     min_fill_size: "",
     backtest_fill_mode: "",
   });
+  const [backtestProfile, setBacktestProfile] = useState({
+    fill_mode: "",
+    participation: "",
+  });
+  const backtestPresets = [
+    { label: "Default", fill_mode: "", participation: "" },
+    { label: "VWAP 10%", fill_mode: "history", participation: "0.10" },
+    { label: "VWAP 25%", fill_mode: "history", participation: "0.25" },
+    { label: "Live (no cap)", fill_mode: "live", participation: "" },
+  ];
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [selectedWatchlist, setSelectedWatchlist] = useState("");
@@ -884,6 +951,12 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
         quantity: Number(form.quantity),
         extended_hours: true,
       };
+      if (backtestProfile.fill_mode) {
+        payload.backtest_fill_mode = backtestProfile.fill_mode;
+      }
+      if (backtestProfile.participation) {
+        payload.max_fill_participation = Number(backtestProfile.participation);
+      }
       if (form.order_type === "limit" && form.limit_price) {
         payload.limit_price = Number(form.limit_price);
       }
@@ -1169,6 +1242,45 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           <div className="text-[11px] text-slate-500">
             Controls bar VWAP slices + volume participation in backtests.
           </div>
+          <div className="space-y-2">
+            <div className="text-[11px] text-slate-400">Backtest profile (defaults)</div>
+            <div className="flex gap-2">
+              <select
+                value={backtestProfile.fill_mode}
+                onChange={(e) =>
+                  setBacktestProfile((p) => ({ ...p, fill_mode: e.target.value }))
+                }
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              >
+                <option value="">Use setting</option>
+                <option value="history">History VWAP</option>
+                <option value="live">Live</option>
+              </select>
+              <input
+                value={backtestProfile.participation}
+                onChange={(e) =>
+                  setBacktestProfile((p) => ({ ...p, participation: e.target.value }))
+                }
+                placeholder="Default max participation"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Applied to new orders unless overridden above.
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {backtestPresets.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setBacktestProfile({ fill_mode: preset.fill_mode, participation: preset.participation })}
+                  className="px-2 py-1 rounded-lg border border-slate-700 text-[11px]"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
       {selectedPortfolio && (
@@ -1329,6 +1441,65 @@ function CapBadges({ order, capsByPortfolio, onWarn }) {
         </span>
       )}
       {!single && !gross && <span className="text-slate-500">—</span>}
+    </div>
+  );
+}
+
+function OverrideModal({ order, onClose, onChange, onSave }) {
+  const fields = [
+    { key: "slippage_mode", label: "Slippage mode" },
+    { key: "slippage_bps", label: "Slippage bps" },
+    { key: "slippage_fixed", label: "Slippage fixed" },
+    { key: "fee_mode", label: "Fee mode" },
+    { key: "fee_bps", label: "Fee bps" },
+    { key: "fee_per_share", label: "Fee per share" },
+    { key: "max_fill_participation", label: "Max participation" },
+    { key: "min_fill_size", label: "Min fill size" },
+    { key: "backtest_fill_mode", label: "Backtest mode" },
+  ];
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 w-full max-w-lg space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold text-sm">
+            Overrides · Order #{order.id}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-xs text-slate-400 hover:text-white"
+          >
+            Close
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {fields.map((f) => (
+            <label key={f.key} className="space-y-1">
+              <span className="text-slate-400 text-[11px]">{f.label}</span>
+              <input
+                defaultValue={order[f.key] || ""}
+                onChange={(e) =>
+                  onChange({ field: f.key, value: e.target.value })
+                }
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded-lg border border-slate-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            className="px-3 py-1 rounded-lg bg-indigo-600 text-white"
+          >
+            Save overrides
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -647,6 +647,21 @@ class ExecutionEngine:
         self.min_fill_size = Decimal(
             str(getattr(settings, "PAPER_MIN_FILL_SHARES", Decimal("0")))
         )
+        self.backtest_default_fill_mode = getattr(
+            settings, "PAPER_BACKTEST_DEFAULT_MODE", self.backtest_mode
+        )
+        self.backtest_default_participation = Decimal(
+            str(
+                getattr(
+                    settings,
+                    "PAPER_BACKTEST_PARTICIPATION_DEFAULT",
+                    self.max_fill_participation,
+                )
+            )
+        )
+        self.backtest_default_min_fill = Decimal(
+            str(getattr(settings, "PAPER_BACKTEST_MIN_FILL_DEFAULT", self.min_fill_size))
+        )
         self.fee_mode = getattr(settings, "PAPER_FEE_MODE", "per_share")
         self.fee_bps = Decimal(
             str(getattr(settings, "PAPER_FEE_BPS", Decimal("0")))
@@ -730,7 +745,7 @@ class ExecutionEngine:
         if not result.filled or result.quantity <= 0:
             return result
         notes = order.notes or {}
-        mode = str(notes.get("backtest_fill_mode", self.backtest_mode))
+        mode = str(notes.get("backtest_fill_mode", self.backtest_default_fill_mode or self.backtest_mode))
         if mode == "live":
             return result
         volume = getattr(quote, "volume", None)
@@ -738,9 +753,9 @@ class ExecutionEngine:
             return result
         volume_dec = Decimal(str(volume))
         max_participation = Decimal(
-            str(notes.get("max_fill_participation", self.max_fill_participation))
+            str(notes.get("max_fill_participation", self.backtest_default_participation))
         )
-        min_fill = Decimal(str(notes.get("min_fill_size", self.min_fill_size)))
+        min_fill = Decimal(str(notes.get("min_fill_size", self.backtest_default_min_fill)))
         if volume_dec <= 0 or max_participation <= 0:
             return result
         cap = volume_dec * max_participation

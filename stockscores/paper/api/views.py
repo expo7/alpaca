@@ -192,9 +192,11 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return PaperOrder.objects.filter(
-            portfolio__user=self.request.user
-        ).select_related("portfolio")
+        return (
+            PaperOrder.objects.filter(portfolio__user=self.request.user)
+            .select_related("portfolio")
+            .prefetch_related("trades", "children")
+        )
 
     def _ordered_events(self, order: PaperOrder):
         events = (order.notes or {}).get("events", [])
