@@ -611,3 +611,13 @@ No active alerts.
 No active alerts.
 No active alerts.
 No active alerts.
+No active alerts.
+SystemCheckError: System check identified some issues:
+
+ERRORS:
+paper.PaperOrder.order_type: (fields.E005) 'choices' must be a mapping of actual values to human readable names or an iterable containing (actual value, human readable name) tuples.
+paper.PaperOrder.strategy: (fields.E300) Field defines a relation with model 'Strategy', which is either not installed, or is abstract.
+paper.PaperOrder.strategy: (fields.E307) The field paper.PaperOrder.strategy was declared with a lazy reference to 'paper.strategy', but app 'paper' doesn't provide model 'strategy'.
+No active alerts.
+No active alerts.
+No active alerts.

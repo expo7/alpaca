@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from decimal import Decimal
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "ranker",
     "corsheaders",
+    "paper",
 ]
 
 MIDDLEWARE = [
@@ -168,6 +170,13 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
+
+PAPER_FEES_PER_SHARE = Decimal(os.getenv("PAPER_FEES_PER_SHARE", "0"))
+PAPER_FLAT_COMMISSION = Decimal(os.getenv("PAPER_FLAT_COMMISSION", "0"))
+PAPER_SLIPPAGE_BPS = Decimal(os.getenv("PAPER_SLIPPAGE_BPS", "0"))
+PAPER_BACKTEST_FILL_MODE = os.getenv("PAPER_BACKTEST_FILL_MODE", "next_open")
+PAPER_SIMULATION_CLOCK = os.getenv("PAPER_SIMULATION_CLOCK", "")
+
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")
 HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")
 WEBSHARE_PROXY = os.getenv("WEBSHARE_PROXY", "")
