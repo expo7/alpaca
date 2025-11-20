@@ -1,8 +1,10 @@
 from rest_framework.routers import DefaultRouter
+from django.urls import path
 
 from .views import (
     PortfolioViewSet,
     PositionViewSet,
+    QuoteView,
     InstrumentViewSet,
     OrderViewSet,
     TradeViewSet,
@@ -28,3 +30,8 @@ router.register(
     basename="leaderboard-entry",
 )
 router.register("paper/instruments", InstrumentViewSet, basename="instrument")
+quote_list = QuoteView.as_view()
+
+urlpatterns = router.urls + [
+    path("paper/quotes/", quote_list, name="paper-quote-list"),
+]

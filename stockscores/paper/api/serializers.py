@@ -46,11 +46,15 @@ class InstrumentSerializer(serializers.ModelSerializer):
 
 class PaperPositionSerializer(serializers.ModelSerializer):
     instrument = InstrumentSerializer(read_only=True)
+    portfolio = serializers.PrimaryKeyRelatedField(read_only=True)
+    portfolio_name = serializers.CharField(source="portfolio.name", read_only=True)
 
     class Meta:
         model = PaperPosition
         fields = [
             "id",
+            "portfolio",
+            "portfolio_name",
             "instrument",
             "symbol",
             "quantity",

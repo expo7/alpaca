@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
+import Toast from "../components/Toast.jsx";
 
 const BASE = "http://127.0.0.1:8000";
 const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
+const QUOTE_REFRESH_MS = 20000;
 const EDITABLE_TYPES = new Set([
   "limit",
   "hidden_limit",
@@ -135,6 +137,23 @@ export default function Orders() {
   }, [token, loadOrders, loadPortfolios, loadWatchlists]);
 
   useEffect(() => {
+    if (!portfolios.length) return;
+    setCapsByPortfolio(
+      Object.fromEntries(
+        portfolios.map((p) => [
+          p.id,
+          {
+            equity: Number(p.equity || p.cash_balance || 0),
+            maxPositions: p.max_positions,
+            maxSingle: Number(p.max_single_position_pct || 0),
+            maxGross: Number(p.max_gross_exposure_pct || 0),
+          },
+        ])
+      )
+    );
+  }, [portfolios]);
+
+  useEffect(() => {
     const symbols = Array.from(new Set(orders.map((o) => o.symbol)));
     const fetchMeta = async () => {
       const missing = symbols.filter((s) => !instrumentMeta[s]);
@@ -154,6 +173,30 @@ export default function Orders() {
       }
     };
     if (symbols.length) fetchMeta();
+  }, [orders]);
+
+  useEffect(() => {
+    const symbols = Array.from(new Set(orders.map((o) => o.symbol)));
+    const loadQuotes = async () => {
+      if (!symbols.length) return;
+      try {
+        const res = await fetch(
+          `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbols.join(","))}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const priceMap = {};
+        (data || []).forEach((q) => {
+          priceMap[q.symbol] = q.price;
+        });
+        setCapsByPortfolio((prev) => ({ ...prev, quotes: priceMap }));
+      } catch {
+        // ignore
+      }
+    };
+    loadQuotes();
+    const id = setInterval(loadQuotes, QUOTE_REFRESH_MS);
+    return () => clearInterval(id);
   }, [orders]);
 
   const startEditing = (order) => {
@@ -403,6 +446,7 @@ export default function Orders() {
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Qty/Notional</th>
               <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Caps</th>
               <th className="px-3 py-2 text-left">Prices</th>
               <th className="px-3 py-2 text-left">Chain</th>
               <th className="px-3 py-2 text-left">Role</th>
@@ -442,6 +486,15 @@ export default function Orders() {
                       ) : null)}
                   </span>
                 </td>
+                <td className="px-3 py-2">
+                  <CapBadges
+                    order={order}
+                    capsByPortfolio={capsByPortfolio}
+                    onWarn={(msg) =>
+                      setToastState({ msg, tone: "warn" })
+                    }
+                  />
+                </td>
                 <td className="px-3 py-2">{renderPrices(order)}</td>
                 <td className="px-3 py-2">{chainBadge(order)}</td>
                 <td className="px-3 py-2">{roleBadge(order)}</td>
@@ -470,6 +523,11 @@ export default function Orders() {
           error: screenFetchError,
         }}
         onSuccess={loadOrders}
+      />
+      <Toast
+        message={toastState?.msg}
+        tone={toastState?.tone}
+        onClose={() => setToastState(null)}
       />
     </div>
   );
@@ -500,6 +558,8 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentLoading, setInstrumentLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [instrumentMeta, setInstrumentMeta] = useState({});
+  const [capsByPortfolio, setCapsByPortfolio] = useState({});
+  const [toastState, setToastState] = useState(null);
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -902,5 +962,46 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
         {submitting ? "Submitting..." : "Create order"}
       </button>
     </form>
+  );
+}
+
+function CapBadges({ order, capsByPortfolio, onWarn }) {
+  const caps = capsByPortfolio[order.portfolio] || {};
+  const quotes = capsByPortfolio.quotes || {};
+  if (!caps.equity || (!caps.maxSingle && !caps.maxGross)) {
+    return <span className="text-slate-500 text-xs">—</span>;
+  }
+  const qty = Number(order.quantity || 0);
+  const priceHint = Number(order.limit_price || order.stop_price || quotes[order.symbol] || 0);
+  const notional = priceHint > 0 ? qty * priceHint : Number(order.notional || 0);
+  const single = caps.maxSingle
+    ? notional > caps.equity * (caps.maxSingle / 100)
+    : false;
+  const gross = caps.maxGross
+    ? notional > caps.equity * (caps.maxGross / 100)
+    : false;
+  if ((single || gross) && onWarn) {
+    onWarn("Exposure cap warning: check size before sending.");
+  }
+  return (
+    <div className="flex gap-1 flex-wrap text-[11px]">
+      {single && (
+        <span
+          title="Single position cap may be exceeded"
+          className="px-2 py-1 rounded-lg bg-rose-900/40 border border-rose-800 text-rose-100"
+        >
+          Single cap
+        </span>
+      )}
+      {gross && (
+        <span
+          title="Gross exposure cap may be exceeded"
+          className="px-2 py-1 rounded-lg bg-amber-900/40 border border-amber-800 text-amber-100"
+        >
+          Gross cap
+        </span>
+      )}
+      {!single && !gross && <span className="text-slate-500">—</span>}
+    </div>
   );
 }

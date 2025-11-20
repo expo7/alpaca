@@ -10,6 +10,7 @@ const tabs = [
   { id: "watchlists", label: "Watchlists" },
   { id: "alerts", label: "Alerts" },
   { id: "orders", label: "Orders" },
+  { id: "positions", label: "Positions" },
   { id: "performance", label: "Performance" },
   { id: "leaderboards", label: "Leaderboards" },
   { id: "settings", label: "Settings" },

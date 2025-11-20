@@ -12,6 +12,7 @@ import Alerts from "./pages/Alerts.jsx";
 import Settings from "./pages/Settings.jsx";
 import StrategyBuilder from "./pages/StrategyBuilder.jsx";
 import Orders from "./pages/Orders.jsx";
+import Positions from "./pages/Positions.jsx";
 import Performance from "./pages/Performance.jsx";
 import Leaderboards from "./pages/Leaderboards.jsx";
 import Sparkline from "./components/Sparkline.jsx";
@@ -762,6 +763,8 @@ export default function App() {
         )}
 
         {page === "orders" && <Orders />}
+
+        {page === "positions" && <Positions />}
 
         {page === "performance" && <Performance />}
 

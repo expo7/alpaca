@@ -24,3 +24,15 @@ Running daily autoscan at 2025-11-19T14:05:01.600147+00:00
  scored COST: tech=0.50 fund=10.00 final=4.30
  scored NFLX: tech=7.75 fund=15.00 final=10.65
 No users with daily_scan_enabled=True; nothing to send.
+Running daily autoscan at 2025-11-20T14:05:01.663386+00:00
+ scored AAPL: tech=9.00 fund=11.50 final=10.00
+ scored MSFT: tech=1.50 fund=14.00 final=6.50
+ scored NVDA: tech=3.00 fund=14.00 final=7.40
+ scored TSLA: tech=3.50 fund=3.00 final=3.30
+ scored AMD: tech=0.50 fund=8.00 final=3.50
+ scored GOOGL: tech=20.50 fund=14.00 final=17.90
+ scored META: tech=7.50 fund=12.00 final=9.30
+ scored AVGO: tech=6.75 fund=15.50 final=10.25
+ scored COST: tech=0.50 fund=10.00 final=4.30
+ scored NFLX: tech=2.75 fund=15.00 final=7.65
+No users with daily_scan_enabled=True; nothing to send.

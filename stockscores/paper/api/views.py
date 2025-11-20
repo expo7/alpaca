@@ -6,6 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Sum
+from rest_framework.views import APIView
 
 from paper.models import (
     PaperPortfolio,
@@ -323,6 +325,137 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by("symbol")
         )
 
+    def _get_quote_decimal(self, symbol: str) -> Decimal:
+        quote = get_market_data_provider().get_quote(symbol)
+        return Decimal(str(quote.price))
+
+    def _recalc_portfolio(self, portfolio: PaperPortfolio):
+        totals = portfolio.positions.aggregate(
+            total_mv=Sum("market_value"), total_unreal=Sum("unrealized_pnl")
+        )
+        portfolio.unrealized_pnl = totals.get("total_unreal") or Decimal("0")
+        total_mv = totals.get("total_mv") or Decimal("0")
+        portfolio.equity = (portfolio.cash_balance or Decimal("0")) + total_mv
+        portfolio.save(update_fields=["equity", "unrealized_pnl"])
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        position = self.get_object()
+        portfolio = position.portfolio
+        if portfolio.user != request.user:
+            raise PermissionDenied("Not your position.")
+        limit_price = request.data.get("limit_price")
+        price = self._get_quote_decimal(position.symbol)
+        if limit_price is not None:
+            try:
+                limit_price = Decimal(str(limit_price))
+                if position.quantity > 0 and price < limit_price:
+                    return Response(
+                        {"detail": "Live price below limit_price"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if position.quantity < 0 and price > limit_price:
+                    return Response(
+                        {"detail": "Live price above limit_price"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except Exception:
+                pass
+        if position.quantity == 0:
+            return Response({"detail": "Already closed"}, status=status.HTTP_200_OK)
+        qty = position.quantity
+        proceeds = qty * price
+        portfolio.cash_balance += proceeds
+        realized = Decimal("0")
+        if qty > 0:
+            realized = (price - position.avg_price) * qty
+        elif qty < 0:
+            realized = (position.avg_price - price) * abs(qty)
+        portfolio.realized_pnl += realized
+        portfolio.save(update_fields=["cash_balance", "realized_pnl"])
+        position.quantity = Decimal("0")
+        position.market_value = Decimal("0")
+        position.unrealized_pnl = Decimal("0")
+        position.save(update_fields=["quantity", "market_value", "unrealized_pnl"])
+        self._recalc_portfolio(portfolio)
+        return Response(
+            {
+                "detail": "Closed position",
+                "realized_pnl": str(realized),
+                "cash_balance": str(portfolio.cash_balance),
+            }
+        )
+
+    @action(detail=True, methods=["post"])
+    def rebalance(self, request, pk=None):
+        position = self.get_object()
+        portfolio = position.portfolio
+        if portfolio.user != request.user:
+            raise PermissionDenied("Not your position.")
+        target_pct = Decimal(str(request.data.get("target_pct", "0")))
+        if target_pct <= 0 or target_pct > 100:
+            return Response(
+                {"detail": "target_pct must be between 0 and 100"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        price = self._get_quote_decimal(position.symbol)
+        limit_price = request.data.get("limit_price")
+        if limit_price is not None:
+            try:
+                limit_price = Decimal(str(limit_price))
+                # For buys, ensure live price does not exceed limit; for sells ensure not below limit
+                if price > limit_price and target_pct > 0:
+                    return Response(
+                        {"detail": "Live price above limit_price"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except Exception:
+                pass
+        equity = portfolio.equity or portfolio.cash_balance or Decimal("0")
+        if equity <= 0:
+            return Response(
+                {"detail": "Cannot rebalance with zero equity"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        desired_value = equity * (target_pct / Decimal("100"))
+        delta_value = desired_value - (position.market_value or Decimal("0"))
+        if abs(delta_value) < Decimal("0.01"):
+            return Response({"detail": "Already at target"}, status=status.HTTP_200_OK)
+        delta_qty = delta_value / price
+        realized = Decimal("0")
+        if delta_qty > 0:
+            # buy more
+            new_qty = position.quantity + delta_qty
+            if new_qty > 0:
+                position.avg_price = (
+                    (position.quantity * position.avg_price) + delta_value
+                ) / new_qty
+            position.quantity = new_qty
+            portfolio.cash_balance -= delta_value
+        else:
+            # sell some
+            sell_qty = abs(delta_qty)
+            position.quantity = max(Decimal("0"), position.quantity - sell_qty)
+            realized = (price - position.avg_price) * sell_qty
+            portfolio.cash_balance += abs(delta_value)
+            portfolio.realized_pnl += realized
+        position.market_value = position.quantity * price
+        position.unrealized_pnl = position.market_value - (position.quantity * position.avg_price)
+        position.save(
+            update_fields=["quantity", "avg_price", "market_value", "unrealized_pnl"]
+        )
+        self._recalc_portfolio(portfolio)
+        return Response(
+            {
+                "detail": "Rebalanced",
+                "quantity": str(position.quantity),
+                "avg_price": str(position.avg_price),
+                "market_value": str(position.market_value),
+                "realized_pnl": str(realized),
+                "cash_balance": str(portfolio.cash_balance),
+            }
+        )
+
 
 class InstrumentViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = InstrumentSerializer
@@ -335,4 +468,30 @@ class InstrumentViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(symbol__icontains=q.upper())
         limit = min(200, max(10, int(self.request.query_params.get("limit", 100))))
         return qs[:limit]
+
+
+class QuoteView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        symbols = request.query_params.get("symbols", "")
+        if not symbols:
+            return Response([], status=status.HTTP_200_OK)
+        data = []
+        provider = get_market_data_provider()
+        for sym in filter(None, [s.strip() for s in symbols.split(",")]):
+            try:
+                q = provider.get_quote(sym)
+                data.append(
+                    {
+                        "symbol": q.symbol,
+                        "price": q.price,
+                        "timestamp": q.timestamp,
+                        "bid": q.bid,
+                        "ask": q.ask,
+                    }
+                )
+            except Exception:
+                continue
+        return Response(data)
 from paper.engine.runner import StrategyRunner
