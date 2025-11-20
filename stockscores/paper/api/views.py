@@ -27,6 +27,7 @@ from .serializers import (
     PaperOrderSerializer,
     PaperTradeSerializer,
     StrategySerializer,
+    StrategyExecutionSerializer,
     LeaderboardSeasonSerializer,
     LeaderboardEntrySerializer,
     PerformanceSnapshotSerializer,
@@ -311,6 +312,38 @@ class StrategyViewSet(viewsets.ModelViewSet):
         runner = StrategyRunner()
         matches = runner.dry_run(strategy)
         return Response({"matches": matches})
+
+    @action(detail=True, methods=["post"])
+    def execute(self, request, pk=None):
+        """
+        Entry point for live strategy execution. TODO: enforce multi-portfolio caps
+        (reusing dry-run/save logic) before enqueueing real execution.
+        """
+        strategy = self.get_object()
+        serializer = StrategyExecutionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        portfolio_ids = data.get("portfolio_ids") or []
+        if data.get("portfolio_id"):
+            portfolio_ids.append(data["portfolio_id"])
+        portfolios = list(
+            PaperPortfolio.objects.filter(user=request.user, id__in=portfolio_ids)
+        )
+        if len(portfolios) != len(set(portfolio_ids)):
+            return Response(
+                {"detail": "One or more portfolios not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # TODO: enforce multi-portfolio caps here using shared cap checker once finalized.
+        execution_id = f"exec-{strategy.id}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
+        payload = {
+            "status": "queued",
+            "strategy_id": strategy.id,
+            "portfolios": [p.id for p in portfolios],
+            "execution_id": execution_id,
+            "overrides": data.get("overrides") or {},
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class LeaderboardSeasonViewSet(viewsets.ReadOnlyModelViewSet):

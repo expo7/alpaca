@@ -534,6 +534,7 @@ export default function Orders() {
           <button
             type="button"
             onClick={() => startEditing(order)}
+            onClickCapture={(e) => e.stopPropagation()}
             className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
           >
             Edit
@@ -545,6 +546,7 @@ export default function Orders() {
               type="button"
               onClick={() => submitEdit(order)}
               disabled={savingOrderId === order.id}
+              onClickCapture={(e) => e.stopPropagation()}
               className="px-2 py-1 rounded-lg bg-indigo-600 text-white disabled:opacity-60"
             >
               {savingOrderId === order.id ? "Saving..." : "Save"}
@@ -552,6 +554,7 @@ export default function Orders() {
             <button
               type="button"
               onClick={() => cancelInlineEdit(order.id)}
+              onClickCapture={(e) => e.stopPropagation()}
               className="px-2 py-1 rounded-lg border border-slate-700"
             >
               Cancel
@@ -562,6 +565,7 @@ export default function Orders() {
           type="button"
           onClick={() => cancelOrder(order.id)}
           disabled={cancelingOrderId === order.id}
+          onClickCapture={(e) => e.stopPropagation()}
           className="px-2 py-1 rounded-lg border border-rose-700 text-rose-200 disabled:opacity-60"
         >
           {cancelingOrderId === order.id ? "Canceling..." : "Cancel"}
@@ -569,6 +573,7 @@ export default function Orders() {
         <button
           type="button"
           onClick={() => setOverrideModal(order)}
+          onClickCapture={(e) => e.stopPropagation()}
           className="px-2 py-1 rounded-lg border border-slate-700"
         >
           Overrides
@@ -576,6 +581,7 @@ export default function Orders() {
         <button
           type="button"
           onClick={() => loadAudit(order)}
+          onClickCapture={(e) => e.stopPropagation()}
           className="px-2 py-1 rounded-lg border border-slate-700"
         >
           {auditLoading && auditState?.order?.id === order.id ? "Loading…" : "Audit"}
@@ -689,7 +695,14 @@ export default function Orders() {
               </tr>
             )}
             {orders.map((order) => (
-              <tr key={order.id} className="border-t border-slate-800 align-top">
+              <tr
+                key={order.id}
+                className="border-t border-slate-800 align-top cursor-pointer hover:bg-slate-900/40"
+                onClick={() => {
+                  setDetailModal(order);
+                  loadAudit(order);
+                }}
+              >
                 <td className="px-3 py-2 font-semibold">{order.symbol}</td>
                 <td className="px-3 py-2 text-xs text-slate-400">
                   {instrumentMeta[order.symbol]?.exchange || "—"}{" "}
@@ -721,7 +734,11 @@ export default function Orders() {
                     {order.status === "working" && !order.audit_events?.length && (
                       <span
                         className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 text-[10px]"
-                        title="Waiting for fills"
+                        title={
+                          order.audit_events?.find((e) => e.bar_ts)?.bar_ts
+                            ? `Waiting for liquidity; next bar ${order.audit_events.find((e) => e.bar_ts)?.bar_ts}`
+                            : "Waiting for fills"
+                        }
                       >
                         pending
                       </span>
@@ -807,7 +824,8 @@ export default function Orders() {
         />
       )}
       {auditState && (
-        <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm max-w-4xl w-full max-h-[80vh] overflow-auto">
           <div className="flex items-center justify-between">
             <div className="font-semibold">
               Audit · Order #{auditState.order?.id} ({auditState.order?.symbol})
@@ -884,6 +902,7 @@ export default function Orders() {
                 )}
               </div>
             </div>
+          </div>
           </div>
         </div>
       )}

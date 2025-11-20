@@ -362,6 +362,20 @@ class StrategySerializer(serializers.ModelSerializer):
         return value
 
 
+class StrategyExecutionSerializer(serializers.Serializer):
+    strategy_id = serializers.IntegerField(required=True)
+    portfolio_id = serializers.IntegerField(required=False)
+    portfolio_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=False
+    )
+    overrides = serializers.JSONField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get("portfolio_id") and not attrs.get("portfolio_ids"):
+            raise serializers.ValidationError("Provide portfolio_id or portfolio_ids.")
+        return attrs
+
+
 class LeaderboardSeasonSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaderboardSeason

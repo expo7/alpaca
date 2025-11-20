@@ -90,13 +90,10 @@ export default function StrategyBuilder() {
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [instrumentResults, setInstrumentResults] = useState([]);
   const [instrumentLoading, setInstrumentLoading] = useState(false);
-  const [capHint, setCapHint] = useState(
-    "Strategy-driven orders will be blocked if portfolio caps are breached."
-  );
+  const capHint = "Strategy-driven orders will be blocked if portfolio caps are breached.";
   const [portfolios, setPortfolios] = useState([]);
-  const [capHint, setCapHint] = useState(
-    "Strategy-driven orders will be blocked if portfolio caps are breached."
-  );
+  const [selectedPortfolio, setSelectedPortfolio] = useState("");
+  const [selectedPortfolios, setSelectedPortfolios] = useState([]);
 
   useEffect(() => {
     if (token) {
@@ -235,6 +232,12 @@ export default function StrategyBuilder() {
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
+    const targetIds =
+      selectedPortfolios.length > 0
+        ? selectedPortfolios
+        : selectedPortfolio
+        ? [selectedPortfolio]
+        : [];
     return {
       name: form.name,
       description: form.description,
@@ -243,6 +246,8 @@ export default function StrategyBuilder() {
         frequency: form.frequency,
         symbols: symbolsArray,
         order_templates: form.orderTemplates,
+        portfolio: selectedPortfolio || null,
+        portfolios: targetIds.length ? targetIds : undefined,
         entry: {
           template: form.entry.template,
           rules: form.entry.rules,
@@ -261,6 +266,33 @@ export default function StrategyBuilder() {
     if (!token) return;
     setStatus("Saving...");
     const payload = buildPayload();
+    const targetIds =
+      selectedPortfolios.length > 0
+        ? selectedPortfolios
+        : selectedPortfolio
+        ? [selectedPortfolio]
+        : [];
+    if (targetIds.length) {
+      const blocked = targetIds.some((pid) => {
+        const portfolio = portfolios.find((p) => String(p.id) === String(pid));
+        const equity = Number(portfolio?.equity || portfolio?.cash_balance || 0);
+        const singleCap =
+          portfolio?.max_single_position_pct &&
+          equity * (Number(portfolio.max_single_position_pct) / 100);
+        const grossCap =
+          portfolio?.max_gross_exposure_pct &&
+          equity * (Number(portfolio.max_gross_exposure_pct) / 100);
+        if (!singleCap && !grossCap) return false;
+        const entryPct = Number(payload.config.order_templates.entry.quantity_pct || 0) / 100;
+        const notionalPer = equity * entryPct;
+        return (singleCap && notionalPer > singleCap) || (grossCap && notionalPer > grossCap);
+      });
+      if (blocked) {
+        alert("Save blocked: entry template would breach caps.");
+        setStatus("Save blocked by caps");
+        return;
+      }
+    }
     const method = selectedId ? "PUT" : "POST";
     const url = selectedId
       ? `${BASE}/api/paper/strategies/${selectedId}/`
@@ -325,7 +357,13 @@ export default function StrategyBuilder() {
       const data = await res.json();
       const matches = data.matches || [];
       setDryRunMatches(matches);
-      if (matches.length && portfolios.length) {
+      const targetIds =
+        selectedPortfolios.length > 0
+          ? selectedPortfolios
+          : selectedPortfolio
+          ? [selectedPortfolio]
+          : [];
+      if (matches.length && portfolios.length && targetIds.length) {
         const symbolsParam = matches.join(",");
         const quotesRes = await fetch(
           `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbolsParam)}`
@@ -333,29 +371,36 @@ export default function StrategyBuilder() {
         const quotesData = await quotesRes.json();
         const quoteMap = {};
         (quotesData || []).forEach((q) => (quoteMap[q.symbol] = q.price));
-        const portfolio = portfolios[0];
-        const equity = Number(portfolio?.equity || portfolio?.cash_balance || 0);
-        const singleCap =
-          portfolio?.max_single_position_pct &&
-          equity * (Number(portfolio.max_single_position_pct) / 100);
-        const grossCap =
-          portfolio?.max_gross_exposure_pct &&
-          equity * (Number(portfolio.max_gross_exposure_pct) / 100);
-        if (singleCap || grossCap) {
+        const grossRes = await fetch(`${BASE}/api/paper/positions/?limit=500`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const grossData = await grossRes.json();
+        const positions = grossData.results || [];
+        for (const pid of targetIds) {
+          const portfolio = portfolios.find((p) => String(p.id) === String(pid));
+          const equity = Number(portfolio?.equity || portfolio?.cash_balance || 0);
+          const singleCap =
+            portfolio?.max_single_position_pct &&
+            equity * (Number(portfolio.max_single_position_pct) / 100);
+          const grossCap =
+            portfolio?.max_gross_exposure_pct &&
+            equity * (Number(portfolio.max_gross_exposure_pct) / 100);
+          const currentGross = positions
+            .filter((p) => String(p.portfolio) === String(pid))
+            .reduce((sum, p) => sum + Math.abs(Number(p.market_value || 0)), 0);
+          if (singleCap || grossCap) {
           const entryPct = Number(form.orderTemplates.entry.quantity_pct || 0) / 100;
           const notionalPer = equity * entryPct;
           const symbolWarns = matches.filter(
             (sym) => singleCap && notionalPer > singleCap
           );
-          if (symbolWarns.length || (grossCap && notionalPer * matches.length > grossCap)) {
-            const proceed = window.confirm(
-              "Strategy preview may breach caps based on defaults/live quotes. Continue?"
-            );
-            if (!proceed) {
-              setStatus("Preview blocked by caps");
-              return;
-            }
+          const projectedGross = currentGross + notionalPer * matches.length;
+          if (symbolWarns.length || (grossCap && projectedGross > grossCap)) {
+            setStatus("Preview blocked: caps would be breached.");
+            alert("Preview blocked: caps would be breached.");
+            return;
           }
+        }
         }
       }
       setStatus("Preview updated");
@@ -379,6 +424,37 @@ export default function StrategyBuilder() {
           <span className="text-slate-500">
             Market data mode: {import.meta.env.VITE_PAPER_DATA_MODE || "live"}
           </span>
+          <select
+            value={selectedPortfolio}
+            onChange={(e) => setSelectedPortfolio(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5"
+          >
+            <option value="">Select portfolio for caps</option>
+            {portfolios.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (single {p.max_single_position_pct || "—"}% gross {p.max_gross_exposure_pct || "—"}%)
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-slate-500">Multi-target cap check</span>
+            <select
+              multiple
+              value={selectedPortfolios}
+              onChange={(e) =>
+                setSelectedPortfolios(
+                  Array.from(e.target.selectedOptions).map((opt) => opt.value)
+                )
+              }
+              className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 min-w-[200px] h-16"
+            >
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             onClick={validateConfig}
