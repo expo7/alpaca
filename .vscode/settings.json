@@ -1,0 +1,61 @@
+{
+    // ✅ General editor
+    "editor.formatOnSave": true,
+    "editor.minimap.enabled": false,
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+
+    // ✅ Autosave
+    // Saves when you leave the editor (switch tab, focus terminal, etc.),
+    // which plays nicely with formatOnSave and reduces “dirty” files.
+    "files.autoSave": "onFocusChange",
+
+    // ✅ Python: use project .venv
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+
+    // ✅ Python formatting (Black)
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+
+    // ✅ Python analysis (Pylance)
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.diagnosticMode": "workspace",
+
+    // ✅ Testing (pytest)
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+
+    // ✅ Explorer/search
+    "explorer.excludeGitIgnore": true,
+    "search.useIgnoreFiles": true,
+    "search.followSymlinks": false,
+
+    // ✅ Git behavior
+    // Auto-fetch in the background so branch status is always fresh.
+    "git.autofetch": true,
+    // Avoid annoying confirmations when committing from the Source Control view.
+    "git.enableSmartCommit": true,
+    // Still ask before syncing (push+pull) so you don't accidentally push WIP.
+    "git.confirmSync": true,
+    // Clean up remote-tracking branches when fetching.
+    "git.pruneOnFetch": true,
+
+    // ✅ Diff editor
+    // Ignore pure whitespace changes in diffs -> cleaner, especially with black/formatOnSave.
+    "diffEditor.ignoreTrimWhitespace": true,
+    // Side-by-side diffs are usually clearer for code.
+    "diffEditor.renderSideBySide": true,
+
+        // Make sure VS Code uses bash in the integrated terminal
+    "terminal.integrated.defaultProfile.linux": "bash",
+
+    // Make sure environment variables (like from .venv) propagate properly
+    "terminal.integrated.inheritEnv": true
+}

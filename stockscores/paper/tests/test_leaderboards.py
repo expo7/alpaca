@@ -5,7 +5,14 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from paper.models import LeaderboardEntry, LeaderboardSeason, PaperPortfolio, PerformanceSnapshot
+from paper.models import (
+    LeaderboardEntry,
+    LeaderboardSeason,
+    PaperOrder,
+    PaperPortfolio,
+    PaperTrade,
+    PerformanceSnapshot,
+)
 from paper.services.leaderboards import calculate_metrics, recompute_all_leaderboards
 
 
@@ -72,6 +79,71 @@ class LeaderboardTests(TestCase):
         self.assertIsNotNone(metrics)
         self.assertGreater(metrics.return_pct, Decimal("9"))
         self.assertLess(metrics.max_drawdown_pct, Decimal("0.000001"))  # no drawdown, should be near 0
+        self.assertEqual(metrics.trade_count, 0)
+
+    def test_calculate_metrics_with_trade_stats_and_risk(self):
+        now = self.now
+        p3 = PaperPortfolio.objects.create(
+            user=self.user,
+            name="Gamma",
+            base_currency="USD",
+            starting_balance=Decimal("100000"),
+            cash_balance=Decimal("100000"),
+            equity=Decimal("100000"),
+            status="active",
+        )
+        PaperPortfolio.objects.filter(id=p3.id).update(created_at=now - timedelta(days=7))
+        p3.refresh_from_db()
+        # Include a drawdown then recovery for volatility/sortino/max_dd
+        for i, eq in enumerate([100000, 95000, 98000, 99000]):
+            ts = now - timedelta(days=3 - i)
+            PerformanceSnapshot.objects.create(
+                portfolio=p3,
+                timestamp=ts,
+                equity=Decimal(eq),
+                cash=Decimal(eq),
+                realized_pnl=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+            )
+        order = PaperOrder.objects.create(
+            portfolio=p3,
+            symbol="AAPL",
+            side="buy",
+            order_type="market",
+            tif="day",
+            quantity=Decimal("1"),
+            status="filled",
+        )
+        PaperTrade.objects.create(
+            order=order,
+            portfolio=p3,
+            symbol="AAPL",
+            side="buy",
+            quantity=Decimal("1"),
+            price=Decimal("100"),
+            fees=Decimal("0"),
+            slippage=Decimal("0"),
+            realized_pnl=Decimal("50"),
+        )
+        PaperTrade.objects.create(
+            order=order,
+            portfolio=p3,
+            symbol="AAPL",
+            side="sell",
+            quantity=Decimal("1"),
+            price=Decimal("90"),
+            fees=Decimal("0"),
+            slippage=Decimal("0"),
+            realized_pnl=Decimal("-30"),
+        )
+        end = timezone.now()
+        metrics = calculate_metrics(p3, end - timedelta(days=7), end)
+        self.assertIsNotNone(metrics.sortino)
+        self.assertIsNotNone(metrics.volatility)
+        self.assertIsNotNone(metrics.max_drawdown_pct)
+        self.assertEqual(metrics.trade_count, 2)
+        self.assertGreater(metrics.win_rate, Decimal("0"))
+        self.assertGreater(metrics.profit_factor, Decimal("0"))
 
     def test_recompute_leaderboards_ranks_by_return(self):
         # Active season spanning snapshots

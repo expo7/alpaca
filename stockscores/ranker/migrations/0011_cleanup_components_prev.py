@@ -8,6 +8,7 @@ def drop_components_prev(apps, schema_editor):
     vendor = schema_editor.connection.vendor
 
     drop_sql = f'ALTER TABLE "{table}" DROP COLUMN "{column}"'
+    drop_if_exists_sql = f'ALTER TABLE "{table}" DROP COLUMN IF EXISTS "{column}"'
 
     if vendor == "sqlite":
         try:
@@ -23,7 +24,7 @@ def drop_components_prev(apps, schema_editor):
             pass
     else:
         try:
-            cursor.execute(drop_sql)
+            cursor.execute(drop_if_exists_sql)
         except Exception:
             pass
 
