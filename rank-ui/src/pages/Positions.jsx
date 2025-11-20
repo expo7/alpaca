@@ -187,6 +187,22 @@ export default function Positions() {
         }
       }
     }
+    if (action === "close") {
+        const caps = capsByPortfolio[pos.portfolio] || {};
+        const equity = caps.equity || 0;
+        const live = liveQuotes[pos.symbol] || pos.live_price || 0;
+        const mvAfter = 0; // fully closed
+        const currentGross = grossByPortfolio[pos.portfolio] || 0;
+        const newGross = currentGross - Math.abs(Number(pos.market_value || 0));
+        if (equity && caps.maxGross && newGross > equity * (caps.maxGross / 100)) {
+          alert("Cannot close because portfolio caps are hard limits.");
+          return;
+        }
+        if (live) {
+          const proceed = window.confirm(`Close at approx ${live}?`);
+          if (!proceed) return;
+        }
+      }
     try {
       await apiFetch(`/api/paper/positions/${pos.id}/${action}/`, {
         token,
@@ -438,6 +454,9 @@ export default function Positions() {
                 caps.maxGross &&
                 equity > 0 &&
                 (grossByPortfolio[pos.portfolio] || 0) > equity * (caps.maxGross / 100);
+              const capTitle = `Single: ${caps.maxSingle || "—"}%, Gross: ${
+                caps.maxGross || "—"
+              }%`;
               return (
                 <tr key={pos.id} className="border-t border-slate-800 text-xs">
                   <td className="px-3 py-2 font-semibold">{pos.symbol}</td>
@@ -456,7 +475,7 @@ export default function Positions() {
                   <td className="px-3 py-2">
                     ${Number(pos.unrealized_pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2" title={capTitle}>
                   <div className="flex gap-1 flex-wrap">
                     {singleExceeded && (
                       <span

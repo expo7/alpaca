@@ -46,6 +46,18 @@ export default function Orders() {
   const [auditState, setAuditState] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [overrideModal, setOverrideModal] = useState(null);
+  const [auditPinned, setAuditPinned] = useState(null);
+  const [showPinnedInModal, setShowPinnedInModal] = useState(false);
+  const [detailModal, setDetailModal] = useState(null);
+  const backtestPresets = useMemo(
+    () => [
+      { label: "Default", fill_mode: "", participation: "" },
+      { label: "VWAP 10%", fill_mode: "history", participation: "0.10" },
+      { label: "VWAP 25%", fill_mode: "history", participation: "0.25" },
+      { label: "Live (no cap)", fill_mode: "live", participation: "" },
+    ],
+    []
+  );
 
   const childCounts = useMemo(() => {
     const counts = {};
@@ -66,7 +78,21 @@ export default function Orders() {
       });
       if (!res.ok) throw new Error("Failed to load orders");
       const data = await res.json();
-      setOrders(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+      setOrders(arr);
+      // Auto-open detail modal when there's a pinned timeline and matching order
+      if (!detailModal && auditPinned?.order?.id) {
+        const match = arr.find((o) => o.id === auditPinned.order.id);
+        if (match) {
+          setAuditState({
+            order: match,
+            events: match.audit_events || match.notes?.events || [],
+            trades: match.recent_trades || [],
+          });
+          setShowPinnedInModal(true);
+          setDetailModal(match);
+        }
+      }
       setError("");
     } catch (err) {
       setError(err.message || "Failed to load orders");
@@ -184,6 +210,13 @@ export default function Orders() {
     setCapsByPortfolio((prev) => ({ ...prev, quotes: liveQuotes }));
   }, [liveQuotes]);
 
+  useEffect(() => {
+    if (auditState && auditPinned && auditPinned.order?.id === auditState.order?.id) {
+      setShowPinnedInModal(true);
+      setDetailModal(auditState.order);
+    }
+  }, [auditState, auditPinned]);
+
   const loadAudit = async (order) => {
     if (!token) return;
     // Prefer inline audit data already on the order payload
@@ -197,6 +230,7 @@ export default function Orders() {
       : null;
     if (inline && inline.events && inline.trades) {
       setAuditState(inline);
+      setDetailModal(order);
       return;
     }
     setAuditLoading(true);
@@ -207,6 +241,7 @@ export default function Orders() {
       if (!res.ok) throw new Error("Failed to fetch audit");
       const data = await res.json();
       setAuditState(data);
+      setDetailModal(order);
     } catch (err) {
       setError(err.message || "Failed to load audit trail");
     } finally {
@@ -574,6 +609,53 @@ export default function Orders() {
           Refresh
         </button>
       </div>
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        <span className="text-slate-400">Backtest presets:</span>
+        {backtestPresets.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => setBacktestProfile({ fill_mode: preset.fill_mode, participation: preset.participation })}
+            className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      {auditPinned && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">
+              Pinned timeline · Order #{auditPinned.order?.id} {auditPinned.order?.symbol}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAuditPinned(null)}
+              className="text-[11px] text-slate-400 hover:text-white"
+            >
+              Unpin
+            </button>
+          </div>
+          <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
+        </div>
+      )}
+      {auditPinned && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">
+              Pinned timeline · Order #{auditPinned.order?.id} {auditPinned.order?.symbol}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAuditPinned(null)}
+              className="text-[11px] text-slate-400 hover:text-white"
+            >
+              Unpin
+            </button>
+          </div>
+          <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
+        </div>
+      )}
 
       {error && (
         <div className="text-xs text-rose-200 bg-rose-900/30 border border-rose-800 rounded-xl px-3 py-2">
@@ -625,8 +707,35 @@ export default function Orders() {
                   <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
                     {order.status}
                     {(order.audit_events || []).some((e) => e.event === "liquidity_queue") && (
-                      <span className="px-2 py-0.5 rounded-lg bg-amber-900/50 text-amber-200 text-[10px]">
+                      <span
+                        className="px-2 py-0.5 rounded-lg bg-amber-900/50 text-amber-200 text-[10px]"
+                        title={
+                          order.audit_events.find((e) => e.bar_ts)?.bar_ts
+                            ? `Waiting for next bar at ${order.audit_events.find((e) => e.bar_ts)?.bar_ts}`
+                            : "Waiting for liquidity"
+                        }
+                      >
                         queued
+                      </span>
+                    )}
+                    {order.status === "working" && !order.audit_events?.length && (
+                      <span
+                        className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 text-[10px]"
+                        title="Waiting for fills"
+                      >
+                        pending
+                      </span>
+                    )}
+                    {order.status === "working" && (
+                      <span
+                        className="px-2 py-0.5 rounded-lg bg-slate-700 text-slate-200 text-[10px]"
+                        title={
+                          order.audit_events?.find((e) => e.bar_ts)?.bar_ts
+                            ? `Waiting for liquidity; next bar ${order.audit_events.find((e) => e.bar_ts)?.bar_ts}`
+                            : "Waiting for liquidity"
+                        }
+                      >
+                        ⏳
                       </span>
                     )}
                     {order.status === "rejected" &&
@@ -653,6 +762,19 @@ export default function Orders() {
                       [{evt.event}] {evt.child || evt.count || ""}
                     </div>
                   ))}
+                  {(order.audit_events || []).some((e) => e.event === "liquidity_queue") && (
+                    <div className="text-amber-300">
+                      Queued for next bar{" "}
+                      {order.audit_events.find((e) => e.bar_ts)?.bar_ts
+                        ? `(${order.audit_events.find((e) => e.bar_ts)?.bar_ts})`
+                        : ""}
+                    </div>
+                  )}
+                  {detailModal?.id === order.id && auditPinned && (
+                    <div className="text-[11px] text-slate-300">
+                      Timeline pinned in detail view
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">{renderActions(order)}</td>
               </tr>
@@ -698,6 +820,27 @@ export default function Orders() {
               Close
             </button>
           </div>
+          <div className="flex gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setAuditPinned(auditState)}
+              className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
+            >
+              Pin timeline
+            </button>
+            {auditPinned && auditPinned.order?.id === auditState.order?.id && (
+              <span className="text-emerald-300">Pinned</span>
+            )}
+            {auditPinned && (
+              <button
+                type="button"
+                onClick={() => setShowPinnedInModal((v) => !v)}
+                className="px-2 py-1 rounded-lg border border-slate-700"
+              >
+                {showPinnedInModal ? "Hide pinned here" : "Show pinned here"}
+              </button>
+            )}
+          </div>
           {(auditState.events || []).some((e) => e.event === "liquidity_queue") && (
             <div className="text-[11px] px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-800 text-amber-100">
               Queued for liquidity — waiting for next bar (see events timeline).
@@ -707,28 +850,16 @@ export default function Orders() {
             <div>
               <div className="text-[11px] uppercase text-slate-400 mb-1">Events</div>
               <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
-                {(auditState.events || []).length ? (
-                  auditState.events.map((evt, idx) => (
-                    <div key={`evt-${idx}`} className="px-3 py-2 text-xs">
-                      <div className="font-mono text-[11px] text-slate-400">
-                        {evt.timestamp || "—"}
-                      </div>
-                      <div className="text-emerald-100">{evt.event}</div>
-                      <div className="text-slate-300">
-                        {Object.entries(evt)
-                          .filter(([k]) => k !== "event" && k !== "timestamp")
-                          .map(([k, v]) => (
-                            <span key={k} className="mr-2">
-                              {k}: {v}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="px-3 py-3 text-slate-500">No events</div>
-                )}
+                <Timeline events={(auditState.events || []).concat(auditState.order?.audit_events || [])} />
               </div>
+              {showPinnedInModal && auditPinned && (
+                <div className="mt-2">
+                  <div className="text-[11px] uppercase text-slate-400 mb-1">Pinned Timeline</div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-40 overflow-auto divide-y divide-slate-800">
+                    <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <div className="text-[11px] uppercase text-slate-400 mb-1">Trades</div>
@@ -1502,4 +1633,37 @@ function OverrideModal({ order, onClose, onChange, onSave }) {
       </div>
     </div>
   );
+}
+
+function Timeline({ events }) {
+  const ordered = (events || [])
+    .filter((e) => e.event)
+    .sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+  if (!ordered.length) {
+    return <div className="px-3 py-3 text-slate-500">No events</div>;
+  }
+  return ordered.map((evt, idx) => (
+    <div key={`evt-${idx}`} className="px-3 py-2 text-xs">
+      <div className="font-mono text-[11px] text-slate-400">
+        {evt.timestamp || "—"}
+      </div>
+      <div className="text-emerald-100 flex items-center gap-2">
+        {evt.event}
+        {(evt.bar_ts || evt.liquidity_cap) && (
+          <span className="px-2 py-0.5 rounded-lg bg-amber-900/40 border border-amber-800 text-amber-100 text-[10px]">
+            queued
+          </span>
+        )}
+      </div>
+      <div className="text-slate-300">
+        {Object.entries(evt)
+          .filter(([k]) => k !== "event" && k !== "timestamp")
+          .map(([k, v]) => (
+            <span key={k} className="mr-2">
+              {k}: {v}
+            </span>
+          ))}
+      </div>
+    </div>
+  ));
 }

@@ -90,12 +90,32 @@ export default function StrategyBuilder() {
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [instrumentResults, setInstrumentResults] = useState([]);
   const [instrumentLoading, setInstrumentLoading] = useState(false);
+  const [capHint, setCapHint] = useState(
+    "Strategy-driven orders will be blocked if portfolio caps are breached."
+  );
+  const [portfolios, setPortfolios] = useState([]);
+  const [capHint, setCapHint] = useState(
+    "Strategy-driven orders will be blocked if portfolio caps are breached."
+  );
 
   useEffect(() => {
     if (token) {
       loadStrategies();
+      loadPortfolios();
     }
   }, [token]);
+
+  async function loadPortfolios() {
+    try {
+      const res = await fetch(`${BASE}/api/paper/portfolios/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setPortfolios(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function loadStrategies() {
     try {
@@ -303,7 +323,41 @@ export default function StrategyBuilder() {
       });
       if (!res.ok) throw new Error("Dry run failed");
       const data = await res.json();
-      setDryRunMatches(data.matches || []);
+      const matches = data.matches || [];
+      setDryRunMatches(matches);
+      if (matches.length && portfolios.length) {
+        const symbolsParam = matches.join(",");
+        const quotesRes = await fetch(
+          `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbolsParam)}`
+        );
+        const quotesData = await quotesRes.json();
+        const quoteMap = {};
+        (quotesData || []).forEach((q) => (quoteMap[q.symbol] = q.price));
+        const portfolio = portfolios[0];
+        const equity = Number(portfolio?.equity || portfolio?.cash_balance || 0);
+        const singleCap =
+          portfolio?.max_single_position_pct &&
+          equity * (Number(portfolio.max_single_position_pct) / 100);
+        const grossCap =
+          portfolio?.max_gross_exposure_pct &&
+          equity * (Number(portfolio.max_gross_exposure_pct) / 100);
+        if (singleCap || grossCap) {
+          const entryPct = Number(form.orderTemplates.entry.quantity_pct || 0) / 100;
+          const notionalPer = equity * entryPct;
+          const symbolWarns = matches.filter(
+            (sym) => singleCap && notionalPer > singleCap
+          );
+          if (symbolWarns.length || (grossCap && notionalPer * matches.length > grossCap)) {
+            const proceed = window.confirm(
+              "Strategy preview may breach caps based on defaults/live quotes. Continue?"
+            );
+            if (!proceed) {
+              setStatus("Preview blocked by caps");
+              return;
+            }
+          }
+        }
+      }
       setStatus("Preview updated");
     } catch (err) {
       console.error(err);
@@ -319,6 +373,7 @@ export default function StrategyBuilder() {
           <p className="text-sm text-slate-400">
             Compose rule blocks and order templates, then save or dry run.
           </p>
+          <p className="text-[11px] text-amber-300">{capHint}</p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-2 text-xs">
           <span className="text-slate-500">

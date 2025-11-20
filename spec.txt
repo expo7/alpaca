@@ -23,6 +23,7 @@ Progress so far (complete)
 - Execution fidelity: intrabar cross detection for stop/limit types, backtest volume-based partial fills with bar-level volume budgets, bar VWAP pricing for capped slices, configurable slippage modes (bps/fixed/none) and fee modes (bps/per-share), and richer chain/fill audit events on orders.
 - Audits & overrides: order/position audit endpoints for events/trades, order ticket supports per-order slippage/fee/backtest participation overrides with UI plumbing.
 - Backtests: defaults for VWAP/participation/min fill are configurable via settings; stale bars advance to synthetic buckets so queued orders progress.
+- UI polish: audit timelines use inline payloads and pin into detail modal; orders show queue badges + hover ETA; overrides modal + backtest presets; positions/actions prompt on cap risk and show cap banners.
 
 Open todo / gaps (prioritized)
 1) Portfolio management & instruments
