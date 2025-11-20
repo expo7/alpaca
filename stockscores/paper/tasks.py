@@ -46,11 +46,9 @@ def snapshot_portfolios():
 
 @shared_task
 def recompute_leaderboards():
-    from django.utils import timezone
-    from paper.models import LeaderboardEntry
+    from paper.services.leaderboards import recompute_all_leaderboards
 
-    now = timezone.now()
-    LeaderboardEntry.objects.update(calculated_at=now)
+    recompute_all_leaderboards()
 
 
 @shared_task

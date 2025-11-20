@@ -1,0 +1,297 @@
+You are an expert full-stack engineer and system designer.
+
+Context:
+- I already have a “Stock Scorer” SaaS that ranks stocks via various technical/fundamental scores and exposes REST endpoints (e.g., to fetch scores, rankings, and signals by ticker).
+- I want to add a fully-featured PAPER TRADING module on top of this.
+- Tech stack (you can assume this unless you have a clearly better idea):
+  - Backend: Python, Django + Django REST Framework, PostgreSQL
+  - Frontend: React (TypeScript), with a simple component library (e.g., Material UI or Tailwind-based UI).
+- Focus on clean, well-structured, production-ready code and modular design.
+
+Goal:
+Design and implement a PAPER TRADING system that:
+1. Lets users trade with virtual money (no real broker).
+2. Supports all major retail order types.
+3. Allows users to program sophisticated entry/exit strategies based on technical analysis AND my existing stock-scorer signals.
+4. Includes leaderboards that fairly compare users who joined at different times.
+
+### High-Level Features
+
+1. **User Paper Accounts & Portfolios**
+   - Each authenticated user gets at least one “paper account” with:
+     - Configurable starting balance (default e.g. $100,000).
+     - Base currency (USD for now).
+   - Users can have multiple paper portfolios (e.g., “Growth”, “Value”, “Options Experiments”).
+   - Track:
+     - Cash balance
+     - Open positions (per symbol)
+     - Realized P/L
+     - Unrealized P/L
+     - Equity curve over time
+   - Ability to:
+     - Reset a portfolio (with logs preserved for leaderboard integrity).
+     - Create/delete additional portfolios.
+
+2. **Instruments**
+   - Phase 1: US equities and ETFs (symbol + exchange).
+   - Price data:
+     - Assume we pull from existing data layer (e.g., yfinance or a cached market data service).
+     - For backtest-like execution, we can use historical OHLCV; for “live” paper trading, use latest prices delayed by X mins.
+   - Design data models to allow later extension to:
+     - Options
+     - Crypto
+     - International stocks
+
+3. **Order Types & Execution Logic**
+   Support at least the following order types:
+   - Market
+   - Limit
+   - Stop
+   - Stop-Limit
+   - Trailing Stop (by amount and by percentage)
+   - Bracket Orders (entry + take-profit + stop-loss)
+   - OCO (One-Cancels-Other)
+   - Time-in-Force:
+     - DAY
+     - GTC
+     - IOC (Immediate Or Cancel)
+     - FOK (Fill Or Kill)
+   - Support both:
+     - Shares quantity (e.g., 100 shares)
+     - Amount-based (e.g., “Invest $500 in this stock” → convert to shares at execution)
+
+   Execution rules:
+   - For backtest/“simulated intraday”:
+     - Use historical candles (1m or 5m if available).
+     - Fill market orders at next candle’s open (or mid between open and close), configurable.
+     - Limit/stop logic: fill if price crosses trigger; handle partial fills logically.
+   - For “near-real-time” paper trading:
+     - On each price update (pull or push), reevaluate all open orders and trigger fills.
+   - Maintain a robust state machine for orders: NEW, PARTIALLY_FILLED, FILLED, CANCELED, REJECTED, EXPIRED.
+   - Fee model:
+     - Simple flat commission and/or per-share fee, configurable at the system level.
+     - Slippage model (configurable, can default to 0) for more realistic fills.
+
+4. **Strategy Builder (Rule-Based Engine)**
+   Users should be able to create “Strategies” that auto-generate orders based on technical analysis and signals. Design this as a reusable, composable rule engine.
+
+   Strategy definition entities:
+   - Strategy:
+     - Name, description
+     - Universe: e.g., “Top 50 stocks from Stock Scorer endpoint X”, a custom watchlist, or a fixed ticker list.
+     - Position sizing rules (e.g., % of equity, fixed dollar amount, max positions).
+     - Risk management:
+       - Max % of equity per position
+       - Max number of open positions
+       - Global portfolio stop (e.g., stop trading if drawdown > 20%).
+   - Entry Rules:
+     - Boolean rules built from indicators and scorer data, such as:
+       - Price > 50-day SMA AND RSI(14) < 30
+       - MyStockScore(signal="momentum_score") > 80
+       - Crossover conditions, e.g., EMA(12) crosses above EMA(26)
+       - Volume > N-day average volume * 1.5
+     - Allow AND/OR groups and nested logic.
+     - Allow referencing different timeframes (e.g., daily vs 1h) but you can implement a minimal version first.
+   - Exit Rules:
+     - Technical exits:
+       - RSI crosses below X, or MACD signal cross, etc.
+       - Price crosses below trailing stop
+     - Profit/Stop targets:
+       - Take profit at +Y%
+       - Stop loss at -Z%
+       - Time-based: exit after N bars/days.
+   - Execution:
+     - A background scheduler/worker:
+       - On each bar/price update:
+         - Evaluate strategies for all users.
+         - Generate orders according to entry/exit rules.
+       - Strategy run logs: record what rules fired, which stocks were picked, and orders created/modified/cancelled.
+   - Strategy sharing:
+     - Option to keep strategies private or make them “public templates” other users can clone.
+
+   Integration with existing Stock Scorer:
+   - Provide convenient hooks in the rule builder to reference:
+     - Score values (e.g., overall_score, quality_score, momentum_score).
+     - Rank (e.g., top decile).
+   - Example: “Enter long if my momentum_score > 80 and RSI(14) < 40”
+
+5. **Analytics & Reporting**
+   For each portfolio and user:
+   - Performance metrics:
+     - Total return and % return
+     - Annualized return (assuming a trading calendar)
+     - Max drawdown
+     - Volatility
+     - Sharpe ratio
+     - Sortino ratio
+     - Win rate (% of winning trades)
+     - Profit factor
+     - Average R multiple per trade
+   - Trade history:
+     - All fills, timestamps, prices, fees, strategy that generated the trade (if any), and manual vs automated tag.
+   - Visualizations:
+     - Equity curve over time.
+     - Drawdown chart.
+     - Per-strategy and per-symbol breakdown.
+
+6. **Leaderboards**
+   Design a flexible leaderboard system that can compare users fairly, including those who joined at different times.
+
+   Leaderboard dimensions:
+   - Global leaderboard:
+     - Rank by:
+       - Total % return since account creation.
+       - Risk-adjusted return (e.g., Sharpe).
+       - Consistency (e.g., return divided by max drawdown).
+   - Time-bounded leaderboards:
+     - Last 7 days
+     - Last 30 days
+     - Year-to-date
+   - “Seasonal” or “Competition” leaderboards:
+     - Define configurable seasons (e.g., monthly/quarterly competitions).
+     - Everyone starts with the same virtual balance at the start of the season.
+     - Rankings based on performance only within that season’s timeframe and account.
+   - Normalization ideas for different start dates:
+     - Use return since “join date” for a “Since Joined” leaderboard.
+     - Use time-weighted returns or per-day average return.
+     - Restrict some leaderboards to a minimum activity (e.g., at least X trades or Y days active).
+
+   Leaderboard metadata:
+   - Username (or nickname), optional avatar.
+   - Portfolio/season name.
+   - Key stats for sorting:
+     - Return %, Max drawdown, Sharpe, Win rate, etc.
+   - Ability to click a user to see a read-only view of:
+     - Their equity curve.
+     - Distribution of strategies (names, not full proprietary rules unless they chose to make them public).
+
+7. **APIs & Backend Structure**
+
+   Design REST API endpoints including (but not limited to):
+
+   - Auth:
+     - Use existing auth; ensure endpoints are secured.
+   - Market Data (can reuse existing or add wrappers):
+     - GET /api/market/quote/?symbol=XYZ
+     - GET /api/market/history/?symbol=XYZ&interval=1d&range=1y
+   - Portfolios:
+     - GET /api/paper/portfolios/
+     - POST /api/paper/portfolios/ (create)
+     - GET /api/paper/portfolios/{id}/
+     - PATCH /api/paper/portfolios/{id}/ (rename, change settings)
+     - POST /api/paper/portfolios/{id}/reset/
+   - Positions:
+     - GET /api/paper/portfolios/{id}/positions/
+   - Orders:
+     - GET /api/paper/orders/?portfolio_id=...
+     - POST /api/paper/orders/ (create new order)
+     - GET /api/paper/orders/{id}/
+     - PATCH /api/paper/orders/{id}/ (modify, cancel if allowed)
+   - Trades/Fills:
+     - GET /api/paper/trades/?portfolio_id=...
+   - Strategies:
+     - GET /api/paper/strategies/
+     - POST /api/paper/strategies/
+     - GET /api/paper/strategies/{id}/
+     - PATCH /api/paper/strategies/{id}/
+     - POST /api/paper/strategies/{id}/toggle-active/
+     - GET /api/paper/strategies/public-templates/
+   - Leaderboards:
+     - GET /api/paper/leaderboards/global/?metric=return_pct&period=30d
+     - GET /api/paper/leaderboards/seasons/
+     - GET /api/paper/leaderboards/seasons/{id}/
+   - Performance:
+     - GET /api/paper/portfolios/{id}/performance/ (returns metrics and timeseries)
+     - GET /api/paper/users/me/performance-summary/
+
+   Structure:
+   - Use clear, documented serializers and viewsets.
+   - Use background tasks (Celery or Django-Q or async jobs) for:
+     - Strategy evaluations.
+     - Order execution engine (periodic or event-driven).
+     - Leaderboard recomputation.
+
+8. **Frontend UI Requirements (React)**
+   Build a clean, modern interface with the following pages/components:
+
+   - Dashboard:
+     - Overview of user’s portfolios and key metrics.
+     - Quick link to open orders, recent trades, and strategies.
+   - Portfolio Detail:
+     - Table of positions (symbol, qty, avg price, current price, unrealized P/L).
+     - Equity curve chart.
+     - New order ticket component (supports all order types).
+   - Order Ticket:
+     - Symbol search with autocomplete.
+     - Side (Buy/Sell).
+     - Order type selector (Market, Limit, Stop, etc.).
+     - Quantity / Invest amount.
+     - TIF selector.
+     - For advanced types (bracket, OCO), show conditional fields.
+   - Strategy Builder:
+     - Visual rule-building UI with:
+       - “IF … THEN BUY/SELL” style blocks.
+       - Dropdowns for indicators and scorer metrics.
+       - Nested AND/OR groups.
+   - Leaderboards:
+     - Table with sortable columns, filters for:
+       - Metric (return, Sharpe, etc.)
+       - Time period
+       - Season
+     - Pagination or infinite scroll.
+   - User Profile:
+     - Summary of performance.
+     - List of created strategies.
+     - Option to share strategies as templates.
+
+9. **Data Model Outline**
+   Design Django models for at least:
+   - PaperPortfolio
+   - PaperPosition
+   - PaperOrder
+   - PaperTrade
+   - Strategy
+   - StrategyRule (entry/exit, with references to indicators/scorer fields)
+   - StrategyRunLog
+   - LeaderboardSeason
+   - LeaderboardEntry
+   - PerformanceSnapshot (daily or per-run snapshots of portfolio performance)
+
+10. **Quality, Testing & Extensibility**
+   - Write unit tests for:
+     - Order execution logic (fills, partial fills, TIF behavior).
+     - Strategy rule evaluation.
+     - Leaderboard calculations.
+   - Make indicator calculations pluggable:
+     - Either via a small internal library or by integrating something like TA-Lib/xTA; but keep an abstraction layer so we can swap implementations later.
+   - Design the system to support:
+     - Multi-asset expansion.
+     - Real brokerage integration in the future.
+
+Deliverables:
+- Django models, serializers, viewsets, and Celery/worker tasks for the backend.
+- React components and pages for the front-end.
+- A short README describing:
+  - How the execution engine works.
+  - How strategies are evaluated.
+  - How leaderboards are computed and what metrics they use.
+  - Any environment variables or configs needed (e.g., data source, fees, slippage).
+
+Start by scaffolding the models and APIs, then the execution engine, then the strategy builder, and finally the leaderboards and frontend.
+after each task update our progress hear and propose the next task to move us forward on the spec sheet.  
+Already in this codebase:
+
+Models for portfolios, positions, orders, trades, strategies, run logs, performance snapshots, and leaderboards (paper/models.py).
+Execution engine covers major order types incl. stops/limits/trailing, IOC/FOK/GTD, conditional rules, child-chain handling, and VWAP/TWAP/POV slices with fees/slippage knobs (paper/services/execution.py), scheduled via Celery tasks (paper/tasks.py, stockscores/stockscores/settings.py).
+Strategy runner with template merge + AND/OR rule evaluation that can pull indicator values and Stock Scorer data, plus dry-run support (paper/engine/runner.py).
+REST endpoints for portfolios, orders, trades, strategies, public leaderboards (paper/api/*.py, stockscores/stockscores/urls.py).
+Frontend pages for orders (create/edit/cancel, bracket/child awareness), strategy builder UI, performance snapshots/equity curve, and leaderboards (rank-ui/src/pages/Orders.jsx, StrategyBuilder.jsx, Performance.jsx, Leaderboards.jsx).
+Tests for model constraints, serializer validation, strategy runner behaviors, and many execution flows including algos and chain cancellation (paper/tests/*.py).
+Key gaps/TODO to hit the original spec:
+
+Instruments/data: add an instrument model (symbol/exchange/asset_class) and plug real/historical market-data abstraction with caching + delayed/live toggle; prep hooks for options/crypto.
+Portfolio features: add reset endpoint with audit log and season-aware balance seeding; expose positions endpoint; support deposits/withdrawals and per-portfolio risk limits (max positions/exposure).
+Execution: flesh out bracket/OCO/OTO handlers beyond placeholders, proper stop/limit cross detection on historical bars, partial-fill sizing, and better TIF handling for GTC/GTD expiration; improve slippage/fee models.
+Strategy engine: enrich config with universe sources (scorer ranks, watchlists, screens), position sizing/risk caps, multi-timeframe rules, and strategy sharing/templates endpoint; add scheduler respect for per-strategy frequency.
+Analytics & leaderboards: compute real metrics (MDD, volatility, Sharpe/Sortino, win rate, profit factor) and time-bounded/seasonal returns; implement leaderboard recomputation logic instead of timestamp updates; add per-user performance summary endpoint.
+Frontend: portfolio detail with positions/open orders, richer order ticket (amount-based entry, advanced types, OCO/brackets), strategy performance views, seasonal leaderboard filters, and onboarding/readme updates describing env vars and background workers.

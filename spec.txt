@@ -1,0 +1,35 @@
+Paper Trading Spec (working doc)
+
+Stack & assumptions
+- Backend: Django + DRF, Celery, Postgres (currently using sqlite in dev). Existing Stock Scorer service provides scores/ranks.
+- Frontend: React (Vite), JWT auth already wired to API.
+- Market data: yfinance adapter in code; can be swapped via settings `PAPER_MARKET_DATA_PROVIDER`.
+
+Progress so far (complete)
+- Data models: portfolios, positions, orders (incl. advanced fields for algo/pegged/trailing/OCO/bracket), trades, strategy + rules, run logs, performance snapshots, leaderboard seasons/entries.
+- APIs: CRUD for portfolios, orders, trades, strategies; performance endpoint + snapshots; read-only leaderboards + seasons; JWT endpoints mapped.
+- Execution engine: market/limit/stop/stop-limit/trailing/pegged/session, IOC/FOK/GTD, conditional rules, iceberg/reserve, parent/child chains (OCO/bracket/OTO/OTOCO), algo VWAP/TWAP/POV with scheduling, slippage/fees configs, backtest next-open mode.
+- Strategy runner: template merge + overrides, rule tree evaluation (indicator/price/volume/time/cross-symbol + Stock Scorer fields), per-strategy frequency gating, dry-run support; writes run logs and creates orders per portfolio.
+- Background jobs: Celery beat schedules strategy engine, execution slices, snapshots, leaderboard refresh (placeholder), all documented in README.
+- Frontend coverage: Orders list + inline edit/cancel + create (incl. bracket children), strategy builder UI, performance view (equity/cash/return + snapshots sparkline), leaderboards table, dashboards/landing/auth shell.
+- Tests: model uniqueness/serializer validation; execution engine flows (iceberg, conditions, chains, algos, TIF); strategy runner template merge/frequency/multi-symbol.
+- Leaderboards: computed and scheduled (return_pct/sharpe/consistency across 7d/30d/since-join + active seasons).
+
+Open todo / gaps (prioritized)
+1) Portfolio management & instruments
+   - Add instrument table (symbol/exchange/asset_class) and positions/portfolio exposure caps; portfolio reset endpoint with audit log and season-aware reseed; deposits/withdrawals; positions API.
+2) Market data & pricing
+   - Add caching/delayed price toggle; improve historical bar-based fills (cross detection, partial fills) for backtest/sim; pluggable data provider interface with retries.
+3) Execution fidelity
+   - Finish bracket/OCO/OTO handlers for all edge cases; improve TIF (GTC expiry), advanced slippage/fee models; amount-based orders everywhere; audit trail of fills/events.
+4) Strategy engine
+   - Universe sources (scorer ranks, watchlists, screens), risk/position sizing rules (max positions/% equity), multi-timeframe indicators, strategy sharing/templates endpoint, per-strategy scheduler controls, better logging of rule hits.
+5) Analytics & leaderboards
+   - Add more metrics (volatility, Sortino, win rate, profit factor, time-weighted returns) and store per snapshot; activity filters; user performance summary endpoint.
+6) Frontend UX
+   - Portfolio detail with positions + open orders; richer order ticket (amount-based, advanced types, OCO/bracket builder); strategy performance views; seasonal leaderboard filters/UX; onboarding + documentation in UI.
+7) Ops/Config
+   - Env flags for fees/slippage/delays, worker/beat process docs in top-level README, seed scripts for seasons + demo data, monitoring hooks.
+
+Suggested next step
+- Implement real leaderboard computation (metrics for 7d/30d/season + normalization) plus performance metric calculator, then expose via `/api/paper/leaderboards/entries/` and update beat task. This unblocks user-facing leaderboards and validates snapshots.
