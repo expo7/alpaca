@@ -28,6 +28,8 @@ export default function Positions() {
   const [actionErr, setActionErr] = useState("");
   const [toastState, setToastState] = useState(null);
   const [pageLoading, setPageLoading] = useState(false);
+  const [auditState, setAuditState] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
   const liveQuotes = useQuotes(positions.map((p) => p.symbol));
   const [pagination, setPagination] = useState({
     next: null,
@@ -137,6 +139,21 @@ export default function Positions() {
       });
     }
   }, [positions, capsByPortfolio, grossByPortfolio]);
+
+  const loadAudit = async (positionId) => {
+    if (!token) return;
+    setAuditLoading(true);
+    try {
+      const data = await apiFetch(`/api/paper/positions/${positionId}/audit/`, {
+        token,
+      });
+      setAuditState(data);
+    } catch (e) {
+      setErr(e.message || "Failed to load audit");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
 
   if (!token) return null;
 
@@ -374,8 +391,10 @@ export default function Positions() {
               <th className="px-3 py-2 text-left">Avg Price</th>
               <th className="px-3 py-2 text-left">Market Value</th>
               <th className="px-3 py-2 text-left">Unrealized</th>
-          <th className="px-3 py-2 text-left">Caps</th>
-          <th className="px-3 py-2 text-left">Actions</th>
+              <th className="px-3 py-2 text-left">Caps</th>
+              <th className="px-3 py-2 text-left">Actions</th>
+              <th className="px-3 py-2 text-left">Audit</th>
+              <th className="px-3 py-2 text-left">Audit</th>
         </tr>
       </thead>
       <tbody>
@@ -410,49 +429,63 @@ export default function Positions() {
                 <td className="px-3 py-2">
                   <div className="flex gap-1 flex-wrap">
                     {singleExceeded && (
-                      <span title="Single position cap breached" className="px-2 py-1 rounded-lg bg-rose-900/40 border border-rose-800 text-rose-100">
+                      <span
+                        title="Single position cap breached"
+                        className="px-2 py-1 rounded-lg bg-rose-900/40 border border-rose-800 text-rose-100"
+                      >
                         Single cap
-                        </span>
-                      )}
-                      {grossExceeded && (
-                        <span title="Gross exposure cap breached" className="px-2 py-1 rounded-lg bg-amber-900/40 border border-amber-800 text-amber-100">
-                          Gross cap
-                        </span>
-                      )}
-                      {!singleExceeded && !grossExceeded && (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </div>
+                      </span>
+                    )}
+                    {grossExceeded && (
+                      <span
+                        title="Gross exposure cap breached"
+                        className="px-2 py-1 rounded-lg bg-amber-900/40 border border-amber-800 text-amber-100"
+                      >
+                        Gross cap
+                      </span>
+                    )}
+                    {!singleExceeded && !grossExceeded && (
+                      <span className="text-slate-500">—</span>
+                    )}
+                  </div>
                 </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-2 text-[11px]">
-                      <button
-                        onClick={() => {
-                          const target = prompt("Target % of equity (e.g. 10):", "10");
-                          const limit = prompt("Optional limit price (blank for live):", "");
-                          if (target) callAction(pos.id, "rebalance", { target_pct: target, limit_price: limit || undefined });
-                        }}
-                        className="px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                      >
-                        Rebalance
-                      </button>
-                      <button
-                        onClick={() => {
-                          const limit = prompt("Optional limit price to close (blank for live):", "");
-                          callAction(pos.id, "close", { limit_price: limit || undefined });
-                        }}
-                        className="px-2 py-1 rounded-lg border border-rose-800 text-rose-200 hover:bg-rose-950"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </td>
+                <td className="px-3 py-2">
+                  <div className="flex gap-2 text-[11px]">
+                    <button
+                      onClick={() => {
+                        const target = prompt("Target % of equity (e.g. 10):", "10");
+                        const limit = prompt("Optional limit price (blank for live):", "");
+                        if (target) callAction(pos.id, "rebalance", { target_pct: target, limit_price: limit || undefined });
+                      }}
+                      className="px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+                    >
+                      Rebalance
+                    </button>
+                    <button
+                      onClick={() => {
+                        const limit = prompt("Optional limit price to close (blank for live):", "");
+                        callAction(pos.id, "close", { limit_price: limit || undefined });
+                      }}
+                      className="px-2 py-1 rounded-lg border border-rose-800 text-rose-200 hover:bg-rose-950"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <button
+                    onClick={() => loadAudit(pos.id)}
+                    className="px-2 py-1 rounded-lg border border-slate-700 text-xs"
+                  >
+                    {auditLoading && auditState?.position?.id === pos.id ? "…" : "Audit"}
+                  </button>
+                </td>
               </tr>
             );
           })}
             {!positions.length && !loading && (
               <tr>
-                <td className="px-3 py-4 text-center text-slate-500" colSpan={8}>
+                <td className="px-3 py-4 text-center text-slate-500" colSpan={10}>
                   No positions yet.
                 </td>
               </tr>
@@ -460,6 +493,63 @@ export default function Positions() {
           </tbody>
         </table>
       </div>
+      {auditState && (
+        <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">
+              Audit · {auditState.position?.symbol} (portfolio {auditState.position?.portfolio})
+            </div>
+            <button
+              onClick={() => setAuditState(null)}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] uppercase text-slate-400 mb-1">Trades</div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                {(auditState.trades || []).length ? (
+                  auditState.trades.map((t) => (
+                    <div key={t.id} className="px-3 py-2 text-xs flex justify-between">
+                      <div>
+                        <div className="font-semibold">
+                          {t.side.toUpperCase()} {t.quantity} @ {t.price}
+                        </div>
+                        <div className="text-slate-400 font-mono">{t.created_at}</div>
+                      </div>
+                      <div className="text-right text-slate-300">
+                        Fees: {t.fees} <br />
+                        Slippage: {t.slippage}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-slate-500">No trades</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase text-slate-400 mb-1">Orders</div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                {(auditState.orders || []).length ? (
+                  auditState.orders.map((o) => (
+                    <div key={o.id} className="px-3 py-2 text-xs">
+                      <div className="font-semibold">
+                        #{o.id} {o.order_type} {o.side} {o.quantity || o.notional || ""}
+                      </div>
+                      <div className="text-slate-400 font-mono">{o.status}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-slate-500">No orders</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from typing import Dict, Optional
 
@@ -288,9 +288,13 @@ class LimitOrderHandler(MarketOrderHandler):
             return None
         price = Decimal(str(quote.price))
         limit_price = Decimal(str(order.limit_price))
-        should_fill = (
-            price <= limit_price if order.side == "buy" else price >= limit_price
-        )
+        # Cross-detection using bar ranges when available
+        hi = Decimal(str(quote.high)) if getattr(quote, "high", None) is not None else price
+        lo = Decimal(str(quote.low)) if getattr(quote, "low", None) is not None else price
+        if order.side == "buy":
+            should_fill = lo <= limit_price or price <= limit_price
+        else:
+            should_fill = hi >= limit_price or price >= limit_price
         if not should_fill:
             order.status = "working"
             order.save(update_fields=["status"])
@@ -309,8 +313,10 @@ class StopOrderHandler(MarketOrderHandler):
             return None
         price = Decimal(str(quote.price))
         stop_price = Decimal(str(order.stop_price))
+        hi = Decimal(str(quote.high)) if getattr(quote, "high", None) is not None else price
+        lo = Decimal(str(quote.low)) if getattr(quote, "low", None) is not None else price
         triggered = (
-            price >= stop_price if order.side == "buy" else price <= stop_price
+            hi >= stop_price if order.side == "buy" else lo <= stop_price
         )
         if not triggered:
             order.status = "working"
@@ -335,9 +341,9 @@ class StopLimitOrderHandler(MarketOrderHandler):
         price = Decimal(str(quote.price))
         stop_price = Decimal(str(order.stop_price))
         limit_price = Decimal(str(order.limit_price))
-        triggered = (
-            price >= stop_price if order.side == "buy" else price <= stop_price
-        )
+        hi = Decimal(str(quote.high)) if getattr(quote, "high", None) is not None else price
+        lo = Decimal(str(quote.low)) if getattr(quote, "low", None) is not None else price
+        triggered = hi >= stop_price if order.side == "buy" else lo <= stop_price
         if not triggered:
             order.status = "working"
             order.save(update_fields=["status"])
@@ -631,6 +637,20 @@ class ExecutionEngine:
         self.condition_evaluator = ConditionEvaluator(self.data_provider)
         self.backtest_mode = getattr(settings, "PAPER_BACKTEST_FILL_MODE", "live")
         self.slippage_bps = getattr(settings, "PAPER_SLIPPAGE_BPS", Decimal("0"))
+        self.slippage_mode = getattr(settings, "PAPER_SLIPPAGE_MODE", "bps")
+        self.slippage_fixed = Decimal(
+            getattr(settings, "PAPER_SLIPPAGE_FIXED", Decimal("0"))
+        )
+        self.max_fill_participation = Decimal(
+            str(getattr(settings, "PAPER_MAX_FILL_PARTICIPATION", Decimal("0.25")))
+        )
+        self.min_fill_size = Decimal(
+            str(getattr(settings, "PAPER_MIN_FILL_SHARES", Decimal("0")))
+        )
+        self.fee_mode = getattr(settings, "PAPER_FEE_MODE", "per_share")
+        self.fee_bps = Decimal(
+            str(getattr(settings, "PAPER_FEE_BPS", Decimal("0")))
+        )
         self.fees_per_share = getattr(
             settings, "PAPER_FEES_PER_SHARE", Decimal("0")
         )
@@ -639,6 +659,7 @@ class ExecutionEngine:
         )
         self.simulation_clock = getattr(settings, "PAPER_SIMULATION_CLOCK", "")
         self._override_now: Optional[datetime] = None
+        self._bar_volume_consumption: Dict[tuple, Decimal] = {}
 
     def run(self, simulation_time: Optional[datetime] = None):
         self._override_now = simulation_time or self._parse_simulation_clock()
@@ -659,6 +680,131 @@ class ExecutionEngine:
 
     def _current_time(self):
         return self._override_now or timezone.now()
+
+    def _append_event(self, order: PaperOrder, event: str, **payload):
+        if order.notes is None:
+            order.notes = {}
+        events = order.notes.setdefault("events", [])
+        entry = {
+            "timestamp": self._current_time().isoformat(),
+            "event": event,
+        }
+        for key, value in payload.items():
+            if value is None:
+                continue
+            entry[key] = value
+        events.append(entry)
+        return True
+
+    def _bar_key(self, symbol: str, quote: Quote, mode: str):
+        ts = getattr(quote, "timestamp", None) or self._current_time()
+        now = self._current_time()
+        if timezone.is_naive(ts):
+            ts = timezone.make_aware(ts, dt_timezone.utc)
+        # In backtests, allow advancing to a synthetic bar when data is stale to queue orders
+        if mode != "live" and ts < now - timedelta(minutes=1):
+            ts = now
+        bucket = ts.replace(second=0, microsecond=0)
+        return (symbol.upper(), bucket)
+
+    def _prune_old_bars(self, now):
+        cutoff = now - timedelta(days=1)
+        for key in list(self._bar_volume_consumption.keys()):
+            _, ts = key
+            if ts < cutoff:
+                self._bar_volume_consumption.pop(key, None)
+
+    def _bar_vwap_price(self, quote: Quote, fallback: Decimal) -> Decimal:
+        candidates = []
+        for attr in ["open", "high", "low", "close"]:
+            val = getattr(quote, attr, None)
+            if val is not None:
+                candidates.append(Decimal(str(val)))
+        if candidates:
+            return sum(candidates) / Decimal(len(candidates))
+        return Decimal(str(getattr(quote, "price", fallback))) if getattr(quote, "price", None) else fallback
+
+    def _apply_liquidity_constraints(
+        self, order: PaperOrder, quote: Quote, result: FillResult
+    ) -> FillResult:
+        if not result.filled or result.quantity <= 0:
+            return result
+        notes = order.notes or {}
+        mode = str(notes.get("backtest_fill_mode", self.backtest_mode))
+        if mode == "live":
+            return result
+        volume = getattr(quote, "volume", None)
+        if volume is None:
+            return result
+        volume_dec = Decimal(str(volume))
+        max_participation = Decimal(
+            str(notes.get("max_fill_participation", self.max_fill_participation))
+        )
+        min_fill = Decimal(str(notes.get("min_fill_size", self.min_fill_size)))
+        if volume_dec <= 0 or max_participation <= 0:
+            return result
+        cap = volume_dec * max_participation
+        cap = max(cap, min_fill)
+        self._prune_old_bars(self._current_time())
+        bar_key = self._bar_key(order.symbol, quote, mode)
+        consumed = self._bar_volume_consumption.get(bar_key, Decimal("0"))
+        cap = max(cap - consumed, Decimal("0"))
+        remaining_total = (order.quantity or result.quantity) - order.filled_quantity
+        cap = min(cap, remaining_total)
+        if cap <= 0:
+            result.filled = False
+            result.remaining = (order.quantity or result.quantity) - order.filled_quantity
+            result.notes["liquidity_block"] = True
+            result.notes["bar_volume"] = str(volume_dec)
+            result.notes["bar_ts"] = str(bar_key[1])
+            return result
+        desired = result.quantity
+        fill_qty = min(desired, cap)
+        self._bar_volume_consumption[bar_key] = consumed + fill_qty
+        if desired <= cap:
+            return result
+        unfilled_slice = desired - fill_qty
+        result.quantity = fill_qty
+        result.remaining = result.remaining + unfilled_slice
+        result.price = self._bar_vwap_price(quote, Decimal(str(result.price)))
+        result.notes["liquidity_cap"] = str(cap)
+        result.notes["bar_volume"] = str(volume_dec)
+        result.notes["bar_ts"] = str(bar_key[1])
+        result.notes["bar_vwap_applied"] = True
+        return result
+
+    def _apply_slippage(self, order: PaperOrder, base_price: Decimal) -> tuple[Decimal, Decimal]:
+        notes = order.notes or {}
+        mode = str(notes.get("slippage_mode", self.slippage_mode)).lower()
+        if mode == "none":
+            return base_price, Decimal("0")
+        if mode == "fixed":
+            fixed = Decimal(str(notes.get("slippage_fixed", self.slippage_fixed)))
+            shift = fixed if order.side == "buy" else -fixed
+            return base_price + shift, shift
+        bps = Decimal(str(notes.get("slippage_bps", self.slippage_bps)))
+        multiplier = (
+            Decimal("1") + (bps / Decimal("10000"))
+            if order.side == "buy"
+            else Decimal("1") - (bps / Decimal("10000"))
+        )
+        filled_price = base_price * multiplier
+        return filled_price, filled_price - base_price
+
+    def _calculate_fees(self, order: PaperOrder, quantity: Decimal, price: Decimal) -> Decimal:
+        notes = order.notes or {}
+        mode = str(notes.get("fee_mode", self.fee_mode)).lower()
+        base_notional = quantity * price
+        if mode == "bps":
+            fee_bps = Decimal(str(notes.get("fee_bps", self.fee_bps)))
+            fees = base_notional * (fee_bps / Decimal("10000"))
+        elif mode == "none":
+            fees = Decimal("0")
+        else:
+            per_share = Decimal(str(notes.get("fee_per_share", self.fees_per_share)))
+            fees = quantity * per_share
+        fees += self.flat_commission
+        return fees
 
     def _get_instrument(self, symbol: str) -> Instrument:
         sym = symbol.upper()
@@ -742,32 +888,51 @@ class ExecutionEngine:
         if not self.condition_evaluator.satisfied(order, quote, now):
             return
         result = handler.maybe_fill(order, portfolio, quote, now)
-        if result and result.filled:
-            self._apply_fill(order, portfolio, result)
-            if order.tif == "fok" and result.remaining > 0:
-                order.status = "canceled"
-                order.save(update_fields=["status"])
-        elif order.tif in {"ioc", "fok"}:
+        if result:
+            if result.filled:
+                result = self._apply_liquidity_constraints(order, quote, result)
+            if result.filled and result.quantity > 0:
+                self._apply_fill(order, portfolio, result)
+                if order.tif == "fok" and result.remaining > 0:
+                    order.status = "canceled"
+                    order.save(update_fields=["status"])
+                return
+            elif (
+                not result.filled
+                and any(
+                    key in result.notes
+                    for key in ["liquidity_block", "liquidity_cap", "bar_vwap_applied"]
+                )
+            ):
+                updates = []
+                logged = self._append_event(order, "liquidity_queue", **result.notes)
+                if order.status == "new":
+                    order.status = "working"
+                    updates.append("status")
+                if logged:
+                    updates.append("notes")
+                if updates:
+                    order.save(update_fields=list(dict.fromkeys(updates)))
+        if order.tif in {"ioc", "fok"}:
             order.status = "canceled"
+            order.save(update_fields=["status"])
+        elif result and order.status == "new":
+            order.status = "working"
             order.save(update_fields=["status"])
 
     @transaction.atomic
     def _apply_fill(
         self, order: PaperOrder, portfolio: PaperPortfolio, result: FillResult
     ):
-        fill_price = result.price
-        slippage_multiplier = (
-            Decimal("1") + (self.slippage_bps / Decimal("10000"))
-            if order.side == "buy"
-            else Decimal("1") - (self.slippage_bps / Decimal("10000"))
-        )
-        fill_price = fill_price * slippage_multiplier
+        base_price = Decimal(str(result.price))
+        fill_price, slippage_amt = self._apply_slippage(order, base_price)
+        result.slippage = slippage_amt
         instrument = self._get_instrument(order.symbol)
         qty = result.quantity
+        fees = self._calculate_fees(order, qty, fill_price) + Decimal(str(result.fees))
         cost = qty * fill_price
         entry_avg_price = None
         if order.side == "buy":
-            fees = (qty * self.fees_per_share) + self.flat_commission + result.fees
             portfolio.cash_balance -= cost + fees
             position, _ = PaperPosition.objects.get_or_create(
                 portfolio=portfolio,
@@ -792,7 +957,6 @@ class ExecutionEngine:
             position.save(update_fields=["quantity", "avg_price", "instrument"])
             self._refresh_position_market_value(position, fill_price)
         else:
-            fees = (qty * self.fees_per_share) + self.flat_commission + result.fees
             portfolio.cash_balance += cost - fees
             try:
                 position = PaperPosition.objects.get(
@@ -815,8 +979,8 @@ class ExecutionEngine:
             side=order.side,
             quantity=qty,
             price=fill_price,
-            fees=result.fees,
-            slippage=result.slippage,
+            fees=fees,
+            slippage=slippage_amt,
             strategy=order.strategy,
             realized_pnl=Decimal("0"),
         )
@@ -832,8 +996,24 @@ class ExecutionEngine:
         total_qty = order.quantity or new_total_filled
         remaining_after_fill = total_qty - new_total_filled
         order.status = "part_filled" if remaining_after_fill > 0 else "filled"
+        noted = self._append_event(
+            order,
+            "fill",
+            trade=trade.id,
+            quantity=str(qty),
+            base_price=str(base_price),
+            fill_price=str(fill_price),
+            slippage=str(slippage_amt),
+            fees=str(fees),
+            remaining=str(remaining_after_fill),
+        )
         order.save(
-            update_fields=["status", "filled_quantity", "average_fill_price"]
+            update_fields=[
+                "status",
+                "filled_quantity",
+                "average_fill_price",
+                *(["notes"] if noted else []),
+            ]
         )
         self._recalculate_portfolio_totals(portfolio)
         if order.side == "sell" and entry_avg_price is not None:
@@ -853,47 +1033,47 @@ class ExecutionEngine:
     def _handle_parent_child(self, order: PaperOrder, trade: PaperTrade):
         if order.children.exists():
             chain_id = order.chain_id or f"chain-{order.id}"
+            updates = []
             if order.chain_id != chain_id:
                 order.chain_id = chain_id
-                order.save(update_fields=["chain_id"])
+                updates.append("chain_id")
             PaperOrder.objects.filter(parent_id=order.id, chain_id="").update(chain_id=chain_id)
             count = PaperOrder.objects.filter(
                 parent_id=order.id, status__in=["new", "waiting"]
             ).update(status="working")
-            order.notes.setdefault("events", [])
-            order.notes["events"].append(
-                {
-                    "timestamp": timezone.now().isoformat(),
-                    "event": "activate_children",
-                    "chain": chain_id,
-                    "count": count,
-                }
-            )
-            order.save(update_fields=["notes"])
+            if self._append_event(
+                order,
+                "activate_children",
+                chain=chain_id,
+                count=count,
+                trade=trade.id,
+            ):
+                updates.append("notes")
+            if updates:
+                order.save(update_fields=list(dict.fromkeys(updates)))
             return
         parent = order.parent
         if not parent:
             return
-        parent.notes.setdefault("events", [])
-        parent.notes["events"].append(
-            {
-                "timestamp": timezone.now().isoformat(),
-                "event": "child_fill",
-                "child": order.id,
-                "role": order.child_role,
-                "status": order.status,
-            }
+        parent_event_logged = self._append_event(
+            parent,
+            "child_fill",
+            child=order.id,
+            role=order.child_role,
+            status=order.status,
+            trade=trade.id,
         )
-        parent.save(update_fields=["notes"])
         siblings_qs = PaperOrder.objects.filter(parent_id=parent.id).exclude(id=order.id)
         action = "none"
         count = 0
+        affected_ids = []
         if parent.order_type in {"bracket", "otoco"} or order.child_role in {"tp", "sl"}:
             for sibling in siblings_qs:
                 if sibling.status not in {"canceled", "filled"}:
                     sibling.status = "canceled"
                     sibling.save(update_fields=["status"])
                     count += 1
+                    affected_ids.append(sibling.id)
             action = "cancel"
         elif parent.order_type == "oco":
             for sibling in siblings_qs:
@@ -901,6 +1081,7 @@ class ExecutionEngine:
                     sibling.status = "canceled"
                     sibling.save(update_fields=["status"])
                     count += 1
+                    affected_ids.append(sibling.id)
             action = "cancel"
         elif parent.order_type == "oto":
             for sibling in siblings_qs:
@@ -908,16 +1089,25 @@ class ExecutionEngine:
                     sibling.status = "working"
                     sibling.save(update_fields=["status"])
                     count += 1
+                    affected_ids.append(sibling.id)
             action = "activate"
-        parent.notes["events"].append(
-            {
-                "timestamp": timezone.now().isoformat(),
-                "event": "chain_action",
-                "action": action,
-                "count": count,
-            }
+        elif parent.order_type == "otoco":
+            activated = siblings_qs.filter(status="new").update(status="working")
+            count = activated
+            affected_ids = list(
+                siblings_qs.filter(status="working").values_list("id", flat=True)
+            )
+            action = "activate"
+        chain_logged = self._append_event(
+            parent,
+            "chain_action",
+            action=action,
+            count=count,
+            affected=affected_ids,
+            chain=parent.chain_id,
         )
-        parent.save(update_fields=["notes"])
+        if parent_event_logged or chain_logged:
+            parent.save(update_fields=["notes"])
 
     def _tif_allows_processing(self, order: PaperOrder, now) -> bool:
         if order.tif == "day":

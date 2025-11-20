@@ -115,3 +115,29 @@ class PaperOrderSerializerTests(TestCase):
             "condition_payload is required for conditional orders.",
             serializer.errors["non_field_errors"][0],
         )
+
+    def test_slippage_fee_overrides_roundtrip(self):
+        payload = {
+            "portfolio": self.portfolio.id,
+            "symbol": "SHOP",
+            "side": "buy",
+            "order_type": "market",
+            "tif": "day",
+            "quantity": "10",
+            "slippage_mode": "fixed",
+            "slippage_fixed": "0.12",
+            "fee_mode": "bps",
+            "fee_bps": "5",
+        }
+        serializer = PaperOrderSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        order = serializer.save()
+        self.assertEqual(order.notes.get("slippage_mode"), "fixed")
+        self.assertEqual(order.notes.get("slippage_fixed"), "0.1200")
+        self.assertEqual(order.notes.get("fee_mode"), "bps")
+        self.assertEqual(order.notes.get("fee_bps"), "5.0000")
+        data = PaperOrderSerializer(order).data
+        self.assertEqual(data["slippage_mode"], "fixed")
+        self.assertEqual(data["slippage_fixed"], "0.1200")
+        self.assertEqual(data["fee_mode"], "bps")
+        self.assertEqual(data["fee_bps"], "5.0000")

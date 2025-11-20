@@ -43,6 +43,8 @@ export default function Orders() {
   const [screenCache, setScreenCache] = useState({});
   const [screenLoadingKey, setScreenLoadingKey] = useState("");
   const [screenFetchError, setScreenFetchError] = useState("");
+  const [auditState, setAuditState] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const childCounts = useMemo(() => {
     const counts = {};
@@ -181,12 +183,38 @@ export default function Orders() {
     setCapsByPortfolio((prev) => ({ ...prev, quotes: liveQuotes }));
   }, [liveQuotes]);
 
+  const loadAudit = async (orderId) => {
+    if (!token) return;
+    setAuditLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/paper/orders/${orderId}/audit/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch audit");
+      const data = await res.json();
+      setAuditState(data);
+    } catch (err) {
+      setError(err.message || "Failed to load audit trail");
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
   const startEditing = (order) => {
     setEditing((prev) => ({
       ...prev,
       [order.id]: {
         limit_price: order.limit_price ?? "",
         stop_price: order.stop_price ?? "",
+        slippage_mode: order.slippage_mode || "",
+        slippage_bps: order.slippage_bps || "",
+        slippage_fixed: order.slippage_fixed || "",
+        fee_mode: order.fee_mode || "",
+        fee_bps: order.fee_bps || "",
+        fee_per_share: order.fee_per_share || "",
+        max_fill_participation: order.max_fill_participation || "",
+        min_fill_size: order.min_fill_size || "",
+        backtest_fill_mode: order.backtest_fill_mode || "",
       },
     }));
   };
@@ -216,6 +244,24 @@ export default function Orders() {
     if ("stop_price" in values && values.stop_price !== "") {
       payload.stop_price = Number(values.stop_price);
     }
+    [
+      "slippage_mode",
+      "slippage_bps",
+      "slippage_fixed",
+      "fee_mode",
+      "fee_bps",
+      "fee_per_share",
+      "max_fill_participation",
+      "min_fill_size",
+      "backtest_fill_mode",
+    ].forEach((field) => {
+      if (field in values && values[field] !== "") {
+        payload[field] =
+          typeof values[field] === "string" && !isNaN(values[field])
+            ? Number(values[field])
+            : values[field];
+      }
+    });
     if (!Object.keys(payload).length) {
       cancelInlineEdit(order.id);
       return;
@@ -284,6 +330,79 @@ export default function Orders() {
               className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs"
             />
           )}
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <select
+              value={editState.slippage_mode}
+              onChange={(e) => handleEditChange(order.id, "slippage_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            >
+              <option value="">slip default</option>
+              <option value="bps">bps</option>
+              <option value="fixed">fixed</option>
+              <option value="none">none</option>
+            </select>
+            <select
+              value={editState.fee_mode}
+              onChange={(e) => handleEditChange(order.id, "fee_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            >
+              <option value="">fee default</option>
+              <option value="per_share">per share</option>
+              <option value="bps">bps</option>
+              <option value="none">none</option>
+            </select>
+            <input
+              type="number"
+              value={editState.slippage_bps}
+              onChange={(e) => handleEditChange(order.id, "slippage_bps", e.target.value)}
+              placeholder="slip bps"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <input
+              type="number"
+              value={editState.slippage_fixed}
+              onChange={(e) => handleEditChange(order.id, "slippage_fixed", e.target.value)}
+              placeholder="slip fixed"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <input
+              type="number"
+              value={editState.fee_bps}
+              onChange={(e) => handleEditChange(order.id, "fee_bps", e.target.value)}
+              placeholder="fee bps"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <input
+              type="number"
+              value={editState.fee_per_share}
+              onChange={(e) => handleEditChange(order.id, "fee_per_share", e.target.value)}
+              placeholder="fee/share"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <input
+              type="number"
+              value={editState.max_fill_participation}
+              onChange={(e) => handleEditChange(order.id, "max_fill_participation", e.target.value)}
+              placeholder="max part"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <input
+              type="number"
+              value={editState.min_fill_size}
+              onChange={(e) => handleEditChange(order.id, "min_fill_size", e.target.value)}
+              placeholder="min fill"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+            />
+            <select
+              value={editState.backtest_fill_mode}
+              onChange={(e) => handleEditChange(order.id, "backtest_fill_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 col-span-2"
+            >
+              <option value="">backtest fill</option>
+              <option value="history">history</option>
+              <option value="live">live</option>
+            </select>
+          </div>
           {!showLimit && !showStop && (
             <span className="text-xs text-slate-500">No editable prices</span>
           )}
@@ -382,6 +501,13 @@ export default function Orders() {
           className="px-2 py-1 rounded-lg border border-rose-700 text-rose-200 disabled:opacity-60"
         >
           {cancelingOrderId === order.id ? "Canceling..." : "Cancel"}
+        </button>
+        <button
+          type="button"
+          onClick={() => loadAudit(order.id)}
+          className="px-2 py-1 rounded-lg border border-slate-700"
+        >
+          {auditLoading && auditState?.order?.id === order.id ? "Loading…" : "Audit"}
         </button>
       </div>
     );
@@ -506,6 +632,73 @@ export default function Orders() {
         }}
         onSuccess={loadOrders}
       />
+      {auditState && (
+        <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">
+              Audit · Order #{auditState.order?.id} ({auditState.order?.symbol})
+            </div>
+            <button
+              type="button"
+              onClick={() => setAuditState(null)}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] uppercase text-slate-400 mb-1">Events</div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                {(auditState.events || []).length ? (
+                  auditState.events.map((evt, idx) => (
+                    <div key={`evt-${idx}`} className="px-3 py-2 text-xs">
+                      <div className="font-mono text-[11px] text-slate-400">
+                        {evt.timestamp || "—"}
+                      </div>
+                      <div className="text-emerald-100">{evt.event}</div>
+                      <div className="text-slate-300">
+                        {Object.entries(evt)
+                          .filter(([k]) => k !== "event" && k !== "timestamp")
+                          .map(([k, v]) => (
+                            <span key={k} className="mr-2">
+                              {k}: {v}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-slate-500">No events</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase text-slate-400 mb-1">Trades</div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                {(auditState.trades || []).length ? (
+                  auditState.trades.map((t) => (
+                    <div key={t.id} className="px-3 py-2 text-xs flex justify-between">
+                      <div className="space-y-1">
+                        <div className="font-semibold">
+                          {t.side.toUpperCase()} {t.quantity} @ {t.price}
+                        </div>
+                        <div className="text-slate-400 font-mono">{t.created_at}</div>
+                      </div>
+                      <div className="text-right text-slate-300">
+                        Fees: {t.fees} <br />
+                        Slippage: {t.slippage}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-slate-500">No trades</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <Toast
         message={toastState?.msg}
         tone={toastState?.tone}
@@ -525,6 +718,15 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     limit_price: "",
     take_profit: "",
     stop_loss: "",
+    slippage_mode: "",
+    slippage_bps: "",
+    slippage_fixed: "",
+    fee_mode: "",
+    fee_bps: "",
+    fee_per_share: "",
+    max_fill_participation: "",
+    min_fill_size: "",
+    backtest_fill_mode: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -542,6 +744,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentMeta, setInstrumentMeta] = useState({});
   const [capsByPortfolio, setCapsByPortfolio] = useState({});
   const [toastState, setToastState] = useState(null);
+  const formQuotes = useQuotes(form.symbol ? [form.symbol] : []);
   const liveQuotes = useQuotes(orders.map((o) => o.symbol));
 
   const updateField = (field, value) => {
@@ -564,6 +767,25 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     [portfolios, form.portfolio]
   );
   const capViolation = submitError?.toLowerCase().includes("cap");
+  const liveFormPrice =
+    formQuotes[form.symbol] || formQuotes[form.symbol?.toUpperCase()];
+  const estPrice = Number(form.limit_price || liveFormPrice || 0);
+  const estNotional = estPrice > 0 ? Number(form.quantity || 0) * estPrice : 0;
+  const capPreview =
+    selectedPortfolio && estNotional > 0
+      ? {
+          single:
+            selectedPortfolio.max_single_position_pct &&
+            estNotional >
+              Number(selectedPortfolio.equity || selectedPortfolio.cash_balance || 0) *
+                (Number(selectedPortfolio.max_single_position_pct) / 100),
+          gross:
+            selectedPortfolio.max_gross_exposure_pct &&
+            estNotional >
+              Number(selectedPortfolio.equity || selectedPortfolio.cash_balance || 0) *
+                (Number(selectedPortfolio.max_gross_exposure_pct) / 100),
+        }
+      : null;
 
   const currentWatchlist = useMemo(
     () =>
@@ -665,6 +887,25 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
       if (form.order_type === "limit" && form.limit_price) {
         payload.limit_price = Number(form.limit_price);
       }
+      const overrides = {};
+      if (form.slippage_mode) overrides.slippage_mode = form.slippage_mode;
+      ["slippage_bps", "slippage_fixed", "fee_bps", "fee_per_share", "max_fill_participation", "min_fill_size"].forEach(
+        (field) => {
+          if (form[field]) {
+            overrides[field] = Number(form[field]);
+          }
+        }
+      );
+      if (form.fee_mode) overrides.fee_mode = form.fee_mode;
+      if (form.backtest_fill_mode) overrides.backtest_fill_mode = form.backtest_fill_mode;
+      Object.assign(payload, overrides);
+      if (capPreview && (capPreview.single || capPreview.gross)) {
+        const proceed = window.confirm("Live quote sizing suggests a cap breach. Submit anyway?");
+        if (!proceed) {
+          setSubmitting(false);
+          return;
+        }
+      }
       const res = await fetch(`${BASE}/api/paper/orders/`, {
         method: "POST",
         headers: {
@@ -692,6 +933,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           tif: "day",
           chain_id: chainId,
           child_role: "tp",
+          ...overrides,
         });
       }
       if (form.stop_loss) {
@@ -706,6 +948,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           tif: "day",
           chain_id: chainId,
           child_role: "sl",
+          ...overrides,
         });
       }
       for (const child of childPayloads) {
@@ -843,6 +1086,91 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
         />
       </div>
+      <div className="grid md:grid-cols-3 gap-3 text-xs">
+        <div className="space-y-2">
+          <div className="text-[11px] text-slate-400">Slippage</div>
+          <select
+            value={form.slippage_mode}
+            onChange={(e) => updateField("slippage_mode", e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          >
+            <option value="">Default (bps)</option>
+            <option value="bps">bps</option>
+            <option value="fixed">fixed</option>
+            <option value="none">none</option>
+          </select>
+          <div className="flex gap-2">
+            <input
+              value={form.slippage_bps}
+              onChange={(e) => updateField("slippage_bps", e.target.value)}
+              placeholder="Slippage bps"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+            <input
+              value={form.slippage_fixed}
+              onChange={(e) => updateField("slippage_fixed", e.target.value)}
+              placeholder="Fixed ($)"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="text-[11px] text-slate-400">Fees</div>
+          <select
+            value={form.fee_mode}
+            onChange={(e) => updateField("fee_mode", e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          >
+            <option value="">Default (per-share)</option>
+            <option value="per_share">per share</option>
+            <option value="bps">bps</option>
+            <option value="none">none</option>
+          </select>
+          <div className="flex gap-2">
+            <input
+              value={form.fee_bps}
+              onChange={(e) => updateField("fee_bps", e.target.value)}
+              placeholder="Fee bps"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+            <input
+              value={form.fee_per_share}
+              onChange={(e) => updateField("fee_per_share", e.target.value)}
+              placeholder="Fee per share"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="text-[11px] text-slate-400">Backtest fills</div>
+          <select
+            value={form.backtest_fill_mode}
+            onChange={(e) => updateField("backtest_fill_mode", e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          >
+            <option value="">Default</option>
+            <option value="history">History VWAP</option>
+            <option value="live">Live</option>
+          </select>
+          <div className="flex gap-2">
+            <input
+              value={form.max_fill_participation}
+              onChange={(e) => updateField("max_fill_participation", e.target.value)}
+              placeholder="Max participation (0-1)"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+            <input
+              value={form.min_fill_size}
+              onChange={(e) => updateField("min_fill_size", e.target.value)}
+              placeholder="Min fill size"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Controls bar VWAP slices + volume participation in backtests.
+          </div>
+        </div>
+      </div>
       {selectedPortfolio && (
         <div className="text-[11px] text-slate-400">
           Caps:{" "}
@@ -852,6 +1180,15 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           | Single pos %:{" "}
           {selectedPortfolio.max_single_position_pct || "—"} | Gross %:{" "}
           {selectedPortfolio.max_gross_exposure_pct || "—"}
+        </div>
+      )}
+      {estNotional > 0 && (
+        <div className="text-[11px] text-slate-300">
+          Est. notional ~ {estNotional.toLocaleString()} (price using{" "}
+          {form.limit_price ? "limit" : liveFormPrice ? "live quote" : "qty only"})
+          {capPreview && (capPreview.single || capPreview.gross) && (
+            <span className="text-rose-300 ml-2">Possible cap breach</span>
+          )}
         </div>
       )}
       {capViolation && (
@@ -955,7 +1292,14 @@ function CapBadges({ order, capsByPortfolio, onWarn }) {
     return <span className="text-slate-500 text-xs">—</span>;
   }
   const qty = Number(order.quantity || 0);
-  const priceHint = Number(order.limit_price || order.stop_price || quotes[order.symbol] || 0);
+  const live = quotes[order.symbol] || quotes[order.symbol?.toUpperCase()];
+  const priceHint = Number(
+    order.limit_price ||
+      order.stop_price ||
+      live ||
+      order.average_fill_price ||
+      0
+  );
   const notional = priceHint > 0 ? qty * priceHint : Number(order.notional || 0);
   const single = caps.maxSingle
     ? notional > caps.equity * (caps.maxSingle / 100)

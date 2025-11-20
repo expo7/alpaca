@@ -196,6 +196,25 @@ class OrderViewSet(viewsets.ModelViewSet):
             portfolio__user=self.request.user
         ).select_related("portfolio")
 
+    def _ordered_events(self, order: PaperOrder):
+        events = (order.notes or {}).get("events", [])
+        return sorted(events, key=lambda evt: evt.get("timestamp") or "")
+
+    @action(detail=True, methods=["get"])
+    def audit(self, request, pk=None):
+        order = self.get_object()
+        trades_qs = order.trades.order_by("-created_at")[:100]
+        children_qs = order.children.select_related("portfolio").all()
+        payload = {
+            "order": PaperOrderSerializer(order).data,
+            "events": self._ordered_events(order),
+            "trades": PaperTradeSerializer(trades_qs, many=True).data,
+            "children": PaperOrderSerializer(children_qs, many=True).data,
+        }
+        if order.parent_id:
+            payload["parent"] = PaperOrderSerializer(order.parent).data
+        return Response(payload)
+
     def perform_create(self, serializer):
         portfolio = serializer.validated_data["portfolio"]
         if portfolio.user != self.request.user:
@@ -417,6 +436,31 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def audit(self, request, pk=None):
+        position = self.get_object()
+        if position.portfolio.user != request.user:
+            raise PermissionDenied("Not your position.")
+        trades = (
+            PaperTrade.objects.filter(
+                portfolio=position.portfolio, symbol=position.symbol
+            )
+            .order_by("-created_at")[:100]
+        )
+        orders = (
+            PaperOrder.objects.filter(
+                portfolio=position.portfolio, symbol=position.symbol
+            )
+            .order_by("-created_at")[:50]
+        )
+        return Response(
+            {
+                "position": PaperPositionSerializer(position).data,
+                "trades": PaperTradeSerializer(trades, many=True).data,
+                "orders": PaperOrderSerializer(orders, many=True).data,
+            }
+        )
 
     @action(detail=True, methods=["post"])
     def rebalance(self, request, pk=None):

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from paper.models import PaperPortfolio, PaperOrder
@@ -203,6 +203,7 @@ class ExecutionEngineTests(TestCase):
         self.assertEqual(l1.status, "filled")
         self.assertEqual(l2.status, "canceled", parent.notes)
         self.assertEqual(parent.notes["events"][-1]["event"], "chain_action")
+        self.assertEqual(set(parent.notes["events"][-1].get("affected", [])), {l2.id})
 
     def test_oto_activates_child(self):
         parent = PaperOrder.objects.create(
@@ -496,3 +497,109 @@ class ExecutionEngineTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, "expired")
         self.assertEqual(order.filled_quantity, Decimal("0"))
+
+    @override_settings(
+        PAPER_BACKTEST_FILL_MODE="history",
+        PAPER_MAX_FILL_PARTICIPATION=Decimal("0.1"),
+    )
+    def test_backtest_volume_caps_partial_fill(self):
+        order = PaperOrder.objects.create(
+            portfolio=self.portfolio,
+            symbol="META",
+            side="buy",
+            order_type="market",
+            tif="day",
+            quantity=Decimal("100"),
+            extended_hours=True,
+            status="new",
+        )
+        provider = DummyProvider(
+            {"META": Quote("META", price=300, timestamp=datetime.utcnow(), volume=50)}
+        )
+        engine = ExecutionEngine(data_provider=provider)
+        engine.run()
+        order.refresh_from_db()
+        self.assertEqual(order.filled_quantity, Decimal("5"))
+        self.assertEqual(order.status, "part_filled")
+        engine.run()
+        order.refresh_from_db()
+        # same bar should not allow more than already consumed volume
+        self.assertEqual(order.filled_quantity, Decimal("5"))
+        provider.price_map["META"] = Quote(
+            "META",
+            price=300,
+            timestamp=datetime.utcnow() + timedelta(minutes=1),
+            volume=50,
+        )
+        engine.run()
+        order.refresh_from_db()
+        self.assertEqual(order.filled_quantity, Decimal("10"))
+
+    @override_settings(
+        PAPER_SLIPPAGE_MODE="fixed",
+        PAPER_SLIPPAGE_FIXED=Decimal("0.5"),
+        PAPER_FEE_MODE="bps",
+        PAPER_FEE_BPS=Decimal("5"),
+    )
+    def test_slippage_and_fee_modes_apply(self):
+        order = PaperOrder.objects.create(
+            portfolio=self.portfolio,
+            symbol="IBM",
+            side="buy",
+            order_type="market",
+            tif="day",
+            quantity=Decimal("10"),
+            extended_hours=True,
+            status="new",
+        )
+        provider = DummyProvider(
+            {"IBM": Quote("IBM", price=100, timestamp=datetime.utcnow(), volume=50000)}
+        )
+        engine = ExecutionEngine(data_provider=provider)
+        engine.run()
+        order.refresh_from_db()
+        trade = order.trades.first()
+        self.assertEqual(order.average_fill_price, Decimal("100.5"))
+        expected_fee = Decimal("100.5") * Decimal("10") * (Decimal("5") / Decimal("10000"))
+        self.assertEqual(trade.fees, expected_fee)
+        self.assertEqual(trade.slippage, Decimal("0.5"))
+        fill_events = [
+            evt for evt in (order.notes or {}).get("events", []) if evt.get("event") == "fill"
+        ]
+        self.assertGreaterEqual(len(fill_events), 1)
+
+    @override_settings(
+        PAPER_BACKTEST_FILL_MODE="history",
+        PAPER_MAX_FILL_PARTICIPATION=Decimal("0.5"),
+    )
+    def test_partial_fill_uses_bar_vwap(self):
+        order = PaperOrder.objects.create(
+            portfolio=self.portfolio,
+            symbol="BRK",
+            side="buy",
+            order_type="market",
+            tif="day",
+            quantity=Decimal("4"),
+            extended_hours=True,
+            status="new",
+        )
+        provider = DummyProvider(
+            {
+                "BRK": Quote(
+                    "BRK",
+                    price=9,
+                    open=10,
+                    high=12,
+                    low=8,
+                    close=11,
+                    timestamp=datetime.utcnow(),
+                    volume=4,
+                )
+            }
+        )
+        engine = ExecutionEngine(data_provider=provider)
+        engine.run()
+        order.refresh_from_db()
+        trade = order.trades.first()
+        self.assertEqual(order.filled_quantity, Decimal("2"))
+        self.assertEqual(trade.price, Decimal("10.25"))

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from paper.models import (
@@ -106,6 +108,41 @@ class PaperPositionSerializer(serializers.ModelSerializer):
 
 
 class PaperOrderSerializer(serializers.ModelSerializer):
+    slippage_mode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    slippage_bps = serializers.DecimalField(
+        max_digits=8, decimal_places=4, required=False, allow_null=True
+    )
+    slippage_fixed = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    fee_mode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    fee_bps = serializers.DecimalField(
+        max_digits=8, decimal_places=4, required=False, allow_null=True
+    )
+    fee_per_share = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    max_fill_participation = serializers.DecimalField(
+        max_digits=6, decimal_places=4, required=False, allow_null=True
+    )
+    min_fill_size = serializers.DecimalField(
+        max_digits=18, decimal_places=6, required=False, allow_null=True
+    )
+    backtest_fill_mode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    audit_events = serializers.SerializerMethodField(read_only=True)
+
+    ADVANCED_FIELDS = [
+        "slippage_mode",
+        "slippage_bps",
+        "slippage_fixed",
+        "fee_mode",
+        "fee_bps",
+        "fee_per_share",
+        "max_fill_participation",
+        "min_fill_size",
+        "backtest_fill_mode",
+    ]
+
     class Meta:
         model = PaperOrder
         fields = [
@@ -141,6 +178,16 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "created_at",
             "expires_at",
             "notes",
+            "slippage_mode",
+            "slippage_bps",
+            "slippage_fixed",
+            "fee_mode",
+            "fee_bps",
+            "fee_per_share",
+            "max_fill_participation",
+            "min_fill_size",
+            "backtest_fill_mode",
+            "audit_events",
         ]
         read_only_fields = [
             "status",
@@ -148,6 +195,7 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "average_fill_price",
             "algo_next_run_at",
             "algo_slice_index",
+            "audit_events",
         ]
 
     def validate(self, attrs):
@@ -202,6 +250,45 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("condition_payload is required for conditional orders.")
 
         return data
+
+    def get_audit_events(self, instance):
+        events = (instance.notes or {}).get("events", [])
+        return sorted(
+            events, key=lambda evt: evt.get("timestamp") or "", reverse=False
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        notes = instance.notes or {}
+        for field in self.ADVANCED_FIELDS:
+            value = notes.get(field)
+            if isinstance(value, Decimal):
+                value = str(value)
+            data[field] = value
+        return data
+
+    def _attach_overrides(self, validated_data):
+        overrides = {}
+        for key in list(self.ADVANCED_FIELDS):
+            if key in validated_data:
+                value = validated_data.pop(key)
+                if isinstance(value, Decimal):
+                    value = str(value)
+                overrides[key] = value
+        if overrides:
+            notes = validated_data.get("notes") or {}
+            merged = {**notes}
+            merged.update(overrides)
+            validated_data["notes"] = merged
+        return validated_data
+
+    def create(self, validated_data):
+        validated_data = self._attach_overrides(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data = self._attach_overrides(validated_data)
+        return super().update(instance, validated_data)
 
 
 class PaperTradeSerializer(serializers.ModelSerializer):

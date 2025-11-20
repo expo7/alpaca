@@ -20,6 +20,8 @@ Progress so far (complete)
 - Valuation: fills refresh position market_value with latest quote and keep equity/unrealized in sync; instruments auto-created on quotes; instrument lookup API for order ticket filtering.
 - Positions UI: live caps, server-side pagination, positions/close/rebalance actions with limit guards.
 - Quotes: shared hook and `/api/paper/quotes/` endpoint for cap checks; frontend toasts for cap breaches.
+- Execution fidelity: intrabar cross detection for stop/limit types, backtest volume-based partial fills with bar-level volume budgets, bar VWAP pricing for capped slices, configurable slippage modes (bps/fixed/none) and fee modes (bps/per-share), and richer chain/fill audit events on orders.
+- Audits & overrides: order/position audit endpoints for events/trades, order ticket supports per-order slippage/fee/backtest participation overrides with UI plumbing.
 
 Open todo / gaps (prioritized)
 1) Portfolio management & instruments
@@ -39,7 +41,7 @@ Open todo / gaps (prioritized)
 
 Next steps to reach objective
 - Frontend (risk/ops polish): finish positions UX with cap badges/toasts tied to live quotes; add page info + jump-to-page; enrich order ticket with live cap pre-checks and instrument metadata.
-- Execution fidelity: improve historical fill logic (cross detection, partial fills), advanced slippage/fee models, and edge cases for OCO/OTO chains with audit trail of fills/events.
+- Execution fidelity: export fill/chain audit history to the API for UI drill-ins, add bar VWAP + participation settings to backtests (configurable per order), and model order queueing across consecutive bars (e.g., advancing to next bar when liquidity is exhausted).
 - Portfolio features: implement deposits/withdrawals UI, portfolio detail showing positions + open orders, and reset/reseed UI with audit history.
 - Analytics: add per-user performance summary endpoint and store more metrics per snapshot; add seasonal leaderboard filters.
 - Market data: add provider abstraction retries/caching and delayed toggle baked into settings/UI.
