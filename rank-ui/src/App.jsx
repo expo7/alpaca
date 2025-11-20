@@ -10,6 +10,10 @@ import Navbar from "./components/Navbar.jsx";
 import Watchlists from "./pages/Watchlists.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import Settings from "./pages/Settings.jsx";
+import StrategyBuilder from "./pages/StrategyBuilder.jsx";
+import Orders from "./pages/Orders.jsx";
+import Performance from "./pages/Performance.jsx";
+import Leaderboards from "./pages/Leaderboards.jsx";
 import Sparkline from "./components/Sparkline.jsx";
 import { APP_NAME } from "./brand";
 import Backtests from "./pages/Backtests.jsx";
@@ -757,6 +761,12 @@ export default function App() {
           <Backtests defaultTickers={body.tickers} />
         )}
 
+        {page === "orders" && <Orders />}
+
+        {page === "performance" && <Performance />}
+
+        {page === "leaderboards" && <Leaderboards />}
+
         {page === "settings" && (
           <Settings
             tickers={tickers}
@@ -769,6 +779,8 @@ export default function App() {
             setTa={setTa}
           />
         )}
+
+        {page === "strategies" && <StrategyBuilder />}
       </main>
 
       {/* ==============================

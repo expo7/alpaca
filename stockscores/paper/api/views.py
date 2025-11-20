@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from django.utils import timezone
 from rest_framework import viewsets, mixins, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -17,6 +20,7 @@ from .serializers import (
     StrategySerializer,
     LeaderboardSeasonSerializer,
     LeaderboardEntrySerializer,
+    PerformanceSnapshotSerializer,
 )
 
 
@@ -38,6 +42,60 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=["get"])
+    def performance(self, request, pk=None):
+        portfolio = self.get_object()
+        latest_snapshot = portfolio.snapshots.order_by("-timestamp").first()
+        start_equity = portfolio.starting_balance or Decimal("0")
+        if start_equity <= 0:
+            start_equity = Decimal("1")
+        equity = latest_snapshot.equity if latest_snapshot else portfolio.equity
+        cash = latest_snapshot.cash if latest_snapshot else portfolio.cash_balance
+        realized = (
+            latest_snapshot.realized_pnl if latest_snapshot else portfolio.realized_pnl
+        )
+        unrealized = (
+            latest_snapshot.unrealized_pnl
+            if latest_snapshot
+            else portfolio.unrealized_pnl
+        )
+        total_return_pct = float(
+            ((equity - start_equity) / start_equity) * Decimal("100")
+        )
+        first_snapshot = portfolio.snapshots.order_by("timestamp").first()
+        started_at = (
+            first_snapshot.timestamp if first_snapshot else portfolio.created_at
+        )
+        days_active = max(
+            1, (timezone.now().date() - started_at.date()).days + 1
+        )
+        payload = {
+            "portfolio_id": portfolio.id,
+            "equity": str(equity),
+            "cash": str(cash),
+            "total_return_pct": total_return_pct,
+            "realized_pnl": str(realized),
+            "unrealized_pnl": str(unrealized),
+            "days_active": days_active,
+        }
+        if latest_snapshot:
+            payload["latest_snapshot"] = PerformanceSnapshotSerializer(
+                latest_snapshot
+            ).data
+        return Response(payload)
+
+    @action(detail=True, methods=["get"], url_path="performance/snapshots")
+    def performance_snapshots(self, request, pk=None):
+        portfolio = self.get_object()
+        limit = min(
+            365,
+            max(5, int(request.query_params.get("limit", 90))),
+        )
+        qs = list(portfolio.snapshots.order_by("-timestamp")[:limit])
+        qs.reverse()
+        serializer = PerformanceSnapshotSerializer(qs, many=True)
+        return Response(serializer.data)
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -111,3 +169,4 @@ class LeaderboardEntryViewSet(viewsets.ReadOnlyModelViewSet):
         if metric:
             qs = qs.filter(metric=metric)
         return qs
+from paper.engine.runner import StrategyRunner

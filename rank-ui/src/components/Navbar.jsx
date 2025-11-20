@@ -9,8 +9,12 @@ const tabs = [
   { id: "dashboard", label: "Dashboard" },
   { id: "watchlists", label: "Watchlists" },
   { id: "alerts", label: "Alerts" },
+  { id: "orders", label: "Orders" },
+  { id: "performance", label: "Performance" },
+  { id: "leaderboards", label: "Leaderboards" },
   { id: "settings", label: "Settings" },
   { id: "backtests", label: "Backtests" },
+  { id: "strategies", label: "Strategies" },
 ];
 
 export default function Navbar({ user, active, onNavigate, onLogout }) {

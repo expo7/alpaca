@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any
+from decimal import Decimal
 
 from django.utils import timezone
 from django.db import transaction

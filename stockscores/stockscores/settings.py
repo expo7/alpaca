@@ -177,6 +177,23 @@ PAPER_SLIPPAGE_BPS = Decimal(os.getenv("PAPER_SLIPPAGE_BPS", "0"))
 PAPER_BACKTEST_FILL_MODE = os.getenv("PAPER_BACKTEST_FILL_MODE", "next_open")
 PAPER_SIMULATION_CLOCK = os.getenv("PAPER_SIMULATION_CLOCK", "")
 
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_BEAT_SCHEDULE = {
+    "paper-algo-slices": {
+        "task": "paper.tasks.run_algo_slices",
+        "schedule": 60.0,
+    },
+    "paper-snapshots": {
+        "task": "paper.tasks.snapshot_portfolios",
+        "schedule": 300.0,
+    },
+    "paper-leaderboards": {
+        "task": "paper.tasks.recompute_leaderboards",
+        "schedule": 1800.0,
+    },
+}
+
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")
 HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")
 WEBSHARE_PROXY = os.getenv("WEBSHARE_PROXY", "")

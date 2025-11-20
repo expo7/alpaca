@@ -171,7 +171,11 @@ class PaperOrder(models.Model):
     parent = models.ForeignKey(
         "self", null=True, blank=True, related_name="children", on_delete=models.CASCADE
     )  # bracket/OCO
+    chain_id = models.CharField(max_length=32, blank=True)
+    child_role = models.CharField(max_length=32, blank=True)  # e.g. entry, tp, sl
     algo_params = models.JSONField(default=dict, blank=True)
+    algo_next_run_at = models.DateTimeField(null=True, blank=True)
+    algo_slice_index = models.PositiveIntegerField(default=0)
     status = models.CharField(
         max_length=24,
         choices=ORDER_STATUS_CHOICES,

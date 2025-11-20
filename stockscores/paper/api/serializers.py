@@ -5,6 +5,7 @@ from paper.models import (
     PaperPosition,
     PaperOrder,
     PaperTrade,
+    PerformanceSnapshot,
     Strategy,
     StrategyRule,
     LeaderboardSeason,
@@ -69,15 +70,25 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "condition_type",
             "condition_payload",
             "algo_params",
+            "chain_id",
+            "child_role",
             "parent",
             "status",
             "filled_quantity",
             "average_fill_price",
+            "algo_next_run_at",
+            "algo_slice_index",
             "created_at",
             "expires_at",
             "notes",
         ]
-        read_only_fields = ["status", "filled_quantity", "average_fill_price"]
+        read_only_fields = [
+            "status",
+            "filled_quantity",
+            "average_fill_price",
+            "algo_next_run_at",
+            "algo_slice_index",
+        ]
 
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -217,4 +228,19 @@ class LeaderboardEntrySerializer(serializers.ModelSerializer):
             "rank",
             "calculated_at",
             "extra",
+        ]
+
+
+class PerformanceSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PerformanceSnapshot
+        fields = [
+            "id",
+            "timestamp",
+            "equity",
+            "cash",
+            "realized_pnl",
+            "unrealized_pnl",
+            "leverage",
+            "metadata",
         ]

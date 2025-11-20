@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from typing import Dict, Optional
 
@@ -467,50 +467,56 @@ class OCOOrderHandler(NoopHandler):
 
 
 class AlgoOrderHandler(OrderHandler):
+    DEFAULT_INTERVAL_SECONDS = 60
+
     def maybe_fill(
         self, order: PaperOrder, portfolio: PaperPortfolio, quote: Quote, now
     ) -> Optional[FillResult]:
         params = order.algo_params or {}
-        if order.order_type == "algo_twap":
-            return self._handle_twap(order, params, quote, now)
-        if order.order_type == "algo_vwap":
-            return self._handle_vwap(order, params, quote, now)
-        if order.order_type == "algo_pov":
-            return self._handle_pov(order, params, quote, now)
-        return None
+        if order.algo_next_run_at and now < order.algo_next_run_at:
+            return None
+        handler = {
+            "algo_twap": self._handle_twap,
+            "algo_vwap": self._handle_vwap,
+            "algo_pov": self._handle_pov,
+        }.get(order.order_type)
+        result = handler(order, params, quote, now) if handler else None
+        self._update_schedule(order, params, now, result)
+        return result
 
     def _handle_twap(self, order, params, quote, now):
-        slices = params.get("slices", 10)
-        interval_minutes = params.get("interval_minutes", 5)
-        last_fill = order.notes.get("algo_last_fill")
-        if last_fill:
-            last_dt = datetime.fromisoformat(last_fill)
-            if (now - last_dt).total_seconds() < interval_minutes * 60:
-                return None
-        total = order.quantity or Decimal("0")
-        if total <= 0:
+        slices = max(1, int(params.get("slices", 10)))
+        total = self._resolve_total_quantity(order, quote)
+        remaining_total = total - order.filled_quantity
+        if remaining_total <= 0:
             return None
-        slice_qty = total / Decimal(slices)
-        order.notes["algo_last_fill"] = now.isoformat()
-        order.save(update_fields=["notes"])
-        remaining = max(total - order.filled_quantity - slice_qty, Decimal("0"))
+        remaining_slices = Decimal(max(slices - order.algo_slice_index, 1))
+        slice_qty = remaining_total / remaining_slices
+        slice_qty = self._apply_reserve_cap(order, slice_qty, remaining_total)
+        if slice_qty <= 0:
+            return None
+        remaining_after = max(remaining_total - slice_qty, Decimal("0"))
         return FillResult(
             filled=True,
-            quantity=min(slice_qty, total - order.filled_quantity),
+            quantity=slice_qty,
             price=Decimal(str(quote.price)),
-            remaining=remaining,
+            remaining=remaining_after,
         )
 
     def _handle_vwap(self, order, params, quote, now):
-        participation = Decimal(str(params.get("participation", 0.1)))
-        total = order.quantity or Decimal("0")
-        if total <= 0:
+        total = self._resolve_total_quantity(order, quote)
+        remaining_total = total - order.filled_quantity
+        if remaining_total <= 0:
             return None
-        slice_qty = total * participation
-        remaining = max(total - order.filled_quantity - slice_qty, Decimal("0"))
+        participation = Decimal(str(params.get("participation", 0.1)))
+        slice_qty = remaining_total * participation
+        slice_qty = self._apply_reserve_cap(order, slice_qty, remaining_total)
+        if slice_qty <= 0:
+            return None
+        remaining = max(remaining_total - slice_qty, Decimal("0"))
         return FillResult(
             filled=True,
-            quantity=min(slice_qty, total - order.filled_quantity),
+            quantity=slice_qty,
             price=Decimal(str(quote.price)),
             remaining=remaining,
         )
@@ -518,17 +524,75 @@ class AlgoOrderHandler(OrderHandler):
     def _handle_pov(self, order, params, quote, now):
         rate = Decimal(str(params.get("participation", 0.1)))
         volume = Decimal(str(quote.volume or 0))
-        total = order.quantity or Decimal("0")
-        if volume <= 0 or total <= 0:
+        total = self._resolve_total_quantity(order, quote)
+        remaining_total = total - order.filled_quantity
+        if volume <= 0 or remaining_total <= 0:
             return None
         target = volume * rate
-        remaining = max(total - order.filled_quantity - target, Decimal("0"))
+        slice_qty = self._apply_reserve_cap(order, target, remaining_total)
+        if slice_qty <= 0:
+            return None
+        remaining = max(remaining_total - slice_qty, Decimal("0"))
         return FillResult(
             filled=True,
-            quantity=min(target, total - order.filled_quantity),
+            quantity=slice_qty,
             price=Decimal(str(quote.price)),
             remaining=remaining,
         )
+
+    def _resolve_total_quantity(self, order: PaperOrder, quote: Quote) -> Decimal:
+        if order.quantity:
+            return order.quantity
+        if order.notional:
+            qty = Decimal(str(order.notional)) / Decimal(str(quote.price))
+            order.quantity = qty
+            order.save(update_fields=["quantity"])
+            return qty
+        return Decimal("0")
+
+    def _apply_reserve_cap(
+        self, order: PaperOrder, slice_qty: Decimal, remaining_total: Decimal
+    ) -> Decimal:
+        slice_qty = min(slice_qty, remaining_total)
+        if order.reserve_quantity:
+            slice_qty = min(slice_qty, Decimal(str(order.reserve_quantity)))
+        return max(slice_qty, Decimal("0"))
+
+    def _update_schedule(self, order, params, now, result: Optional[FillResult]):
+        interval_seconds = self._interval_seconds(params, order.order_type)
+        next_run = now + timedelta(seconds=interval_seconds)
+        updates = []
+        order.algo_next_run_at = next_run
+        updates.append("algo_next_run_at")
+        if result and result.filled:
+            order.algo_slice_index += 1
+            updates.append("algo_slice_index")
+            if not order.notes:
+                order.notes = {}
+            events = order.notes.setdefault("algo_events", [])
+            events.append(
+                {
+                    "timestamp": now.isoformat(),
+                    "event": "slice_fill",
+                    "quantity": str(result.quantity),
+                    "price": str(result.price),
+                    "remaining": str(result.remaining),
+                }
+            )
+            updates.append("notes")
+        if updates:
+            order.save(update_fields=list(dict.fromkeys(updates)))
+
+    def _interval_seconds(self, params, order_type: str) -> int:
+        if order_type == "algo_twap":
+            minutes = params.get("interval_minutes")
+            if minutes is not None:
+                minutes = float(minutes)
+                return max(10, int(minutes * 60))
+        if "interval_seconds" in params:
+            seconds = float(params["interval_seconds"])
+            return max(5, int(seconds))
+        return self.DEFAULT_INTERVAL_SECONDS
 
 
 class ExecutionEngine:
@@ -615,26 +679,43 @@ class ExecutionEngine:
         )
         now = self._current_time()
         for order in orders:
-            if not self._tif_allows_processing(order, now):
-                continue
-            if not order.extended_hours and not self._in_regular_hours(now):
-                continue
-            handler = self.handlers.get(order.order_type, NoopHandler())
-            try:
-                quote = self._get_quote(order.symbol)
-            except Exception:
-                continue
-            if not self.condition_evaluator.satisfied(order, quote, now):
-                continue
-            result = handler.maybe_fill(order, portfolio, quote, now)
-            if result and result.filled:
-                self._apply_fill(order, portfolio, result)
-                if order.tif == "fok" and result.remaining > 0:
-                    order.status = "canceled"
-                    order.save(update_fields=["status"])
-            elif order.tif in {"ioc", "fok"}:
+            self._process_order_instance(order, now)
+
+    def process_order(self, order: PaperOrder):
+        now = self._current_time()
+        if not hasattr(order, "portfolio"):
+            order = PaperOrder.objects.select_related("portfolio").get(id=order.id)
+        self._process_order_instance(order, now)
+
+    def _process_order_instance(self, order: PaperOrder, now):
+        portfolio = order.portfolio
+        current_status = (
+            PaperOrder.objects.filter(id=order.id).values_list("status", flat=True).first()
+        )
+        if current_status not in {"new", "working", "part_filled"}:
+            return
+        if current_status != order.status:
+            order.status = current_status
+        if not self._tif_allows_processing(order, now):
+            return
+        if not order.extended_hours and not self._in_regular_hours(now):
+            return
+        handler = self.handlers.get(order.order_type, NoopHandler())
+        try:
+            quote = self._get_quote(order.symbol)
+        except Exception:
+            return
+        if not self.condition_evaluator.satisfied(order, quote, now):
+            return
+        result = handler.maybe_fill(order, portfolio, quote, now)
+        if result and result.filled:
+            self._apply_fill(order, portfolio, result)
+            if order.tif == "fok" and result.remaining > 0:
                 order.status = "canceled"
                 order.save(update_fields=["status"])
+        elif order.tif in {"ioc", "fok"}:
+            order.status = "canceled"
+            order.save(update_fields=["status"])
 
     @transaction.atomic
     def _apply_fill(
@@ -731,7 +812,7 @@ class ExecutionEngine:
             trade.realized_pnl = (fill_price - entry_avg_price) * qty
             portfolio.realized_pnl += trade.realized_pnl
             trade.save(update_fields=["realized_pnl"])
-        self._handle_parent_child(order)
+        self._handle_parent_child(order, trade)
         portfolio.save(
             update_fields=[
                 "cash_balance",
@@ -741,20 +822,74 @@ class ExecutionEngine:
             ]
         )
 
-    def _handle_parent_child(self, order: PaperOrder):
+    def _handle_parent_child(self, order: PaperOrder, trade: PaperTrade):
         if order.children.exists():
-            order.children.filter(status="new").update(status="working")
+            chain_id = order.chain_id or f"chain-{order.id}"
+            if order.chain_id != chain_id:
+                order.chain_id = chain_id
+                order.save(update_fields=["chain_id"])
+            PaperOrder.objects.filter(parent_id=order.id, chain_id="").update(chain_id=chain_id)
+            count = PaperOrder.objects.filter(
+                parent_id=order.id, status__in=["new", "waiting"]
+            ).update(status="working")
+            order.notes.setdefault("events", [])
+            order.notes["events"].append(
+                {
+                    "timestamp": timezone.now().isoformat(),
+                    "event": "activate_children",
+                    "chain": chain_id,
+                    "count": count,
+                }
+            )
+            order.save(update_fields=["notes"])
+            return
         parent = order.parent
         if not parent:
             return
-        if parent.order_type == "bracket":
-            parent.children.exclude(id=order.id).update(status="canceled")
-        if parent.order_type == "oco":
-            parent.children.exclude(id=order.id).update(status="canceled")
-        if parent.order_type == "otoco":
-            parent.children.exclude(id=order.id).update(status="canceled")
-        if parent.order_type == "oto":
-            parent.children.filter(status="new").update(status="working")
+        parent.notes.setdefault("events", [])
+        parent.notes["events"].append(
+            {
+                "timestamp": timezone.now().isoformat(),
+                "event": "child_fill",
+                "child": order.id,
+                "role": order.child_role,
+                "status": order.status,
+            }
+        )
+        parent.save(update_fields=["notes"])
+        siblings_qs = PaperOrder.objects.filter(parent_id=parent.id).exclude(id=order.id)
+        action = "none"
+        count = 0
+        if parent.order_type in {"bracket", "otoco"} or order.child_role in {"tp", "sl"}:
+            for sibling in siblings_qs:
+                if sibling.status not in {"canceled", "filled"}:
+                    sibling.status = "canceled"
+                    sibling.save(update_fields=["status"])
+                    count += 1
+            action = "cancel"
+        elif parent.order_type == "oco":
+            for sibling in siblings_qs:
+                if sibling.status not in {"canceled", "filled"}:
+                    sibling.status = "canceled"
+                    sibling.save(update_fields=["status"])
+                    count += 1
+            action = "cancel"
+        elif parent.order_type == "oto":
+            for sibling in siblings_qs:
+                if sibling.status == "new":
+                    sibling.status = "working"
+                    sibling.save(update_fields=["status"])
+                    count += 1
+            action = "activate"
+        parent.notes["events"].append(
+            {
+                "timestamp": timezone.now().isoformat(),
+                "event": "chain_action",
+                "action": action,
+                "count": count,
+            }
+        )
+        parent.save(update_fields=["notes"])
 
     def _tif_allows_processing(self, order: PaperOrder, now) -> bool:
         if order.tif == "day":
