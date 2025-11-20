@@ -37,6 +37,7 @@ from .serializers import (
     InstrumentSerializer,
 )
 from paper.services.market_data import get_market_data_provider
+from paper.tasks import execute_strategy_task
 
 
 class OwnedQuerySetMixin:
@@ -297,6 +298,41 @@ class StrategyViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Strategy.objects.filter(user=self.request.user)
 
+    def _enforce_strategy_caps(self, strategy: Strategy, portfolios):
+        cfg = strategy.config or {}
+        symbols = cfg.get("symbols", [])
+        entry_block = cfg.get("entry", {})
+        template_name = entry_block.get("template")
+        templates = cfg.get("order_templates", {})
+        qty_pct = None
+        if entry_block.get("order", {}).get("quantity_pct") is not None:
+            qty_pct = entry_block["order"]["quantity_pct"]
+        elif template_name and templates.get(template_name, {}).get("quantity_pct") is not None:
+            qty_pct = templates[template_name]["quantity_pct"]
+        if not qty_pct:
+            return
+        for portfolio in portfolios:
+            equity = portfolio.equity or portfolio.cash_balance or portfolio.starting_balance
+            single_cap = (
+                portfolio.max_single_position_pct
+                and equity * (portfolio.max_single_position_pct / Decimal("100"))
+            )
+            gross_cap = (
+                portfolio.max_gross_exposure_pct
+                and equity * (portfolio.max_gross_exposure_pct / Decimal("100"))
+            )
+            if not single_cap and not gross_cap:
+                continue
+            notional_per = Decimal(str(qty_pct)) / Decimal("100") * equity
+            if single_cap and notional_per > single_cap:
+                raise PermissionDenied("Cap breach: single-position limit.")
+            current_gross = (
+                portfolio.positions.aggregate(total=Sum("market_value")).get("total") or Decimal("0")
+            )
+            projected_gross = current_gross + (notional_per * len(symbols or [1]))
+            if gross_cap and projected_gross > gross_cap:
+                raise PermissionDenied("Cap breach: gross exposure limit.")
+
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
@@ -316,8 +352,8 @@ class StrategyViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def execute(self, request, pk=None):
         """
-        Entry point for live strategy execution. TODO: enforce multi-portfolio caps
-        (reusing dry-run/save logic) before enqueueing real execution.
+        Entry point for live strategy execution. Enqueues a Celery task (queue: strategy) and
+        enforces single/gross caps using entry quantity_pct before dispatch.
         """
         strategy = self.get_object()
         serializer = StrategyExecutionSerializer(data=request.data)
@@ -334,14 +370,24 @@ class StrategyViewSet(viewsets.ModelViewSet):
                 {"detail": "One or more portfolios not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        # TODO: enforce multi-portfolio caps here using shared cap checker once finalized.
+        self._enforce_strategy_caps(strategy, portfolios)
         execution_id = f"exec-{strategy.id}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
+        queued_via = "inline"
+        try:
+            execute_strategy_task.apply_async(
+                args=[strategy.id, [p.id for p in portfolios], data.get("overrides") or {}],
+                queue="strategy",
+            )
+            queued_via = "celery"
+        except AttributeError:
+            execute_strategy_task(strategy.id, [p.id for p in portfolios], data.get("overrides") or {})
         payload = {
             "status": "queued",
             "strategy_id": strategy.id,
             "portfolios": [p.id for p in portfolios],
             "execution_id": execution_id,
             "overrides": data.get("overrides") or {},
+            "queued_via": queued_via,
         }
         return Response(payload, status=status.HTTP_200_OK)
 

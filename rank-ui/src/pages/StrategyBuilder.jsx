@@ -94,6 +94,7 @@ export default function StrategyBuilder() {
   const [portfolios, setPortfolios] = useState([]);
   const [selectedPortfolio, setSelectedPortfolio] = useState("");
   const [selectedPortfolios, setSelectedPortfolios] = useState([]);
+  const [executing, setExecuting] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -410,6 +411,52 @@ export default function StrategyBuilder() {
     }
   }
 
+  async function executeStrategy() {
+    if (!token || !selectedId) {
+      setStatus("Select a strategy to execute.");
+      return;
+    }
+    const targetIds =
+      selectedPortfolios.length > 0
+        ? selectedPortfolios
+        : selectedPortfolio
+        ? [selectedPortfolio]
+        : [];
+    if (!targetIds.length) {
+      setStatus("Select at least one portfolio to execute.");
+      return;
+    }
+    setExecuting(true);
+    setStatus("Executing strategy...");
+    const payload = {
+      strategy_id: selectedId,
+      portfolio_ids: targetIds.map((id) => Number(id)),
+    };
+    try {
+      const res = await fetch(`${BASE}/api/paper/strategies/${selectedId}/execute/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || JSON.stringify(data));
+      }
+      setStatus(
+        `Execution queued (${data.execution_id}) for portfolios ${(
+          data.portfolios || []
+        ).join(", ")}`
+      );
+    } catch (err) {
+      setStatus(err.message || "Execution failed");
+    } finally {
+      setExecuting(false);
+    }
+  }
+
   return (
     <div className="p-4 lg:p-8 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -475,6 +522,14 @@ export default function StrategyBuilder() {
             className="px-4 py-1.5 rounded-xl bg-indigo-600 text-white text-xs"
           >
             Save strategy
+          </button>
+          <button
+            type="button"
+            onClick={executeStrategy}
+            disabled={executing || !selectedId}
+            className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs disabled:opacity-60"
+          >
+            {executing ? "Executing..." : "Execute"}
           </button>
           <button
             type="button"

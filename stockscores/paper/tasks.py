@@ -8,7 +8,8 @@ except ImportError:  # pragma: no cover
 
 from paper.engine.runner import StrategyRunner
 from paper.services.execution import ExecutionEngine
-from paper.models import PaperPortfolio
+from paper.models import PaperPortfolio, Strategy
+from django.utils import timezone
 
 
 @shared_task
@@ -69,3 +70,23 @@ def run_algo_slices():
     )
     for order in algo_orders:
         engine.process_order(order)
+
+
+@shared_task
+def execute_strategy_task(strategy_id: int, portfolio_ids: list[int] | None = None, overrides=None):
+    """
+    Executes a single strategy immediately for the provided portfolio ids.
+    This is the hook the API uses; Celery will run it asynchronously when available.
+    """
+    portfolio_ids = portfolio_ids or []
+    overrides = overrides or {}
+    runner = StrategyRunner()
+    try:
+        strategy = Strategy.objects.get(id=strategy_id)
+    except Strategy.DoesNotExist:  # pragma: no cover - guarded by API
+        return {"status": "missing"}
+    now = timezone.now()
+    portfolios = PaperPortfolio.objects.filter(id__in=portfolio_ids, user=strategy.user)
+    for portfolio in portfolios:
+        runner.evaluate(strategy, portfolio, now)
+    return {"status": "completed", "strategy_id": strategy_id, "portfolios": list(portfolios.values_list("id", flat=True))}
