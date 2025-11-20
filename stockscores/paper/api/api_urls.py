@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     PortfolioViewSet,
     PositionViewSet,
+    InstrumentViewSet,
     OrderViewSet,
     TradeViewSet,
     StrategyViewSet,
@@ -26,3 +27,4 @@ router.register(
     LeaderboardEntryViewSet,
     basename="leaderboard-entry",
 )
+router.register("paper/instruments", InstrumentViewSet, basename="instrument")

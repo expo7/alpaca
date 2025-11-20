@@ -72,6 +72,7 @@ class PaperPortfolio(models.Model):
         max_length=16, choices=[("active", "Active"), ("archived", "Archived")]
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Cash movements (deposits/withdrawals) are logged in PortfolioCashMovement
 
 
 class Instrument(models.Model):
@@ -299,6 +300,25 @@ class PortfolioResetLog(models.Model):
     reset_to = models.DecimalField(max_digits=18, decimal_places=2)
     previous_cash = models.DecimalField(max_digits=18, decimal_places=2)
     previous_equity = models.DecimalField(max_digits=18, decimal_places=2)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PortfolioCashMovement(models.Model):
+    MOVEMENT_CHOICES = [("deposit", "Deposit"), ("withdrawal", "Withdrawal")]
+
+    portfolio = models.ForeignKey(
+        PaperPortfolio, related_name="cash_movements", on_delete=models.CASCADE
+    )
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cash_movements",
+    )
+    movement_type = models.CharField(max_length=16, choices=MOVEMENT_CHOICES)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

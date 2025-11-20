@@ -461,6 +461,9 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [screenSymbols, setScreenSymbols] = useState([]);
   const [screenErr, setScreenErr] = useState("");
   const [screenLoading, setScreenLoading] = useState(false);
+  const [instrumentResults, setInstrumentResults] = useState([]);
+  const [instrumentQuery, setInstrumentQuery] = useState("");
+  const [instrumentLoading, setInstrumentLoading] = useState(false);
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -476,6 +479,11 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
       stop_loss: "",
     }));
   };
+
+  const selectedPortfolio = useMemo(
+    () => portfolios.find((p) => String(p.id) === String(form.portfolio)),
+    [portfolios, form.portfolio]
+  );
 
   const currentWatchlist = useMemo(
     () =>
@@ -515,6 +523,23 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
       setScreenErr(err.message || "Failed to load universe");
     } finally {
       setScreenLoading(false);
+    }
+  };
+
+  const searchInstruments = async () => {
+    if (!instrumentQuery.trim()) return;
+    setInstrumentLoading(true);
+    try {
+      const res = await fetch(
+        `${BASE}/api/paper/instruments/?q=${encodeURIComponent(instrumentQuery)}`
+      );
+      if (!res.ok) throw new Error("Lookup failed");
+      const data = await res.json();
+      setInstrumentResults(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setInstrumentLoading(false);
     }
   };
 
@@ -630,12 +655,44 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
             </option>
           ))}
         </select>
-        <input
-          value={form.symbol}
-          onChange={(e) => updateField("symbol", e.target.value)}
-          placeholder="Symbol"
-          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-        />
+        <div className="space-y-2">
+          <input
+            value={form.symbol}
+            onChange={(e) => updateField("symbol", e.target.value)}
+            placeholder="Symbol"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          />
+          <div className="flex gap-2">
+            <input
+              value={instrumentQuery}
+              onChange={(e) => setInstrumentQuery(e.target.value)}
+              placeholder="Lookup symbol…"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            />
+            <button
+              type="button"
+              onClick={searchInstruments}
+              className="px-3 py-1.5 rounded-lg border border-slate-700"
+            >
+              {instrumentLoading ? "..." : "Search"}
+            </button>
+          </div>
+          {instrumentResults.length > 0 && (
+            <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-32 overflow-auto">
+              {instrumentResults.map((inst) => (
+                <button
+                  key={inst.id || inst.symbol}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-[12px] flex justify-between"
+                  onClick={() => updateField("symbol", inst.symbol)}
+                >
+                  <span className="font-semibold">{inst.symbol}</span>
+                  <span className="text-slate-400">{inst.asset_class}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <input
           value={form.quantity}
           onChange={(e) => updateField("quantity", e.target.value)}
@@ -681,6 +738,17 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
         />
       </div>
+      {selectedPortfolio && (
+        <div className="text-[11px] text-slate-400">
+          Caps:{" "}
+          {selectedPortfolio.max_positions
+            ? `${selectedPortfolio.max_positions} positions`
+            : "—"}{" "}
+          | Single pos %:{" "}
+          {selectedPortfolio.max_single_position_pct || "—"} | Gross %:{" "}
+          {selectedPortfolio.max_gross_exposure_pct || "—"}
+        </div>
+      )}
       <div className="grid md:grid-cols-2 gap-4 text-xs">
         <div className="space-y-2">
           <label className="text-slate-300 text-[13px]">From watchlist</label>

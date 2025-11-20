@@ -16,6 +16,8 @@ Progress so far (complete)
 - Leaderboards: computed and scheduled (return_pct/sharpe/consistency across 7d/30d/since-join + active seasons).
 - Leaderboard metrics: real recomputation for 7d/30d/since-join/season with return_pct, time-weighted return, sharpe, sortino, volatility, consistency, max_drawdown_pct, win_rate, profit_factor; stale entries pruned.
 - Portfolio ops: instrument model ready; positions API exposed; per-portfolio caps (max positions) enforced on order creation; portfolio reset endpoint clears positions and logs audits.
+- Risk & cash ops: single-position % and gross exposure caps enforced on orders; deposit/withdraw endpoints with cash movement logs; market data provider wired to instruments and supports live/delayed toggle via `PAPER_MARKET_DATA_MODE`.
+- Valuation: fills refresh position market_value with latest quote and keep equity/unrealized in sync; instruments auto-created on quotes; instrument lookup API for order ticket filtering.
 
 Open todo / gaps (prioritized)
 1) Portfolio management & instruments
@@ -34,4 +36,4 @@ Open todo / gaps (prioritized)
    - Env flags for fees/slippage/delays, worker/beat process docs in top-level README, seed scripts for seasons + demo data, monitoring hooks.
 
 Next actionable step (not started)
-- Expand risk controls: enforce exposure caps (single-position %, gross %), add deposits/withdrawals endpoints, and tie instruments into market data provider abstraction (delayed/live toggle).
+- Frontend wiring for risk/ops: surface deposits/withdrawals and cash movements, hook instrument lookup into order ticket, and show exposure caps/violations in the UI.

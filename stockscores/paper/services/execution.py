@@ -13,7 +13,13 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from paper.models import PaperOrder, PaperPortfolio, PaperPosition, PaperTrade
+from paper.models import (
+    PaperOrder,
+    PaperPortfolio,
+    PaperPosition,
+    PaperTrade,
+    Instrument,
+)
 from ranker.models import StockScore
 from .market_data import (
     MarketDataProvider,
@@ -654,6 +660,11 @@ class ExecutionEngine:
     def _current_time(self):
         return self._override_now or timezone.now()
 
+    def _get_instrument(self, symbol: str) -> Instrument:
+        sym = symbol.upper()
+        inst, _ = Instrument.objects.get_or_create(symbol=sym, defaults={"asset_class": "equity"})
+        return inst
+
     def _get_quote(self, symbol: str) -> Quote:
         if self.backtest_mode == "next_open":
             history = self.data_provider.get_history_period(symbol, period="5d", interval="1d")
@@ -670,6 +681,29 @@ class ExecutionEngine:
                     volume=float(row["Volume"]),
                 )
         return self.data_provider.get_quote(symbol)
+
+    def _refresh_position_market_value(self, position: PaperPosition, price_hint: Decimal | None = None):
+        price = price_hint
+        if price is None:
+            try:
+                quote = self._get_quote(position.symbol)
+                price = Decimal(str(quote.price))
+            except Exception:
+                price = None
+        if price is None:
+            return
+        position.market_value = position.quantity * price
+        position.unrealized_pnl = position.market_value - (position.quantity * position.avg_price)
+        if not position.instrument_id:
+            position.instrument = self._get_instrument(position.symbol)
+        position.save(update_fields=["market_value", "unrealized_pnl", "instrument"])
+
+    def _recalculate_portfolio_totals(self, portfolio: PaperPortfolio):
+        totals = portfolio.positions.aggregate(total_mv=Sum("market_value"), total_unreal=Sum("unrealized_pnl"))
+        total_market = totals.get("total_mv") or Decimal("0")
+        total_unreal = totals.get("total_unreal") or Decimal("0")
+        portfolio.equity = portfolio.cash_balance + total_market
+        portfolio.unrealized_pnl = total_unreal
 
     def process_portfolio(self, portfolio: PaperPortfolio):
         orders = (
@@ -728,6 +762,7 @@ class ExecutionEngine:
             else Decimal("1") - (self.slippage_bps / Decimal("10000"))
         )
         fill_price = fill_price * slippage_multiplier
+        instrument = self._get_instrument(order.symbol)
         qty = result.quantity
         cost = qty * fill_price
         entry_avg_price = None
@@ -742,8 +777,11 @@ class ExecutionEngine:
                     "avg_price": fill_price,
                     "market_value": Decimal("0"),
                     "unrealized_pnl": Decimal("0"),
+                    "instrument": instrument,
                 },
             )
+            if not position.instrument_id:
+                position.instrument = instrument
             entry_avg_price = position.avg_price
             total_qty = position.quantity + qty
             if total_qty > 0:
@@ -751,9 +789,8 @@ class ExecutionEngine:
                     (position.quantity * position.avg_price) + cost
                 ) / total_qty
             position.quantity = total_qty
-            position.market_value = total_qty * fill_price
-            position.unrealized_pnl = position.market_value - (total_qty * position.avg_price)
-            position.save()
+            position.save(update_fields=["quantity", "avg_price", "instrument"])
+            self._refresh_position_market_value(position, fill_price)
         else:
             fees = (qty * self.fees_per_share) + self.flat_commission + result.fees
             portfolio.cash_balance += cost - fees
@@ -766,16 +803,15 @@ class ExecutionEngine:
             if position:
                 entry_avg_price = position.avg_price
                 position.quantity -= qty
-                position.market_value = position.quantity * fill_price
-                position.unrealized_pnl = position.market_value - (
-                    position.quantity * position.avg_price
-                )
-                position.save()
+                position.instrument = position.instrument or instrument
+                position.save(update_fields=["quantity", "instrument"])
+                self._refresh_position_market_value(position, fill_price)
 
         trade = PaperTrade.objects.create(
             order=order,
             portfolio=portfolio,
             symbol=order.symbol.upper(),
+            instrument=instrument,
             side=order.side,
             quantity=qty,
             price=fill_price,
@@ -799,15 +835,7 @@ class ExecutionEngine:
         order.save(
             update_fields=["status", "filled_quantity", "average_fill_price"]
         )
-        total_market = (
-            portfolio.positions.aggregate(total=Sum("market_value"))["total"]
-            or Decimal("0")
-        )
-        portfolio.equity = portfolio.cash_balance + total_market
-        portfolio.unrealized_pnl = (
-            portfolio.positions.aggregate(total=Sum("unrealized_pnl"))["total"]
-            or Decimal("0")
-        )
+        self._recalculate_portfolio_totals(portfolio)
         if order.side == "sell" and entry_avg_price is not None:
             trade.realized_pnl = (fill_price - entry_avg_price) * qty
             portfolio.realized_pnl += trade.realized_pnl

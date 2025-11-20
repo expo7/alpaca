@@ -12,6 +12,7 @@ from paper.models import (
     LeaderboardEntry,
     Instrument,
     PortfolioResetLog,
+    PortfolioCashMovement,
 )
 
 
@@ -274,6 +275,21 @@ class PortfolioResetLogSerializer(serializers.ModelSerializer):
             "reset_to",
             "previous_cash",
             "previous_equity",
+            "reason",
+            "created_at",
+        ]
+        read_only_fields = ["performed_by", "created_at"]
+
+
+class PortfolioCashMovementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PortfolioCashMovement
+        fields = [
+            "id",
+            "portfolio",
+            "performed_by",
+            "movement_type",
+            "amount",
             "reason",
             "created_at",
         ]
