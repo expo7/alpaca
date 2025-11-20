@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 
 const BASE = "http://127.0.0.1:8000";
+const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
 const EDITABLE_TYPES = new Set([
   "limit",
   "hidden_limit",
@@ -132,6 +133,28 @@ export default function Orders() {
     loadPortfolios();
     loadWatchlists();
   }, [token, loadOrders, loadPortfolios, loadWatchlists]);
+
+  useEffect(() => {
+    const symbols = Array.from(new Set(orders.map((o) => o.symbol)));
+    const fetchMeta = async () => {
+      const missing = symbols.filter((s) => !instrumentMeta[s]);
+      for (const sym of missing) {
+        try {
+          const res = await fetch(
+            `${BASE}/api/paper/instruments/?q=${encodeURIComponent(sym)}`
+          );
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (Array.isArray(data) && data.length) {
+            setInstrumentMeta((prev) => ({ ...prev, [sym]: data[0] }));
+          }
+        } catch (err) {
+          // ignore lookup failures
+        }
+      }
+    };
+    if (symbols.length) fetchMeta();
+  }, [orders]);
 
   const startEditing = (order) => {
     setEditing((prev) => ({
@@ -376,6 +399,7 @@ export default function Orders() {
           <thead className="text-slate-400">
             <tr>
               <th className="px-3 py-2 text-left">Symbol</th>
+              <th className="px-3 py-2 text-left">Instrument</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Qty/Notional</th>
               <th className="px-3 py-2 text-left">Status</th>
@@ -397,6 +421,12 @@ export default function Orders() {
             {orders.map((order) => (
               <tr key={order.id} className="border-t border-slate-800 align-top">
                 <td className="px-3 py-2 font-semibold">{order.symbol}</td>
+                <td className="px-3 py-2 text-xs text-slate-400">
+                  {instrumentMeta[order.symbol]?.exchange || "—"}{" "}
+                  {instrumentMeta[order.symbol]?.asset_class
+                    ? `· ${instrumentMeta[order.symbol]?.asset_class}`
+                    : ""}
+                </td>
                 <td className="px-3 py-2 text-xs">
                   {order.order_type.replace(/_/g, " ")}
                 </td>
@@ -404,8 +434,12 @@ export default function Orders() {
                   {order.quantity ?? order.notional ?? "—"}
                 </td>
                 <td className="px-3 py-2">
-                  <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs">
+                  <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
                     {order.status}
+                    {order.status === "rejected" &&
+                      (order.notes?.detail?.toLowerCase().includes("cap") ? (
+                        <span className="text-rose-300">cap</span>
+                      ) : null)}
                   </span>
                 </td>
                 <td className="px-3 py-2">{renderPrices(order)}</td>
@@ -464,6 +498,8 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentResults, setInstrumentResults] = useState([]);
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [instrumentLoading, setInstrumentLoading] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [instrumentMeta, setInstrumentMeta] = useState({});
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -484,6 +520,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     () => portfolios.find((p) => String(p.id) === String(form.portfolio)),
     [portfolios, form.portfolio]
   );
+  const capViolation = submitError?.toLowerCase().includes("cap");
 
   const currentWatchlist = useMemo(
     () =>
@@ -543,6 +580,17 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     }
   };
 
+  const parseError = async (res) => {
+    try {
+      const data = await res.json();
+      if (data?.detail) return data.detail;
+      if (typeof data === "string") return data;
+      return JSON.stringify(data);
+    } catch {
+      return `${res.status} ${res.statusText}`;
+    }
+  };
+
   const handleScreenSymbolSelect = (e) => {
     const value = e.target.value;
     setSelectedScreenSymbol(value);
@@ -560,6 +608,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     }
     setSubmitting(true);
     setError("");
+    setSubmitError("");
     try {
       const payload = {
         portfolio: Number(form.portfolio),
@@ -581,7 +630,10 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Parent order failed");
+      if (!res.ok) {
+        const detail = await parseError(res);
+        throw new Error(detail || "Parent order failed");
+      }
       const parent = await res.json();
       const chainId = parent.chain_id || `chain-${parent.id}`;
       const childPayloads = [];
@@ -623,13 +675,15 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           body: JSON.stringify(child),
         });
         if (!childRes.ok) {
-          throw new Error("Failed to create linked exit");
+          const detail = await parseError(childRes);
+          throw new Error(detail || "Failed to create linked exit");
         }
       }
       resetForm();
       onSuccess?.();
     } catch (err) {
       setError(err.message || "Failed to submit bracket");
+      setSubmitError(err.message || "Failed to submit bracket");
     } finally {
       setSubmitting(false);
     }
@@ -642,6 +696,11 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     >
       <div className="font-semibold">Quick bracket / OCO</div>
       {error && <div className="text-xs text-rose-300">{error}</div>}
+      {submitError && (
+        <div className="text-xs text-rose-200 bg-rose-900/30 border border-rose-800 rounded-lg px-3 py-2">
+          {submitError}
+        </div>
+      )}
       <div className="grid md:grid-cols-4 gap-3 text-xs">
         <select
           value={form.portfolio}
@@ -687,7 +746,10 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
                   onClick={() => updateField("symbol", inst.symbol)}
                 >
                   <span className="font-semibold">{inst.symbol}</span>
-                  <span className="text-slate-400">{inst.asset_class}</span>
+                  <span className="text-slate-400 text-right">
+                    {inst.exchange ? `${inst.exchange} · ` : ""}
+                    {inst.asset_class}
+                  </span>
                 </button>
               ))}
             </div>
@@ -749,6 +811,14 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           {selectedPortfolio.max_gross_exposure_pct || "—"}
         </div>
       )}
+      {capViolation && (
+        <div className="inline-flex items-center gap-2 text-[11px] px-3 py-2 rounded-lg bg-rose-900/30 border border-rose-800 text-rose-100">
+          Exposure cap violation — adjust size or allocate another portfolio.
+        </div>
+      )}
+      <div className="text-[11px] text-slate-500">
+        Market data mode: {DATA_MODE}
+      </div>
       <div className="grid md:grid-cols-2 gap-4 text-xs">
         <div className="space-y-2">
           <label className="text-slate-300 text-[13px]">From watchlist</label>

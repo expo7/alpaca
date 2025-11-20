@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
+import InstrumentSearch from "../components/InstrumentSearch.jsx";
 
 const BASE = "http://127.0.0.1:8000";
 
@@ -133,15 +134,18 @@ export default function Watchlists({ onUseTickers }) {
 
               {/* Add symbol */}
               {addById === wl.id ? (
-                <div className="mt-3 flex gap-2">
-                  <input
-                    value={symbol}
-                    onChange={(e)=>setSymbol(e.target.value)}
-                    placeholder="e.g., AAPL"
-                    className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex-1"
-                  />
-                  <button onClick={()=>addItem(wl.id)} className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500">Add</button>
-                  <button onClick={()=>setAddById(null)} className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-900">Cancel</button>
+                <div className="mt-3 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={symbol}
+                      onChange={(e)=>setSymbol(e.target.value)}
+                      placeholder="e.g., AAPL"
+                      className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex-1"
+                    />
+                    <button onClick={()=>addItem(wl.id)} className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500">Add</button>
+                    <button onClick={()=>setAddById(null)} className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-900">Cancel</button>
+                  </div>
+                  <InstrumentSearch onSelect={(sym)=>setSymbol(sym)} />
                 </div>
               ) : (
                 <div className="mt-3">

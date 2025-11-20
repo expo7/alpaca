@@ -146,6 +146,7 @@ export default function Performance() {
             Track daily equity curves and returns.
           </p>
         </div>
+        <div className="text-[11px] text-slate-500">Market data mode: {import.meta.env.VITE_PAPER_DATA_MODE || "live"}</div>
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}

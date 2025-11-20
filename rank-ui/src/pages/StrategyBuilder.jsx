@@ -87,6 +87,9 @@ export default function StrategyBuilder() {
   const [form, setForm] = useState(defaultStrategyForm);
   const [status, setStatus] = useState("");
   const [dryRunMatches, setDryRunMatches] = useState([]);
+  const [instrumentQuery, setInstrumentQuery] = useState("");
+  const [instrumentResults, setInstrumentResults] = useState([]);
+  const [instrumentLoading, setInstrumentLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -167,6 +170,34 @@ export default function StrategyBuilder() {
         [which]: { ...prev.orderTemplates[which], [field]: value },
       },
     }));
+  }
+
+  async function lookupInstruments() {
+    if (!instrumentQuery.trim()) return;
+    setInstrumentLoading(true);
+    try {
+      const res = await fetch(
+        `${BASE}/api/paper/instruments/?q=${encodeURIComponent(instrumentQuery)}`
+      );
+      if (!res.ok) throw new Error("Lookup failed");
+      const data = await res.json();
+      setInstrumentResults(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setInstrumentLoading(false);
+    }
+  }
+
+  function addSymbol(sym) {
+    const existing = form.symbols
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (!existing.includes(sym.toUpperCase())) {
+      const next = [...existing, sym.toUpperCase()].join(",");
+      setForm((prev) => ({ ...prev, symbols: next }));
+    }
   }
 
   function updateRule(section, node) {
@@ -289,7 +320,10 @@ export default function StrategyBuilder() {
             Compose rule blocks and order templates, then save or dry run.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-2 text-xs">
+          <span className="text-slate-500">
+            Market data mode: {import.meta.env.VITE_PAPER_DATA_MODE || "live"}
+          </span>
           <button
             type="button"
             onClick={validateConfig}
@@ -347,7 +381,16 @@ export default function StrategyBuilder() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <StrategyForm form={form} setForm={setForm} />
+          <StrategyForm
+            form={form}
+            setForm={setForm}
+            instrumentQuery={instrumentQuery}
+            setInstrumentQuery={setInstrumentQuery}
+            instrumentResults={instrumentResults}
+            instrumentLoading={instrumentLoading}
+            lookupInstruments={lookupInstruments}
+            addSymbol={addSymbol}
+          />
 
           <OrderTemplateEditor
             title="Entry template"
@@ -399,7 +442,16 @@ export default function StrategyBuilder() {
   );
 }
 
-function StrategyForm({ form, setForm }) {
+function StrategyForm({
+  form,
+  setForm,
+  instrumentQuery,
+  setInstrumentQuery,
+  instrumentResults,
+  instrumentLoading,
+  lookupInstruments,
+  addSymbol,
+}) {
   return (
     <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
       <div className="grid sm:grid-cols-2 gap-3">
@@ -441,6 +493,41 @@ function StrategyForm({ form, setForm }) {
           }
           placeholder="AAPL, MSFT, NVDA"
         />
+        <div className="mt-2 space-y-2 text-xs">
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+              value={instrumentQuery}
+              onChange={(e) => setInstrumentQuery(e.target.value)}
+              placeholder="Lookup symbol…"
+            />
+            <button
+              type="button"
+              onClick={lookupInstruments}
+              className="px-3 py-2 rounded-lg border border-slate-700"
+            >
+              {instrumentLoading ? "..." : "Search"}
+            </button>
+          </div>
+          {instrumentResults.length > 0 && (
+            <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-32 overflow-auto">
+              {instrumentResults.map((inst) => (
+                <button
+                  key={inst.id || inst.symbol}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex justify-between"
+                  onClick={() => addSymbol(inst.symbol)}
+                >
+                  <span className="font-semibold">{inst.symbol}</span>
+                  <span className="text-slate-400 text-right">
+                    {inst.exchange ? `${inst.exchange} · ` : ""}
+                    {inst.asset_class}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <div>
         <label className="block text-xs mb-1 text-slate-400">Description</label>
