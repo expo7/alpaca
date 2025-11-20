@@ -27,23 +27,51 @@ export default function Positions() {
   const [actionMsg, setActionMsg] = useState("");
   const [actionErr, setActionErr] = useState("");
   const [toastState, setToastState] = useState(null);
+  const [pageLoading, setPageLoading] = useState(false);
   const liveQuotes = useQuotes(positions.map((p) => p.symbol));
-  const [pagination, setPagination] = useState({ next: null, prev: null });
+  const [pagination, setPagination] = useState({
+    next: null,
+    prev: null,
+    count: 0,
+    limit: 50,
+    page: 1,
+    offset: 0,
+  });
+  const [jumpPage, setJumpPage] = useState("");
 
   useEffect(() => {
     if (!token) return;
-    const load = async (url = "/api/paper/positions/") => {
+    const load = async (url = "/api/paper/positions/", explicitOffset = 0) => {
       try {
         const res = await fetch(`${BASE}${url}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.detail || "Failed to load positions");
-        const { results, next, previous } = Array.isArray(data)
-          ? { results: data, next: null, previous: null }
+        const { results, next, previous, count, limit } = Array.isArray(data)
+          ? { results: data, next: null, previous: null, count: data.length, limit: data.length }
           : data;
         setPositions(Array.isArray(results) ? results : []);
-        setPagination({ next, prev: previous });
+        const computedLimit = limit || pagination.limit || 50;
+        const offsetFromUrl = (() => {
+          try {
+            const u = new URL(`${BASE}${url}`);
+            const raw = u.searchParams.get("offset");
+            return raw ? Number(raw) : 0;
+          } catch {
+            return 0;
+          }
+        })();
+        const offset = explicitOffset || offsetFromUrl;
+        const pageNum = computedLimit ? Math.floor(offset / computedLimit) + 1 : 1;
+        setPagination({
+          next,
+          prev: previous,
+          count: count || 0,
+          limit: computedLimit,
+          page: pageNum,
+          offset,
+        });
         const ports = await apiFetch("/api/paper/portfolios/", { token });
         setPortfolios(Array.isArray(ports) ? ports : []);
         setErr("");
@@ -147,12 +175,19 @@ export default function Positions() {
           </button>
         </div>
       </div>
-      <div className="flex gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <div className="text-slate-500">
+          Showing {positions.length} of {pagination.count} | page size {pagination.limit} | page{" "}
+          {pagination.page} /{" "}
+          {pagination.limit ? Math.max(1, Math.ceil((pagination.count || 0) / pagination.limit)) : 1} | rows{" "}
+          {pagination.offset + 1}-{Math.min(pagination.offset + pagination.limit, pagination.count)}
+        </div>
+        <div className="flex gap-2">
         {pagination.prev && (
           <button
             onClick={() => {
               if (pagination.prev) {
-                setLoading(true);
+                setPageLoading(true);
                 setPositions([]);
                 setToastState({ msg: "Loading previous page...", tone: "info" });
                 fetch(`${BASE}${pagination.prev}`, {
@@ -160,15 +195,32 @@ export default function Positions() {
                 })
                   .then((res) => res.json())
                   .then((data) => {
-                    const { results, next, previous } = data;
+                    const { results, next, previous, count, limit } = data;
                     setPositions(Array.isArray(results) ? results : []);
-                    setPagination({ next, prev: previous });
+                    const offset = (() => {
+                      try {
+                        const u = new URL(`${BASE}${pagination.prev}`);
+                        const raw = u.searchParams.get("offset");
+                        return raw ? Number(raw) : 0;
+                      } catch {
+                        return 0;
+                      }
+                    })();
+                    const pageNum = limit ? Math.floor(offset / limit) + 1 : pagination.page;
+                    setPagination({
+                      next,
+                      prev: previous,
+                      count: count || pagination.count,
+                      limit: limit || pagination.limit,
+                      page: pageNum,
+                    });
                   })
                   .catch(() => setErr("Failed to load previous page"))
-                  .finally(() => setLoading(false));
+                  .finally(() => setPageLoading(false));
               }
             }}
-            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800"
+            disabled={pageLoading}
+            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
           >
             Prev
           </button>
@@ -177,7 +229,7 @@ export default function Positions() {
           <button
             onClick={() => {
               if (pagination.next) {
-                setLoading(true);
+                setPageLoading(true);
                 setPositions([]);
                 setToastState({ msg: "Loading next page...", tone: "info" });
                 fetch(`${BASE}${pagination.next}`, {
@@ -185,19 +237,111 @@ export default function Positions() {
                 })
                   .then((res) => res.json())
                   .then((data) => {
-                    const { results, next, previous } = data;
+                    const { results, next, previous, count, limit } = data;
                     setPositions(Array.isArray(results) ? results : []);
-                    setPagination({ next, prev: previous });
+                    const offset = (() => {
+                      try {
+                        const u = new URL(`${BASE}${pagination.next}`);
+                        const raw = u.searchParams.get("offset");
+                        return raw ? Number(raw) : 0;
+                      } catch {
+                        return 0;
+                      }
+                    })();
+                    const pageNum = limit ? Math.floor(offset / limit) + 1 : pagination.page;
+                    setPagination({
+                      next,
+                      prev: previous,
+                      count: count || pagination.count,
+                      limit: limit || pagination.limit,
+                      page: pageNum,
+                    });
                   })
                   .catch(() => setErr("Failed to load next page"))
-                  .finally(() => setLoading(false));
+                  .finally(() => setPageLoading(false));
               }
             }}
-            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800"
+            disabled={pageLoading}
+            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
           >
             Next
           </button>
         )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span>Page size</span>
+          <select
+            value={pagination.limit}
+            onChange={(e) => {
+              const limit = Number(e.target.value);
+              setPagination((p) => ({ ...p, limit }));
+              const url = new URL(`${BASE}/api/paper/positions/`);
+              url.searchParams.set("limit", limit);
+              url.searchParams.set("offset", "0");
+              setPageLoading(true);
+              fetch(url.toString(), {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+                .then((res) => res.json())
+                .then((data) => {
+                  const { results, next, previous, count } = data;
+                  setPositions(Array.isArray(results) ? results : []);
+                  setPagination({ next, prev: previous, count: count || 0, limit, page: 1, offset: 0 });
+                })
+                .catch(() => setErr("Failed to change page size"))
+                .finally(() => setPageLoading(false));
+            }}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+          >
+            {[25, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="1"
+            value={jumpPage}
+            onChange={(e) => setJumpPage(e.target.value)}
+            placeholder="Jump to page"
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 w-28"
+          />
+          <button
+            onClick={() => {
+              const pageNum = Number(jumpPage);
+              if (!pageNum || pageNum < 1) return;
+              const offset = (pageNum - 1) * pagination.limit;
+              setPageLoading(true);
+              const url = new URL(`${BASE}/api/paper/positions/`);
+              url.searchParams.set("limit", pagination.limit);
+              url.searchParams.set("offset", offset);
+              fetch(url.toString(), {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+                .then((res) => res.json())
+                .then((data) => {
+                  const { results, next, previous, count, limit } = data;
+                  setPositions(Array.isArray(results) ? results : []);
+                  const finalLimit = limit || pagination.limit;
+                  setPagination({
+                    next,
+                    prev: previous,
+                    count: count || 0,
+                    limit: finalLimit,
+                    page: pageNum,
+                    offset,
+                  });
+                })
+                .catch(() => setErr("Failed to load page"))
+                .finally(() => setPageLoading(false));
+            }}
+            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs disabled:opacity-60"
+            disabled={pageLoading}
+          >
+            Go
+          </button>
+        </div>
       </div>
       {err && (
         <div className="text-xs text-rose-200 bg-rose-900/30 border border-rose-800 rounded-xl px-3 py-2">
