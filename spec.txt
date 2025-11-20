@@ -18,6 +18,8 @@ Progress so far (complete)
 - Portfolio ops: instrument model ready; positions API exposed; per-portfolio caps (max positions) enforced on order creation; portfolio reset endpoint clears positions and logs audits.
 - Risk & cash ops: single-position % and gross exposure caps enforced on orders; deposit/withdraw endpoints with cash movement logs; market data provider wired to instruments and supports live/delayed toggle via `PAPER_MARKET_DATA_MODE`.
 - Valuation: fills refresh position market_value with latest quote and keep equity/unrealized in sync; instruments auto-created on quotes; instrument lookup API for order ticket filtering.
+- Positions UI: live caps, server-side pagination, positions/close/rebalance actions with limit guards.
+- Quotes: shared hook and `/api/paper/quotes/` endpoint for cap checks; frontend toasts for cap breaches.
 
 Open todo / gaps (prioritized)
 1) Portfolio management & instruments
@@ -35,5 +37,10 @@ Open todo / gaps (prioritized)
 7) Ops/Config
    - Env flags for fees/slippage/delays, worker/beat process docs in top-level README, seed scripts for seasons + demo data, monitoring hooks.
 
-Next actionable step (not started)
-- Frontend wiring for risk/ops: surface deposits/withdrawals and cash movements, hook instrument lookup into order ticket, and show exposure caps/violations in the UI.
+Next steps to reach objective
+- Frontend (risk/ops polish): finish positions UX with cap badges/toasts tied to live quotes; add page info + jump-to-page; enrich order ticket with live cap pre-checks and instrument metadata.
+- Execution fidelity: improve historical fill logic (cross detection, partial fills), advanced slippage/fee models, and edge cases for OCO/OTO chains with audit trail of fills/events.
+- Portfolio features: implement deposits/withdrawals UI, portfolio detail showing positions + open orders, and reset/reseed UI with audit history.
+- Analytics: add per-user performance summary endpoint and store more metrics per snapshot; add seasonal leaderboard filters.
+- Market data: add provider abstraction retries/caching and delayed toggle baked into settings/UI.
+- Ops: add env flags docs, worker/beat instructions, and seed scripts for seasons/demo data.
