@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import Toast from "../components/Toast.jsx";
+import useQuotes from "../hooks/useQuotes.js";
 
 const BASE = "http://127.0.0.1:8000";
 const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
@@ -176,28 +177,9 @@ export default function Orders() {
   }, [orders]);
 
   useEffect(() => {
-    const symbols = Array.from(new Set(orders.map((o) => o.symbol)));
-    const loadQuotes = async () => {
-      if (!symbols.length) return;
-      try {
-        const res = await fetch(
-          `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbols.join(","))}`
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        const priceMap = {};
-        (data || []).forEach((q) => {
-          priceMap[q.symbol] = q.price;
-        });
-        setCapsByPortfolio((prev) => ({ ...prev, quotes: priceMap }));
-      } catch {
-        // ignore
-      }
-    };
-    loadQuotes();
-    const id = setInterval(loadQuotes, QUOTE_REFRESH_MS);
-    return () => clearInterval(id);
-  }, [orders]);
+    if (!Object.keys(liveQuotes).length) return;
+    setCapsByPortfolio((prev) => ({ ...prev, quotes: liveQuotes }));
+  }, [liveQuotes]);
 
   const startEditing = (order) => {
     setEditing((prev) => ({
@@ -560,6 +542,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentMeta, setInstrumentMeta] = useState({});
   const [capsByPortfolio, setCapsByPortfolio] = useState({});
   const [toastState, setToastState] = useState(null);
+  const liveQuotes = useQuotes(orders.map((o) => o.symbol));
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

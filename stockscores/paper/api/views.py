@@ -8,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Sum
 from rest_framework.views import APIView
+from rest_framework.pagination import LimitOffsetPagination
 
 from paper.models import (
     PaperPortfolio,
@@ -317,6 +318,7 @@ class LeaderboardEntryViewSet(viewsets.ReadOnlyModelViewSet):
 class PositionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PaperPositionSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LimitOffsetPagination
 
     def get_queryset(self):
         return (
@@ -385,6 +387,36 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
                 "cash_balance": str(portfolio.cash_balance),
             }
         )
+
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        page = self.paginate_queryset(qs)
+        page_obj = page if page is not None else qs
+        symbols = list({p.symbol for p in page_obj})
+        provider = get_market_data_provider()
+        quotes = {}
+        for sym in symbols:
+            try:
+                q = provider.get_quote(sym)
+                quotes[sym.upper()] = q.price
+            except Exception:
+                continue
+        total_gross = qs.values("portfolio_id").annotate(total_mv=Sum("market_value"))
+        total_gross_map = {row["portfolio_id"]: row["total_mv"] for row in total_gross}
+        gross = page_obj.values("portfolio_id").annotate(total_mv=Sum("market_value"))
+        gross_map = {row["portfolio_id"]: row["total_mv"] for row in gross}
+        serializer = self.get_serializer(
+            page_obj,
+            many=True,
+            context={
+                "quotes": quotes,
+                "gross_by_portfolio": gross_map,
+                "total_gross_by_portfolio": total_gross_map,
+            },
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def rebalance(self, request, pk=None):

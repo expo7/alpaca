@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import Toast from "../components/Toast.jsx";
+import useQuotes from "../hooks/useQuotes.js";
 
 const BASE = "http://127.0.0.1:8000";
 const REFRESH_MS = 15000;
@@ -26,16 +27,24 @@ export default function Positions() {
   const [actionMsg, setActionMsg] = useState("");
   const [actionErr, setActionErr] = useState("");
   const [toastState, setToastState] = useState(null);
+  const liveQuotes = useQuotes(positions.map((p) => p.symbol));
+  const [pagination, setPagination] = useState({ next: null, prev: null });
 
   useEffect(() => {
     if (!token) return;
-    const load = async () => {
+    const load = async (url = "/api/paper/positions/") => {
       try {
-        const [pos, ports] = await Promise.all([
-          apiFetch("/api/paper/positions/", { token }),
-          apiFetch("/api/paper/portfolios/", { token }),
-        ]);
-        setPositions(Array.isArray(pos) ? pos : []);
+        const res = await fetch(`${BASE}${url}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to load positions");
+        const { results, next, previous } = Array.isArray(data)
+          ? { results: data, next: null, previous: null }
+          : data;
+        setPositions(Array.isArray(results) ? results : []);
+        setPagination({ next, prev: previous });
+        const ports = await apiFetch("/api/paper/portfolios/", { token });
         setPortfolios(Array.isArray(ports) ? ports : []);
         setErr("");
       } catch (e) {
@@ -48,6 +57,16 @@ export default function Positions() {
     const id = setInterval(() => load(), REFRESH_MS);
     return () => clearInterval(id);
   }, [token]);
+
+  useEffect(() => {
+    if (!Object.keys(liveQuotes).length) return;
+    setPositions((prev) =>
+      prev.map((p) => ({
+        ...p,
+        live_price: liveQuotes[p.symbol] ?? p.live_price,
+      }))
+    );
+  }, [liveQuotes]);
 
   const capsByPortfolio = useMemo(() => {
     const map = {};
@@ -127,6 +146,58 @@ export default function Positions() {
             Refresh now
           </button>
         </div>
+      </div>
+      <div className="flex gap-2 text-xs">
+        {pagination.prev && (
+          <button
+            onClick={() => {
+              if (pagination.prev) {
+                setLoading(true);
+                setPositions([]);
+                setToastState({ msg: "Loading previous page...", tone: "info" });
+                fetch(`${BASE}${pagination.prev}`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                })
+                  .then((res) => res.json())
+                  .then((data) => {
+                    const { results, next, previous } = data;
+                    setPositions(Array.isArray(results) ? results : []);
+                    setPagination({ next, prev: previous });
+                  })
+                  .catch(() => setErr("Failed to load previous page"))
+                  .finally(() => setLoading(false));
+              }
+            }}
+            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800"
+          >
+            Prev
+          </button>
+        )}
+        {pagination.next && (
+          <button
+            onClick={() => {
+              if (pagination.next) {
+                setLoading(true);
+                setPositions([]);
+                setToastState({ msg: "Loading next page...", tone: "info" });
+                fetch(`${BASE}${pagination.next}`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                })
+                  .then((res) => res.json())
+                  .then((data) => {
+                    const { results, next, previous } = data;
+                    setPositions(Array.isArray(results) ? results : []);
+                    setPagination({ next, prev: previous });
+                  })
+                  .catch(() => setErr("Failed to load next page"))
+                  .finally(() => setLoading(false));
+              }
+            }}
+            className="px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800"
+          >
+            Next
+          </button>
+        )}
       </div>
       {err && (
         <div className="text-xs text-rose-200 bg-rose-900/30 border border-rose-800 rounded-xl px-3 py-2">

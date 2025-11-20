@@ -48,6 +48,9 @@ class PaperPositionSerializer(serializers.ModelSerializer):
     instrument = InstrumentSerializer(read_only=True)
     portfolio = serializers.PrimaryKeyRelatedField(read_only=True)
     portfolio_name = serializers.CharField(source="portfolio.name", read_only=True)
+    live_price = serializers.SerializerMethodField()
+    cap_single_breach = serializers.SerializerMethodField()
+    cap_gross_breach = serializers.SerializerMethodField()
 
     class Meta:
         model = PaperPosition
@@ -57,12 +60,49 @@ class PaperPositionSerializer(serializers.ModelSerializer):
             "portfolio_name",
             "instrument",
             "symbol",
+            "live_price",
             "quantity",
             "avg_price",
             "market_value",
             "unrealized_pnl",
             "last_updated",
+            "cap_single_breach",
+            "cap_gross_breach",
         ]
+
+    def get_live_price(self, obj):
+        quotes = self.context.get("quotes") or {}
+        return quotes.get(obj.symbol.upper())
+
+    def _equity(self, obj):
+        port = obj.portfolio
+        return port.equity or port.cash_balance or None
+
+    def get_cap_single_breach(self, obj):
+        equity = self._equity(obj)
+        if not equity:
+            return False
+        cap = obj.portfolio.max_single_position_pct
+        if not cap:
+            return False
+        price = self.get_live_price(obj) or obj.avg_price or 0
+        live_val = obj.quantity * Decimal(str(price))
+        return live_val > equity * (cap / Decimal("100"))
+
+    def get_cap_gross_breach(self, obj):
+        equity = self._equity(obj)
+        if not equity:
+            return False
+        cap = obj.portfolio.max_gross_exposure_pct
+        if not cap:
+            return False
+        # Expect view to pass "total_gross_by_portfolio" for efficiency
+        gross_map = self.context.get("total_gross_by_portfolio") or {}
+        gross = gross_map.get(obj.portfolio_id)
+        if gross is None:
+            price = self.get_live_price(obj) or obj.avg_price or 0
+            gross = obj.quantity * Decimal(str(price))
+        return gross > equity * (cap / Decimal("100"))
 
 
 class PaperOrderSerializer(serializers.ModelSerializer):
