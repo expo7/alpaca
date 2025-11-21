@@ -6,8 +6,6 @@
     "files.insertFinalNewline": true,
 
     // ✅ Autosave
-    // Saves when you leave the editor (switch tab, focus terminal, etc.),
-    // which plays nicely with formatOnSave and reduces “dirty” files.
     "files.autoSave": "onFocusChange",
 
     // ✅ Python: use project .venv
@@ -38,24 +36,35 @@
     "search.followSymlinks": false,
 
     // ✅ Git behavior
-    // Auto-fetch in the background so branch status is always fresh.
     "git.autofetch": true,
-    // Avoid annoying confirmations when committing from the Source Control view.
     "git.enableSmartCommit": true,
-    // Still ask before syncing (push+pull) so you don't accidentally push WIP.
     "git.confirmSync": true,
-    // Clean up remote-tracking branches when fetching.
     "git.pruneOnFetch": true,
 
+    // ⛔ TEMPORARILY DISABLE VS CODE GIT (to stop the slowdown)
+    // Re-enable later if you want.
+    "git.enabled": true,
+
     // ✅ Diff editor
-    // Ignore pure whitespace changes in diffs -> cleaner, especially with black/formatOnSave.
     "diffEditor.ignoreTrimWhitespace": true,
-    // Side-by-side diffs are usually clearer for code.
     "diffEditor.renderSideBySide": true,
 
-        // Make sure VS Code uses bash in the integrated terminal
+    // Terminal defaults
     "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.inheritEnv": true,
 
-    // Make sure environment variables (like from .venv) propagate properly
-    "terminal.integrated.inheritEnv": true
+    // ⚡ Performance: make VS Code STOP indexing heavy folders
+    "files.watcherExclude": {
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/coverage": true,
+        "**/.venv": true
+    },
+
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/coverage": true,
+        "**/.venv": true
+    }
 }
