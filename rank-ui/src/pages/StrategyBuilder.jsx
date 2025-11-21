@@ -95,6 +95,7 @@ export default function StrategyBuilder() {
   const [selectedPortfolio, setSelectedPortfolio] = useState("");
   const [selectedPortfolios, setSelectedPortfolios] = useState([]);
   const [executing, setExecuting] = useState(false);
+  const [creatingPortfolio, setCreatingPortfolio] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -110,8 +111,44 @@ export default function StrategyBuilder() {
       });
       const data = await res.json();
       setPortfolios(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data.length === 0) {
+        await createDefaultPortfolio();
+      }
+      if (Array.isArray(data) && data.length > 0 && !selectedPortfolio) {
+        setSelectedPortfolio(String(data[0].id));
+      }
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function createDefaultPortfolio() {
+    if (!token || creatingPortfolio) return;
+    setCreatingPortfolio(true);
+    try {
+      const res = await fetch(`${BASE}/api/paper/portfolios/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: "Default",
+          base_currency: "USD",
+          status: "active",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStatus("Created default portfolio.");
+        await loadPortfolios();
+      } else {
+        setStatus(data?.detail || "Failed to create default portfolio");
+      }
+    } catch (err) {
+      setStatus("Failed to create default portfolio");
+    } finally {
+      setCreatingPortfolio(false);
     }
   }
 
@@ -538,6 +575,16 @@ export default function StrategyBuilder() {
           >
             New
           </button>
+          {!portfolios.length && (
+            <button
+              type="button"
+              onClick={createDefaultPortfolio}
+              disabled={creatingPortfolio}
+              className="px-3 py-1.5 rounded-xl border border-slate-600 text-xs"
+            >
+              {creatingPortfolio ? "Creating..." : "Create default portfolio"}
+            </button>
+          )}
         </div>
       </div>
 
