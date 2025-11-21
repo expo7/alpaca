@@ -49,6 +49,10 @@ export default function Orders() {
   const [auditPinned, setAuditPinned] = useState(null);
   const [showPinnedInModal, setShowPinnedInModal] = useState(false);
   const [detailModal, setDetailModal] = useState(null);
+  const liveQuotes = useQuotes(orders.map((o) => o.symbol));
+  const [toastState, setToastState] = useState(null);
+  const [instrumentMeta, setInstrumentMeta] = useState({});
+  const [capsByPortfolio, setCapsByPortfolio] = useState({});
   const backtestPresets = useMemo(
     () => [
       { label: "Default", fill_mode: "", participation: "" },
@@ -958,11 +962,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentQuery, setInstrumentQuery] = useState("");
   const [instrumentLoading, setInstrumentLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [instrumentMeta, setInstrumentMeta] = useState({});
-  const [capsByPortfolio, setCapsByPortfolio] = useState({});
-  const [toastState, setToastState] = useState(null);
   const formQuotes = useQuotes(form.symbol ? [form.symbol] : []);
-  const liveQuotes = useQuotes(orders.map((o) => o.symbol));
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

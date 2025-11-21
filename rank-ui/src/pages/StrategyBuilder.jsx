@@ -104,25 +104,32 @@ export default function StrategyBuilder() {
     }
   }, [token]);
 
-  async function loadPortfolios() {
+  async function loadPortfolios({ autoCreate = true } = {}) {
     try {
       const res = await fetch(`${BASE}/api/paper/portfolios/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setPortfolios(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length === 0) {
-        await createDefaultPortfolio();
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.results)
+        ? data.results
+        : [];
+      setPortfolios(list);
+      if (list.length === 0 && autoCreate && !creatingPortfolio) {
+        await createDefaultPortfolio({ reload: false });
+        await loadPortfolios({ autoCreate: false });
+        return;
       }
-      if (Array.isArray(data) && data.length > 0 && !selectedPortfolio) {
-        setSelectedPortfolio(String(data[0].id));
+      if (list.length > 0 && !selectedPortfolio) {
+        setSelectedPortfolio(String(list[0].id));
       }
     } catch (err) {
       console.error(err);
     }
   }
 
-  async function createDefaultPortfolio() {
+  async function createDefaultPortfolio({ reload = true } = {}) {
     if (!token || creatingPortfolio) return;
     setCreatingPortfolio(true);
     try {
@@ -141,7 +148,9 @@ export default function StrategyBuilder() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setStatus("Created default portfolio.");
-        await loadPortfolios();
+        if (reload) {
+          await loadPortfolios({ autoCreate: false });
+        }
       } else {
         setStatus(data?.detail || "Failed to create default portfolio");
       }
@@ -483,12 +492,12 @@ export default function StrategyBuilder() {
         throw new Error(data?.detail || JSON.stringify(data));
       }
       setStatus(
-        `Execution queued (${data.execution_id}) for portfolios ${(
+        `Execution ${data.status || "queued"} (${data.execution_id}) for portfolios ${(
           data.portfolios || []
-        ).join(", ")}`
+        ).join(", ")}${data.queued_via ? ` [via ${data.queued_via}]` : ""}`
       );
     } catch (err) {
-      setStatus(err.message || "Execution failed");
+      setStatus(`Execution failed: ${err.message || "Execution failed"}`);
     } finally {
       setExecuting(false);
     }
