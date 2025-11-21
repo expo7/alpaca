@@ -1,0 +1,17 @@
+You are working inside my full-stack trading project located at ~/Desktop/alpaca.
+
+Project layout:
+- stockscores/ -> Django backend with Celery, paper trading, strategy execution (StrategyViewSet.execute, execute_strategy_task, StrategyRunner.evaluate).
+- rank-ui/ -> React + Vite frontend with Vitest tests. Key pages: StrategyBuilder, Orders, Leaderboards, Auth (Landing/Login).
+- docker-compose.yml + Dockerfile configure web, worker, beat, Postgres, Redis.
+
+Current state:
+- Strategy execution is wired: StrategyViewSet.execute enqueues execute_strategy_task (queue="strategy"), enforces caps (single/gross via entry quantity_pct), and returns queued metadata (status, queued_via, execution_id).
+- Frontend has tests in rank-ui/src/__tests__ for StrategyBuilder, Orders, Leaderboards, and some auth/routing components; Vitest + Testing Library are set up.
+- .gitignore is configured to ignore rank-ui/node_modules, rank-ui/dist, rank-ui/coverage, logs, and other build artifacts.
+
+From now on in this workspace, assume this context and follow existing patterns and file structure when you:
+- Add new backend endpoints or Celery tasks.
+- Wire new frontend pages or API calls in rank-ui.
+- Add or modify Vitest tests.
+- Suggest changes to Docker or docker-compose.
