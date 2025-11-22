@@ -15,6 +15,8 @@ from .views import (
     BacktestRunListView,
     BacktestRunViewSet,
     BacktestConfigViewSet,
+    StrategyValidateView,
+    StrategyBacktestView,
     UserPreferenceView,
     RegisterView,
     AggressiveSmallCapsView,
@@ -109,6 +111,16 @@ urlpatterns = [
     path("user-prefs/", UserPreferenceView.as_view(), name="user-preferences"),
     path("register/", RegisterView.as_view(), name="register"),
     path("backtest/", BacktestView.as_view(), name="backtest"),
+    path(
+        "strategies/validate/",
+        StrategyValidateView.as_view(),
+        name="strategy-validate",
+    ),
+    path(
+        "backtests/run/",
+        StrategyBacktestView.as_view(),
+        name="strategy-backtest-run",
+    ),
     path("backtests/history/", BacktestRunListView.as_view(), name="backtest-runs"),
     path(
         "default-tickers/aggressive-small-caps/",

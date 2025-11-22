@@ -1,11 +1,14 @@
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase
+from rest_framework.test import APIClient
+from django.contrib.auth import get_user_model
 from unittest.mock import patch
 import pandas as pd
 
 from .models import StockScore
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
+from ranker.backtest import BacktestResult
 
 
 class TechnicalScoreTests(SimpleTestCase):
@@ -139,3 +142,116 @@ class ComputeAndStoreTests(TestCase):
         self.assertEqual(StockScore.objects.count(), 1)
         self.assertEqual(updated.pk, first.pk)
         self.assertEqual(updated.final_score, 45.0)
+
+
+class StrategyApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="apiuser", password="test-pass"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _strategy_payload(self):
+        return {
+            "name": "RSI Example",
+            "entry_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "lt",
+                "value": {"param": "rsi_entry"},
+            },
+            "exit_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "gt",
+                "value": {"param": "rsi_exit"},
+            },
+            "parameters": {
+                "rsi_period": {"type": "int", "default": 14},
+                "rsi_entry": {"type": "float", "default": 30},
+                "rsi_exit": {"type": "float", "default": 70},
+            },
+        }
+
+    def _bot_payload(self):
+        return {
+            "symbols": ["AAPL"],
+            "mode": "paper",
+            "capital": 10_000,
+            "rebalance_days": 5,
+            "top_n": 1,
+        }
+
+    def test_strategy_validate_happy_path(self):
+        res = self.client.post(
+            "/api/strategies/validate/",
+            data=self._strategy_payload(),
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["valid"])
+
+    def test_strategy_validate_missing_param(self):
+        payload = self._strategy_payload()
+        payload["parameters"]["rsi_exit_typo"] = payload["parameters"].pop("rsi_exit")
+
+        res = self.client.post(
+            "/api/strategies/validate/",
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data["valid"])
+        self.assertIn("rsi_exit", str(res.data["errors"]))
+
+    @patch("ranker.views.run_basket_backtest")
+    def test_backtest_run_happy_path(self, mock_backtest):
+        mock_backtest.return_value = BacktestResult(
+            tickers=["AAPL"],
+            start="2024-01-01",
+            end="2024-01-10",
+            equity_curve=[
+                {"date": "2024-01-01", "value": 10000.0},
+                {"date": "2024-01-10", "value": 10500.0},
+            ],
+            benchmark_symbol="SPY",
+            benchmark_curve=[],
+            summary={
+                "initial_capital": 10000.0,
+                "final_value": 10500.0,
+                "total_return": 0.05,
+                "max_drawdown": -0.02,
+            },
+            per_ticker=[],
+        )
+
+        res = self.client.post(
+            "/api/backtests/run/",
+            data={
+                "strategy": self._strategy_payload(),
+                "bot": self._bot_payload(),
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-10",
+            },
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("trades", res.data)
+        self.assertIsInstance(res.data["trades"], list)
+        self.assertIn("equity_curve", res.data)
+        self.assertIsInstance(res.data["equity_curve"], list)
+
+        stats = res.data.get("stats", {})
+        for key in [
+            "start_equity",
+            "end_equity",
+            "return_pct",
+            "max_drawdown_pct",
+            "num_trades",
+            "win_rate_pct",
+        ]:
+            self.assertIn(key, stats)

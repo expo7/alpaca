@@ -4,8 +4,12 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.generics import ListAPIView
 from django.utils.dateparse import parse_datetime
-from .serializers import StockScoreSerializer
-from .models import StockScore
+from .serializers import (
+    StockScoreSerializer,
+    StrategySpecSerializer,
+    BotConfigSerializer,
+)
+from .models import StockScore, StrategySpec, BotConfig
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 
@@ -207,6 +211,105 @@ class BacktestRunListView(generics.ListAPIView):
     def get_queryset(self):
         return BacktestRun.objects.filter(user=self.request.user).order_by(
             "-created_at"
+        )
+
+
+class StrategyValidateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = StrategySpecSerializer(data=request.data)
+        if serializer.is_valid():
+            StrategySpec.objects.create(
+                user=request.user,
+                name=serializer.validated_data.get("name", ""),
+                spec=serializer.validated_data,
+            )
+            return Response({"valid": True, "errors": []}, status=status.HTTP_200_OK)
+
+        return Response(
+            {"valid": False, "errors": serializer.errors},
+            status=status.HTTP_200_OK,
+        )
+
+
+def _build_backtest_stats(summary):
+    return {
+        "start_equity": summary.get("initial_capital"),
+        "end_equity": summary.get("final_value"),
+        "return_pct": (summary.get("total_return") or 0.0) * 100.0,
+        "max_drawdown_pct": (summary.get("max_drawdown") or 0.0) * 100.0,
+        "num_trades": summary.get("num_trades", 0),
+        "win_rate_pct": summary.get("win_rate_pct", 0.0),
+    }
+
+
+class StrategyBacktestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        payload = request.data or {}
+        strategy_data = payload.get("strategy")
+        bot_data = payload.get("bot")
+        start_date = payload.get("start_date") or payload.get("start")
+        end_date = payload.get("end_date") or payload.get("end")
+
+        strategy_serializer = StrategySpecSerializer(data=strategy_data)
+        bot_serializer = BotConfigSerializer(data=bot_data)
+
+        errors = {}
+        if not strategy_serializer.is_valid():
+            errors["strategy"] = strategy_serializer.errors
+        if not bot_serializer.is_valid():
+            errors["bot"] = bot_serializer.errors
+        if not start_date or not end_date:
+            errors["dates"] = "start_date and end_date are required"
+
+        if errors:
+            return Response(
+                {"valid": False, "errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        strategy_obj = StrategySpec.objects.create(
+            user=request.user,
+            name=strategy_serializer.validated_data.get("name", ""),
+            spec=strategy_serializer.validated_data,
+        )
+        bot_obj = BotConfig.objects.create(
+            user=request.user,
+            name=bot_serializer.validated_data.get("name", ""),
+            config=bot_serializer.validated_data,
+        )
+
+        bot_cfg = bot_serializer.validated_data
+        try:
+            result = run_basket_backtest(
+                tickers=bot_cfg["symbols"],
+                start=str(start_date),
+                end=str(end_date),
+                benchmark=bot_cfg.get("benchmark", "SPY"),
+                initial_capital=float(bot_cfg.get("capital", 10000.0)),
+                rebalance_days=int(bot_cfg.get("rebalance_days", 5)),
+                top_n=bot_cfg.get("top_n"),
+            )
+        except Exception as exc:
+            return Response(
+                {"error": f"backtest failed: {exc}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summary = result.summary or {}
+        return Response(
+            {
+                "strategy_id": strategy_obj.id,
+                "bot_config_id": bot_obj.id,
+                "trades": summary.get("trades", []),
+                "equity_curve": result.equity_curve,
+                "stats": _build_backtest_stats(summary),
+                "per_ticker": result.per_ticker or [],
+            },
+            status=status.HTTP_200_OK,
         )
 
 

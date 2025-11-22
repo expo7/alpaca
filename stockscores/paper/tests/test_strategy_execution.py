@@ -1,7 +1,7 @@
-from django.contrib.auth import get_user_model
 from django.test import TestCase
 from unittest.mock import patch
 from rest_framework.test import APIClient
+from django.contrib.auth import get_user_model
 
 from paper.models import PaperPortfolio, Strategy
 
@@ -21,7 +21,9 @@ class StrategyExecutionTests(TestCase):
             user=self.user, name="Strat", description="", config={}
         )
 
-    def test_execute_returns_queued(self):
+    @patch("paper.api.views.execute_strategy_task")
+    def test_execute_returns_queued(self, mock_task):
+        mock_task.apply_async.return_value = None
         url = f"/api/paper/strategies/{self.strategy.id}/execute/"
         res = self.client.post(
             url,
@@ -33,6 +35,7 @@ class StrategyExecutionTests(TestCase):
         self.assertEqual(res.data["strategy_id"], self.strategy.id)
         self.assertIn(self.portfolio.id, res.data["portfolios"])
         self.assertIn("execution_id", res.data)
+        mock_task.apply_async.assert_called()
 
     def test_execute_rejects_missing_portfolio(self):
         url = f"/api/paper/strategies/{self.strategy.id}/execute/"

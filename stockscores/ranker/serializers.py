@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
 from .models import StockScore
+from .models import StrategySpec, BotConfig
 
 # [NOTE-WATCHLIST-SERIALIZERS]
 from .models import Watchlist, WatchlistItem
@@ -22,6 +23,72 @@ from rest_framework import serializers
 from .models import UserPreference
 
 User = get_user_model()
+
+
+def _collect_param_refs(node):
+    refs = set()
+    if isinstance(node, dict):
+        for key, val in node.items():
+            if key == "param" and isinstance(val, str):
+                refs.add(val)
+            else:
+                refs.update(_collect_param_refs(val))
+    elif isinstance(node, list):
+        for val in node:
+            refs.update(_collect_param_refs(val))
+    return refs
+
+
+class ParameterDefinitionSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    default = serializers.FloatField(required=False, allow_null=True)
+    min = serializers.FloatField(required=False, allow_null=True)
+    max = serializers.FloatField(required=False, allow_null=True)
+    description = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+
+
+class StrategySpecSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, allow_blank=True, default="")
+    entry_tree = serializers.DictField()
+    exit_tree = serializers.DictField(required=False, default=dict)
+    parameters = serializers.DictField(
+        child=ParameterDefinitionSerializer(), default=dict
+    )
+    metadata = serializers.DictField(required=False, default=dict)
+
+    def validate(self, data):
+        entry = data.get("entry_tree") or {}
+        if not entry:
+            raise serializers.ValidationError({"entry_tree": "entry_tree is required"})
+
+        params = data.get("parameters") or {}
+        defined_params = set(params.keys())
+        referenced_params = _collect_param_refs(entry) | _collect_param_refs(
+            data.get("exit_tree") or {}
+        )
+
+        missing = referenced_params - defined_params
+        if missing:
+            names = ", ".join(sorted(missing))
+            raise serializers.ValidationError(
+                {"parameters": f"Missing parameter definitions for: {names}"}
+            )
+        return data
+
+
+class BotConfigSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, allow_blank=True, default="")
+    symbols = serializers.ListField(
+        child=serializers.CharField(), allow_empty=False
+    )
+    mode = serializers.CharField(required=False, allow_blank=True, default="paper")
+    overrides = serializers.DictField(required=False, default=dict)
+    capital = serializers.FloatField(default=10000.0, min_value=0.0)
+    rebalance_days = serializers.IntegerField(default=5, min_value=1)
+    top_n = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    benchmark = serializers.CharField(required=False, default="SPY")
 
 
 class UserPreferenceSerializer(serializers.ModelSerializer):
