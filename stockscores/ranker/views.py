@@ -8,8 +8,9 @@ from .serializers import (
     StockScoreSerializer,
     StrategySpecSerializer,
     BotConfigSerializer,
+    BotSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig
+from .models import StockScore, StrategySpec, BotConfig, Bot
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 
@@ -36,6 +37,8 @@ from ranker.models import WatchlistItem
 from rest_framework import generics, permissions
 from .models import UserSettings
 from .serializers import UserSettingsSerializer
+from .metrics import get_yf_counter, increment_yf_counter
+from .tasks import compute_next_run_at, run_bot_once
 
 # ranker/views.py
 
@@ -128,6 +131,7 @@ class AggressiveSmallCapsView(APIView):
             pass
         yf_cache.set_cache_location(str(cache_dir))
         try:
+            increment_yf_counter()
             data = yf.screen(screen)
             quotes = data.get("quotes") or []
             symbols = [
@@ -214,6 +218,30 @@ class BacktestRunListView(generics.ListAPIView):
         )
 
 
+def _structured_errors(errors, prefix=""):
+    """Flatten DRF serializer error structures into [{field, message}] entries."""
+
+    def _field_name(current_prefix):
+        return current_prefix or "non_field_errors"
+
+    flattened = []
+
+    if isinstance(errors, dict):
+        for key, value in errors.items():
+            next_prefix = f"{prefix}.{key}" if prefix else str(key)
+            flattened.extend(_structured_errors(value, next_prefix))
+    elif isinstance(errors, list):
+        for idx, value in enumerate(errors):
+            if isinstance(value, (dict, list)):
+                next_prefix = f"{prefix}[{idx}]" if prefix else str(idx)
+                flattened.extend(_structured_errors(value, next_prefix))
+            else:
+                flattened.append({"field": _field_name(prefix), "message": str(value)})
+    else:
+        flattened.append({"field": _field_name(prefix), "message": str(errors)})
+
+    return flattened
+
 class StrategyValidateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -227,11 +255,9 @@ class StrategyValidateView(APIView):
             )
             return Response({"valid": True, "errors": []}, status=status.HTTP_200_OK)
 
-        return Response(
-            {"valid": False, "errors": serializer.errors},
-            status=status.HTTP_200_OK,
-        )
+        errors = _structured_errors(serializer.errors)
 
+        return Response({"valid": False, "errors": errors}, status=status.HTTP_200_OK)
 
 def _build_backtest_stats(summary):
     return {
@@ -257,19 +283,18 @@ class StrategyBacktestView(APIView):
         strategy_serializer = StrategySpecSerializer(data=strategy_data)
         bot_serializer = BotConfigSerializer(data=bot_data)
 
-        errors = {}
+        errors = []
         if not strategy_serializer.is_valid():
-            errors["strategy"] = strategy_serializer.errors
+            errors.extend(_structured_errors(strategy_serializer.errors, prefix="strategy"))
         if not bot_serializer.is_valid():
-            errors["bot"] = bot_serializer.errors
+            errors.extend(_structured_errors(bot_serializer.errors, prefix="bot"))
         if not start_date or not end_date:
-            errors["dates"] = "start_date and end_date are required"
+            errors.append(
+                {"field": "dates", "message": "start_date and end_date are required"}
+            )
 
         if errors:
-            return Response(
-                {"valid": False, "errors": errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"valid": False, "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
         strategy_obj = StrategySpec.objects.create(
             user=request.user,
@@ -295,7 +320,15 @@ class StrategyBacktestView(APIView):
             )
         except Exception as exc:
             return Response(
-                {"error": f"backtest failed: {exc}"},
+                {
+                    "valid": False,
+                    "errors": [
+                        {
+                            "field": "backtest",
+                            "message": f"backtest failed: {exc}",
+                        }
+                    ],
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -510,6 +543,7 @@ class SparklineView(APIView):
         out = []
         for sym in [s.strip().upper() for s in symbols.split(",") if s.strip()]:
             try:
+                increment_yf_counter()
                 df = yf.Ticker(sym).history(period=period, interval=interval)
                 closes = [
                     float(x) for x in df["Close"].dropna().tail(90).tolist()
@@ -518,6 +552,67 @@ class SparklineView(APIView):
             except Exception:
                 out.append({"symbol": sym, "closes": []})
         return Response({"results": out})
+
+
+class BotViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BotSerializer
+
+    def get_queryset(self):
+        return Bot.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user, state=Bot.STATE_STOPPED, next_run_at=None)
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        bot = self.get_object()
+        run_now = bool(request.data.get("run_now"))
+        if bot.state != Bot.STATE_RUNNING:
+            bot.state = Bot.STATE_RUNNING
+            bot.next_run_at = compute_next_run_at(bot)
+            bot.save(update_fields=["state", "next_run_at"])
+        elif bot.next_run_at is None:
+            bot.next_run_at = compute_next_run_at(bot)
+            bot.save(update_fields=["next_run_at"])
+
+        if run_now and bot.state == Bot.STATE_RUNNING:
+            run_bot_once.delay(bot.id)
+
+        serializer = self.get_serializer(bot)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def pause(self, request, pk=None):
+        bot = self.get_object()
+        if bot.state != Bot.STATE_PAUSED:
+            bot.state = Bot.STATE_PAUSED
+            bot.next_run_at = None
+            bot.save(update_fields=["state", "next_run_at"])
+        serializer = self.get_serializer(bot)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def stop(self, request, pk=None):
+        bot = self.get_object()
+        updates = []
+        if bot.state != Bot.STATE_STOPPED:
+            bot.state = Bot.STATE_STOPPED
+            updates.append("state")
+        if bot.next_run_at is not None:
+            bot.next_run_at = None
+            updates.append("next_run_at")
+        if updates:
+            bot.save(update_fields=updates)
+        serializer = self.get_serializer(bot)
+        return Response(serializer.data)
+
+
+class YFinanceUsageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response({"count": get_yf_counter()})
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

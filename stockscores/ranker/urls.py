@@ -20,6 +20,8 @@ from .views import (
     UserPreferenceView,
     RegisterView,
     AggressiveSmallCapsView,
+    BotViewSet,
+    YFinanceUsageView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -76,6 +78,19 @@ backtest_run_detail = BacktestRunViewSet.as_view(
     }
 )
 
+bot_list = BotViewSet.as_view({"get": "list", "post": "create"})
+bot_detail = BotViewSet.as_view(
+    {
+        "get": "retrieve",
+        "put": "update",
+        "patch": "partial_update",
+        "delete": "destroy",
+    }
+)
+bot_start = BotViewSet.as_view({"post": "start"})
+bot_pause = BotViewSet.as_view({"post": "pause"})
+bot_stop = BotViewSet.as_view({"post": "stop"})
+
 urlpatterns = [
     # Watchlists + nested items
     path("watchlists/", watchlist_list, name="watchlist-list"),
@@ -96,6 +111,12 @@ urlpatterns = [
     path("alerts/<int:pk>/test/", alert_test, name="alert-test"),
     path("alert-events/", alert_event_list, name="alert-event-list"),
     path("alert-events/<int:pk>/", alert_event_detail, name="alert-event-detail"),
+    # Bots
+    path("bots/", bot_list, name="bot-list"),
+    path("bots/<int:pk>/", bot_detail, name="bot-detail"),
+    path("bots/<int:pk>/start/", bot_start, name="bot-start"),
+    path("bots/<int:pk>/pause/", bot_pause, name="bot-pause"),
+    path("bots/<int:pk>/stop/", bot_stop, name="bot-stop"),
     # Backtests + configs
     path("backtests/", backtest_config_list, name="backtest-config-list"),
     path("backtests/<int:pk>/", backtest_config_detail, name="backtest-config-detail"),
@@ -127,4 +148,5 @@ urlpatterns = [
         AggressiveSmallCapsView.as_view(),
         name="aggressive-small-caps",
     ),
+    path("metrics/yfinance/", YFinanceUsageView.as_view(), name="yfinance-usage"),
 ]

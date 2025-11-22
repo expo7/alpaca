@@ -135,6 +135,7 @@ export default function App() {
   const [errors, setErrors] = useState([]);
   const [explain, setExplain] = useState(null);
   const [chartSym, setChartSym] = useState(null);
+  const [yfCount, setYfCount] = useState(null);
   // [NOTE-QUICK-ALERT-STATE]
   const [quickAlertSym, setQuickAlertSym] = useState(null);
   const [quickAlertFinal, setQuickAlertFinal] = useState(null);
@@ -151,6 +152,27 @@ export default function App() {
     localStorage.setItem("fundWeight", String(fundWeight));
     localStorage.setItem("taWeights", JSON.stringify(ta));
   }, [tickers, techWeight, fundWeight, ta]);
+
+  useEffect(() => {
+    if (!token || !import.meta.env.DEV) return undefined;
+    let active = true;
+
+    async function fetchYFinanceCount() {
+      try {
+        const res = await apiFetch("/api/metrics/yfinance/", { token });
+        if (active) setYfCount(res.count);
+      } catch (e) {
+        if (active) setYfCount(null);
+      }
+    }
+
+    fetchYFinanceCount();
+    const intervalId = setInterval(fetchYFinanceCount, 10000);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [token]);
 
 
   // [NOTE-BODY FOR RANK]
@@ -416,6 +438,8 @@ export default function App() {
         onLogout={logout}
         active={page}
         onNavigate={setPage}
+        yfCount={yfCount}
+        showYfCounter={import.meta.env.DEV}
       />
 
       <main className="max-w-7xl mx-auto p-6 space-y-6">

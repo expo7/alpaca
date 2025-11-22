@@ -72,6 +72,70 @@ class BotConfig(models.Model):
         return self.name or f"BotConfig {self.id}"
 
 
+class Bot(models.Model):
+    STATE_STOPPED = "stopped"
+    STATE_RUNNING = "running"
+    STATE_PAUSED = "paused"
+    STATE_CHOICES = [
+        (STATE_STOPPED, "Stopped"),
+        (STATE_RUNNING, "Running"),
+        (STATE_PAUSED, "Paused"),
+    ]
+
+    MODE_BACKTEST = "backtest"
+    MODE_PAPER = "paper"
+    MODE_LIVE = "live"
+    MODE_CHOICES = [
+        (MODE_BACKTEST, "Backtest"),
+        (MODE_PAPER, "Paper"),
+        (MODE_LIVE, "Live"),
+    ]
+
+    SCHEDULE_CHOICES = [
+        ("1m", "Every minute"),
+        ("5m", "Every 5 minutes"),
+        ("15m", "Every 15 minutes"),
+        ("1h", "Hourly"),
+        ("1d", "Daily"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="bots",
+    )
+    name = models.CharField(max_length=255, blank=True, default="")
+    strategy_spec = models.ForeignKey(
+        StrategySpec,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bots",
+    )
+    bot_config = models.ForeignKey(
+        BotConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bots",
+    )
+    state = models.CharField(
+        max_length=16, choices=STATE_CHOICES, default=STATE_STOPPED
+    )
+    mode = models.CharField(max_length=16, choices=MODE_CHOICES, default=MODE_BACKTEST)
+    schedule = models.CharField(max_length=16, choices=SCHEDULE_CHOICES, default="5m")
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name or f"Bot {self.id}"
+
+
 class BacktestRun(models.Model):
     """
     A saved / named backtest configuration + summary snapshot.

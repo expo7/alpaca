@@ -10,6 +10,7 @@ from django.utils.module_loading import import_string
 import pandas as pd
 import yfinance as yf
 from paper.models import Instrument
+from ranker.metrics import increment_yf_counter
 
 
 @dataclass
@@ -59,6 +60,7 @@ class YFinanceMarketDataProvider:
 
     def get_quote(self, symbol: str) -> Quote:
         _ensure_instrument(symbol)
+        increment_yf_counter()
         ticker = self._client.Ticker(symbol)
         info = ticker.fast_info
         price = float(info.last_price) if getattr(info, "last_price", None) else None
@@ -86,6 +88,7 @@ class YFinanceMarketDataProvider:
     def get_history(
         self, symbol: str, start, end, interval: str = "1d"
     ) -> pd.DataFrame:
+        increment_yf_counter()
         ticker = self._client.Ticker(symbol)
         df = ticker.history(start=start, end=end, interval=interval)
         return df
@@ -93,6 +96,7 @@ class YFinanceMarketDataProvider:
     def get_history_period(
         self, symbol: str, period: str = "3mo", interval: str = "1d"
     ) -> pd.DataFrame:
+        increment_yf_counter()
         ticker = self._client.Ticker(symbol)
         return ticker.history(period=period, interval=interval)
 

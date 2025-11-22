@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
 from .models import StockScore
-from .models import StrategySpec, BotConfig
+from .models import StrategySpec, BotConfig, Bot
 
 # [NOTE-WATCHLIST-SERIALIZERS]
 from .models import Watchlist, WatchlistItem
@@ -89,6 +89,32 @@ class BotConfigSerializer(serializers.Serializer):
     rebalance_days = serializers.IntegerField(default=5, min_value=1)
     top_n = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     benchmark = serializers.CharField(required=False, default="SPY")
+
+
+class BotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bot
+        fields = [
+            "id",
+            "name",
+            "strategy_spec",
+            "bot_config",
+            "state",
+            "mode",
+            "schedule",
+            "last_run_at",
+            "next_run_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "state",
+            "last_run_at",
+            "next_run_at",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class UserPreferenceSerializer(serializers.ModelSerializer):

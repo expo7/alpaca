@@ -36,6 +36,7 @@ describe("App routing and navigation smoke tests", () => {
       if (url.includes("/api/paper/orders/")) return Promise.resolve(mockResponse([]));
       if (url.includes("/api/paper/portfolios/")) return Promise.resolve(mockResponse([]));
       if (url.includes("/api/paper/leaderboards/")) return Promise.resolve(mockResponse([]));
+      if (url.includes("/api/metrics/yfinance/")) return Promise.resolve(mockResponse({ count: 0 }));
       return Promise.resolve(mockResponse({ results: [] }));
     });
     vi.stubGlobal("fetch", fetchMock);

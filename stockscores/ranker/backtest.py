@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from .metrics import increment_yf_counter
+
 
 @dataclass
 class BacktestResult:
@@ -86,6 +88,7 @@ def run_basket_backtest(
     # -------------------------
     # 1) Download basket prices
     # -------------------------
+    increment_yf_counter()
     data = yf.download(
         tickers,
         start=start,
@@ -162,6 +165,7 @@ def run_basket_backtest(
     # -------------------------
     # 3) Benchmark buy & hold
     # -------------------------
+    increment_yf_counter()
     bench_data = yf.download(
         benchmark,
         start=start,

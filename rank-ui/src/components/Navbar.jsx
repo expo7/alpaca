@@ -18,7 +18,14 @@ const tabs = [
   { id: "strategies", label: "Strategies" },
 ];
 
-export default function Navbar({ user, active, onNavigate, onLogout }) {
+export default function Navbar({
+  user,
+  active,
+  onNavigate,
+  onLogout,
+  yfCount = null,
+  showYfCounter = false,
+}) {
   return (
     <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
@@ -56,6 +63,16 @@ export default function Navbar({ user, active, onNavigate, onLogout }) {
 
         {/* Right: user + logout */}
         <div className="flex items-center gap-3 text-xs">
+          {showYfCounter && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900/80 text-slate-200">
+              <span className="text-[11px] uppercase tracking-wide text-slate-400">
+                yfinance hits
+              </span>
+              <span className="text-sm font-semibold text-indigo-300">
+                {yfCount ?? "-"}
+              </span>
+            </div>
+          )}
           {user && (
             <div className="hidden sm:flex flex-col items-end leading-tight">
               <span className="text-slate-200 font-medium">

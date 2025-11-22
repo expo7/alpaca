@@ -200,6 +200,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "paper.tasks.recompute_leaderboards",
         "schedule": 1800.0,
     },
+    "ranker-bot-scheduler": {
+        "task": "ranker.tasks.schedule_due_bots",
+        "schedule": 30.0,
+    },
 }
 
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")

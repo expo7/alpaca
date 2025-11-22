@@ -7,6 +7,7 @@ import pandas as pd
 import yfinance as yf
 from yfinance import cache as yf_cache
 from ta import add_all_ta_features
+from .metrics import increment_yf_counter
 
 _YF_CACHE_DIR = Path(tempfile.gettempdir()) / "yfinance-cache"
 try:
@@ -236,6 +237,7 @@ def technical_score_from_ta(df: pd.DataFrame, *, weights=None) -> tuple[float, d
 def technical_score(
     symbol: str, period="6mo", interval="1d", *, ta_weights=None
 ) -> tuple[float, dict]:
+    increment_yf_counter()
     df = yf.Ticker(symbol).history(period="1y", interval="1d", auto_adjust=False)
     if df is None or df.empty:
         return 0.0, {"error": "no_data"}
@@ -253,6 +255,7 @@ def technical_score(
 
 # ---------- FUNDAMENTALS ----------
 def fundamental_score(symbol: str) -> tuple[float, dict]:
+    increment_yf_counter()
     tkr = yf.Ticker(symbol)
     info = tkr.info or {}
 

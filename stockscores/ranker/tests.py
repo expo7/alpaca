@@ -1,14 +1,18 @@
+from datetime import timedelta
+
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from unittest.mock import patch
 import pandas as pd
 
-from .models import StockScore
+from .models import StockScore, Bot, BotConfig, StrategySpec
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
 from ranker.backtest import BacktestResult
+from ranker.tasks import run_bot_once, schedule_due_bots
 
 
 class TechnicalScoreTests(SimpleTestCase):
@@ -205,7 +209,15 @@ class StrategyApiTests(TestCase):
 
         self.assertEqual(res.status_code, 200)
         self.assertFalse(res.data["valid"])
-        self.assertIn("rsi_exit", str(res.data["errors"]))
+        errors = res.data["errors"]
+        self.assertIsInstance(errors, list)
+        self.assertTrue(
+            any(
+                err.get("field") == "parameters"
+                and "rsi_exit" in err.get("message", "")
+                for err in errors
+            )
+        )
 
     @patch("ranker.views.run_basket_backtest")
     def test_backtest_run_happy_path(self, mock_backtest):
@@ -255,3 +267,154 @@ class StrategyApiTests(TestCase):
             "win_rate_pct",
         ]:
             self.assertIn(key, stats)
+
+    def test_backtest_run_errors_are_structured(self):
+        invalid_strategy = self._strategy_payload()
+        invalid_strategy["entry_tree"] = {}
+
+        res = self.client.post(
+            "/api/backtests/run/",
+            data={
+                "strategy": invalid_strategy,
+                "bot": {"symbols": []},
+            },
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.data["valid"])
+        errors = res.data["errors"]
+        self.assertIsInstance(errors, list)
+        self.assertTrue(
+            any(err.get("field") == "strategy.entry_tree" for err in errors)
+        )
+        self.assertTrue(any(err.get("field") == "bot.symbols" for err in errors))
+        self.assertTrue(any(err.get("field") == "dates" for err in errors))
+
+
+class BotRunnerTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="botuser", password="test-pass"
+        )
+        self.client.force_authenticate(user=self.user)
+        self.strategy = StrategySpec.objects.create(
+            user=self.user,
+            name="Momentum",
+            spec={
+                "entry_tree": {
+                    "type": "condition",
+                    "indicator": "rsi",
+                    "operator": "lt",
+                    "value": {"param": "rsi_entry"},
+                },
+                "exit_tree": {},
+                "parameters": {"rsi_entry": {"type": "float", "default": 30}},
+                "metadata": {},
+            },
+        )
+        self.bot_config = BotConfig.objects.create(
+            user=self.user,
+            name="BotCfg",
+            config={
+                "symbols": ["AAPL"],
+                "mode": "paper",
+                "capital": 10000,
+                "rebalance_days": 5,
+                "top_n": 1,
+                "benchmark": "SPY",
+            },
+        )
+
+    @patch("ranker.tasks.run_bot_once.delay")
+    def test_start_pause_stop_transitions(self, mock_delay):
+        bot = Bot.objects.create(
+            user=self.user,
+            strategy_spec=self.strategy,
+            bot_config=self.bot_config,
+            schedule="1m",
+        )
+
+        res = self.client.post(
+            f"/api/bots/{bot.id}/start/", {"run_now": True}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        bot.refresh_from_db()
+        self.assertEqual(bot.state, Bot.STATE_RUNNING)
+        self.assertIsNotNone(bot.next_run_at)
+        mock_delay.assert_called_once_with(bot.id)
+
+        res = self.client.post(f"/api/bots/{bot.id}/pause/", format="json")
+        self.assertEqual(res.status_code, 200)
+        bot.refresh_from_db()
+        self.assertEqual(bot.state, Bot.STATE_PAUSED)
+        self.assertIsNone(bot.next_run_at)
+
+        mock_delay.reset_mock()
+        res = self.client.post(f"/api/bots/{bot.id}/start/", format="json")
+        self.assertEqual(res.status_code, 200)
+        bot.refresh_from_db()
+        self.assertEqual(bot.state, Bot.STATE_RUNNING)
+        self.assertIsNotNone(bot.next_run_at)
+        mock_delay.assert_not_called()
+
+        res = self.client.post(f"/api/bots/{bot.id}/stop/", format="json")
+        self.assertEqual(res.status_code, 200)
+        bot.refresh_from_db()
+        self.assertEqual(bot.state, Bot.STATE_STOPPED)
+        self.assertIsNone(bot.next_run_at)
+
+    @patch("ranker.tasks.run_bot_once.delay")
+    def test_scheduler_only_enqueues_running_due_bots(self, mock_delay):
+        now = timezone.now()
+        running_due = Bot.objects.create(
+            user=self.user,
+            strategy_spec=self.strategy,
+            bot_config=self.bot_config,
+            state=Bot.STATE_RUNNING,
+            next_run_at=now - timedelta(seconds=10),
+            schedule="1m",
+        )
+        Bot.objects.create(
+            user=self.user,
+            strategy_spec=self.strategy,
+            bot_config=self.bot_config,
+            state=Bot.STATE_RUNNING,
+            next_run_at=now + timedelta(minutes=5),
+            schedule="5m",
+        )
+        Bot.objects.create(
+            user=self.user,
+            strategy_spec=self.strategy,
+            bot_config=self.bot_config,
+            state=Bot.STATE_PAUSED,
+            next_run_at=now - timedelta(seconds=5),
+            schedule="1m",
+        )
+
+        schedule_due_bots()
+
+        mock_delay.assert_called_once_with(running_due.id)
+
+    @patch("ranker.tasks.run_bot_engine")
+    def test_run_bot_once_respects_state(self, mock_engine):
+        bot = Bot.objects.create(
+            user=self.user,
+            strategy_spec=self.strategy,
+            bot_config=self.bot_config,
+            state=Bot.STATE_STOPPED,
+            schedule="1m",
+        )
+
+        run_bot_once(bot.id)
+        mock_engine.assert_not_called()
+
+        bot.state = Bot.STATE_RUNNING
+        bot.save(update_fields=["state"])
+
+        run_bot_once(bot.id)
+        mock_engine.assert_called_once_with(bot)
+        bot.refresh_from_db()
+        self.assertIsNotNone(bot.last_run_at)
+        self.assertIsNotNone(bot.next_run_at)
