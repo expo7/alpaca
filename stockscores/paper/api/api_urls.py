@@ -5,6 +5,7 @@ from .views import (
     PortfolioViewSet,
     PositionViewSet,
     QuoteView,
+    SymbolIntervalView,
     InstrumentViewSet,
     OrderViewSet,
     TradeViewSet,
@@ -34,4 +35,9 @@ quote_list = QuoteView.as_view()
 
 urlpatterns = router.urls + [
     path("paper/quotes/", quote_list, name="paper-quote-list"),
+    path(
+        "paper/symbols/<str:symbol>/interval/",
+        SymbolIntervalView.as_view(),
+        name="paper-symbol-interval",
+    ),
 ]

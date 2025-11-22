@@ -17,25 +17,23 @@ function loadTV() {
   return tvLoader;
 }
 
-/**
- * Props:
- * - symbol: e.g., "AAPL" (we'll prefix with NASDAQ: by default)
- * - exchangePrefix: e.g., "NASDAQ:" or "NYSE:" (default "NASDAQ:")
- * - interval: "D" | "60" | "240" | etc. (default "D")
- * - studies: array of tv-basicstudies ids (optional)
- */
+const DEFAULT_STUDIES = ["RSI@tv-basicstudies", "MACD@tv-basicstudies", "OBV@tv-basicstudies"];
+
 export default function TradingViewChart({
   symbol,
   exchangePrefix = "NASDAQ:",
   interval = "D",
-  studies = ["RSI@tv-basicstudies", "MACD@tv-basicstudies", "OBV@tv-basicstudies"],
+  studies,
   autosize = true,
   height = 560,
 }) {
   const id = useId().replace(/:/g, "_");
   const containerRef = useRef(null);
+  const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
+  const studiesList = studies || DEFAULT_STUDIES;
 
   useEffect(() => {
+    if (!symbol || isTest) return undefined;
     let widget;
     let mounted = true;
 
@@ -57,7 +55,7 @@ export default function TradingViewChart({
           autosize,
           container_id: id,
           height: autosize ? undefined : height,
-          studies, // some may silently fail if not available
+          studies: studiesList, // some may silently fail if not available
         });
       })
       .catch(console.error);
@@ -67,7 +65,7 @@ export default function TradingViewChart({
       // TradingView cleans up on unmount automatically when container is removed
       // (no explicit destroy in tv.js embed API)
     };
-  }, [symbol, exchangePrefix, interval, autosize, height, id, studies]);
+  }, [symbol, exchangePrefix, interval, autosize, height, id, studiesList, isTest]);
 
   return (
     <div

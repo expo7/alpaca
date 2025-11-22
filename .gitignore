@@ -64,6 +64,7 @@ celerybeat.pid
 !.env.sample
 .env.docker
 .env.local
+test.py
 
 ############################################
 # Frontend - rank-ui

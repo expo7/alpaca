@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import Toast from "../components/Toast.jsx";
 import useQuotes from "../hooks/useQuotes.js";
+import TradingViewChart from "../TradingViewChart.jsx";
 
 const BASE = "http://127.0.0.1:8000";
 const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
@@ -30,6 +31,12 @@ const SCREEN_CHOICES = [
   "undervalued_large_caps",
 ];
 
+const BTN_BASE =
+  "transition-colors transition-transform duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900";
+const BTN_GHOST = `${BTN_BASE} border border-slate-700 hover:bg-slate-800/70`;
+const BTN_PRIMARY = `${BTN_BASE} bg-indigo-600 text-white hover:bg-indigo-500/90`;
+const BTN_DANGER = `${BTN_BASE} border border-rose-700 text-rose-200 hover:bg-rose-900/40`;
+
 export default function Orders() {
   const { token } = useAuth();
   const [orders, setOrders] = useState([]);
@@ -53,15 +60,19 @@ export default function Orders() {
   const [toastState, setToastState] = useState(null);
   const [instrumentMeta, setInstrumentMeta] = useState({});
   const [capsByPortfolio, setCapsByPortfolio] = useState({});
-  const backtestPresets = useMemo(
-    () => [
-      { label: "Default", fill_mode: "", participation: "" },
-      { label: "VWAP 10%", fill_mode: "history", participation: "0.10" },
-      { label: "VWAP 25%", fill_mode: "history", participation: "0.25" },
-      { label: "Live (no cap)", fill_mode: "live", participation: "" },
-    ],
-    []
-  );
+  const [chartSymbol, setChartSymbol] = useState("");
+
+  const formatCurrency = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return num.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const getLiveQuote = (symbol) =>
+    liveQuotes[symbol] || liveQuotes[symbol?.toUpperCase()];
 
   const childCounts = useMemo(() => {
     const counts = {};
@@ -539,7 +550,7 @@ export default function Orders() {
             type="button"
             onClick={() => startEditing(order)}
             onClickCapture={(e) => e.stopPropagation()}
-            className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
+            className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
           >
             Edit
           </button>
@@ -551,7 +562,7 @@ export default function Orders() {
               onClick={() => submitEdit(order)}
               disabled={savingOrderId === order.id}
               onClickCapture={(e) => e.stopPropagation()}
-              className="px-2 py-1 rounded-lg bg-indigo-600 text-white disabled:opacity-60"
+              className={`${BTN_PRIMARY} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
             >
               {savingOrderId === order.id ? "Saving..." : "Save"}
             </button>
@@ -559,7 +570,7 @@ export default function Orders() {
               type="button"
               onClick={() => cancelInlineEdit(order.id)}
               onClickCapture={(e) => e.stopPropagation()}
-              className="px-2 py-1 rounded-lg border border-slate-700"
+              className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
             >
               Cancel
             </button>
@@ -570,7 +581,7 @@ export default function Orders() {
           onClick={() => cancelOrder(order.id)}
           disabled={cancelingOrderId === order.id}
           onClickCapture={(e) => e.stopPropagation()}
-          className="px-2 py-1 rounded-lg border border-rose-700 text-rose-200 disabled:opacity-60"
+          className={`${BTN_DANGER} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
         >
           {cancelingOrderId === order.id ? "Canceling..." : "Cancel"}
         </button>
@@ -578,7 +589,7 @@ export default function Orders() {
           type="button"
           onClick={() => setOverrideModal(order)}
           onClickCapture={(e) => e.stopPropagation()}
-          className="px-2 py-1 rounded-lg border border-slate-700"
+          className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
         >
           Overrides
         </button>
@@ -586,7 +597,7 @@ export default function Orders() {
           type="button"
           onClick={() => loadAudit(order)}
           onClickCapture={(e) => e.stopPropagation()}
-          className="px-2 py-1 rounded-lg border border-slate-700"
+          className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
         >
           {auditLoading && auditState?.order?.id === order.id ? "Loading…" : "Audit"}
         </button>
@@ -604,6 +615,23 @@ export default function Orders() {
 
   return (
     <div className="p-4 lg:p-6 space-y-4">
+      {chartSymbol && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Micro view · {chartSymbol} · 1m</span>
+            <span className="text-[11px]">TradingView</span>
+          </div>
+          <div className="rounded-lg overflow-hidden border border-slate-800">
+            <TradingViewChart
+              symbol={chartSymbol}
+              interval="1"
+              exchangePrefix=""
+              autosize={false}
+              height={480}
+            />
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-lg font-semibold">Orders</h1>
@@ -614,23 +642,15 @@ export default function Orders() {
         <button
           type="button"
           onClick={loadOrders}
-          className="px-3 py-1.5 rounded-xl border border-slate-700 text-xs"
+          className={`${BTN_GHOST} px-3 py-1.5 rounded-xl text-xs`}
         >
           Refresh
         </button>
       </div>
       <div className="flex flex-wrap gap-2 text-[11px]">
-        <span className="text-slate-400">Backtest presets:</span>
-        {backtestPresets.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            onClick={() => setBacktestProfile({ fill_mode: preset.fill_mode, participation: preset.participation })}
-            className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
-          >
-            {preset.label}
-          </button>
-        ))}
+        <span className="text-slate-400">
+          Quotes refresh every {QUOTE_REFRESH_MS / 1000}s (mode: {DATA_MODE})
+        </span>
       </div>
       {auditPinned && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
@@ -641,24 +661,7 @@ export default function Orders() {
             <button
               type="button"
               onClick={() => setAuditPinned(null)}
-              className="text-[11px] text-slate-400 hover:text-white"
-            >
-              Unpin
-            </button>
-          </div>
-          <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
-        </div>
-      )}
-      {auditPinned && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <div className="font-semibold">
-              Pinned timeline · Order #{auditPinned.order?.id} {auditPinned.order?.symbol}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAuditPinned(null)}
-              className="text-[11px] text-slate-400 hover:text-white"
+              className={`${BTN_GHOST} text-[11px] px-2 py-1 rounded-lg`}
             >
               Unpin
             </button>
@@ -698,30 +701,58 @@ export default function Orders() {
                 </td>
               </tr>
             )}
-            {orders.map((order) => (
-              <tr
-                key={order.id}
-                className="border-t border-slate-800 align-top cursor-pointer hover:bg-slate-900/40"
-                onClick={() => {
-                  setDetailModal(order);
-                  loadAudit(order);
-                }}
-              >
-                <td className="px-3 py-2 font-semibold">{order.symbol}</td>
-                <td className="px-3 py-2 text-xs text-slate-400">
-                  {instrumentMeta[order.symbol]?.exchange || "—"}{" "}
-                  {instrumentMeta[order.symbol]?.asset_class
-                    ? `· ${instrumentMeta[order.symbol]?.asset_class}`
-                    : ""}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  {order.order_type.replace(/_/g, " ")}
-                </td>
-                <td className="px-3 py-2">
-                  {order.quantity ?? order.notional ?? "—"}
-                </td>
-                <td className="px-3 py-2">
-                  <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
+            {orders.map((order) => {
+              const livePrice = getLiveQuote(order.symbol);
+              const qty = Number(order.quantity || 0);
+              const priceHint = Number(
+                order.limit_price ??
+                  order.stop_price ??
+                  livePrice ??
+                  order.average_fill_price ??
+                  0
+              );
+              const notional =
+                priceHint > 0 ? qty * priceHint : Number(order.notional || 0);
+              const formattedNotional = formatCurrency(notional);
+              const formattedLive = formatCurrency(livePrice);
+              return (
+                <tr
+                  key={order.id}
+                  className="border-t border-slate-800 align-top cursor-pointer hover:bg-slate-900/40"
+                  onClick={() => {
+                    setDetailModal(order);
+                    loadAudit(order);
+                  }}
+                >
+                  <td className="px-3 py-2 font-semibold">{order.symbol}</td>
+                  <td className="px-3 py-2 text-xs text-slate-400">
+                    {instrumentMeta[order.symbol]?.exchange || "—"}{" "}
+                    {instrumentMeta[order.symbol]?.asset_class
+                      ? `· ${instrumentMeta[order.symbol]?.asset_class}`
+                      : ""}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {order.order_type.replace(/_/g, " ")}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-semibold text-sm">
+                          {order.quantity ?? "—"}
+                        </span>
+                        <span className="text-[11px] text-slate-400">Qty</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-200">
+                        Live: {formattedLive ? `$${formattedLive}` : "—"}
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        Est. notional:{" "}
+                        {formattedNotional ? `$${formattedNotional}` : "—"}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
                     {order.status}
                     {(order.audit_events || []).some((e) => e.event === "liquidity_queue") && (
                       <span
@@ -799,7 +830,8 @@ export default function Orders() {
                 </td>
                 <td className="px-3 py-2">{renderActions(order)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -815,6 +847,7 @@ export default function Orders() {
           error: screenFetchError,
         }}
         onSuccess={loadOrders}
+        onSymbolChange={setChartSymbol}
       />
       {overrideModal && (
         <OverrideModal
@@ -830,83 +863,83 @@ export default function Orders() {
       {auditState && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 space-y-3 text-sm max-w-4xl w-full max-h-[80vh] overflow-auto">
-          <div className="flex items-center justify-between">
-            <div className="font-semibold">
-              Audit · Order #{auditState.order?.id} ({auditState.order?.symbol})
-            </div>
-            <button
-              type="button"
-              onClick={() => setAuditState(null)}
-              className="text-xs text-slate-400 hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex gap-2 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setAuditPinned(auditState)}
-              className="px-2 py-1 rounded-lg border border-slate-700 hover:border-indigo-400"
-            >
-              Pin timeline
-            </button>
-            {auditPinned && auditPinned.order?.id === auditState.order?.id && (
-              <span className="text-emerald-300">Pinned</span>
-            )}
-            {auditPinned && (
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">
+                Audit · Order #{auditState.order?.id} ({auditState.order?.symbol})
+              </div>
               <button
                 type="button"
-                onClick={() => setShowPinnedInModal((v) => !v)}
-                className="px-2 py-1 rounded-lg border border-slate-700"
+                onClick={() => setAuditState(null)}
+                className={`${BTN_GHOST} text-xs px-2 py-1 rounded-lg`}
               >
-                {showPinnedInModal ? "Hide pinned here" : "Show pinned here"}
+                Close
               </button>
-            )}
-          </div>
-          {(auditState.events || []).some((e) => e.event === "liquidity_queue") && (
-            <div className="text-[11px] px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-800 text-amber-100">
-              Queued for liquidity — waiting for next bar (see events timeline).
             </div>
-          )}
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <div className="text-[11px] uppercase text-slate-400 mb-1">Events</div>
-              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
-                <Timeline events={(auditState.events || []).concat(auditState.order?.audit_events || [])} />
-              </div>
-              {showPinnedInModal && auditPinned && (
-                <div className="mt-2">
-                  <div className="text-[11px] uppercase text-slate-400 mb-1">Pinned Timeline</div>
-                  <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-40 overflow-auto divide-y divide-slate-800">
-                    <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
-                  </div>
-                </div>
+            <div className="flex gap-2 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setAuditPinned(auditState)}
+                className={`${BTN_GHOST} px-2 py-1 rounded-lg`}
+              >
+                Pin timeline
+              </button>
+              {auditPinned && auditPinned.order?.id === auditState.order?.id && (
+                <span className="text-emerald-300">Pinned</span>
+              )}
+              {auditPinned && (
+                <button
+                  type="button"
+                  onClick={() => setShowPinnedInModal((v) => !v)}
+                  className={`${BTN_GHOST} px-2 py-1 rounded-lg`}
+                >
+                  {showPinnedInModal ? "Hide pinned here" : "Show pinned here"}
+                </button>
               )}
             </div>
-            <div>
-              <div className="text-[11px] uppercase text-slate-400 mb-1">Trades</div>
-              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
-                {(auditState.trades || []).length ? (
-                  auditState.trades.map((t) => (
-                    <div key={t.id} className="px-3 py-2 text-xs flex justify-between">
-                      <div className="space-y-1">
-                        <div className="font-semibold">
-                          {t.side.toUpperCase()} {t.quantity} @ {t.price}
-                        </div>
-                        <div className="text-slate-400 font-mono">{t.created_at}</div>
-                      </div>
-                      <div className="text-right text-slate-300">
-                        Fees: {t.fees} <br />
-                        Slippage: {t.slippage}
-                      </div>
+            {(auditState.events || []).some((e) => e.event === "liquidity_queue") && (
+              <div className="text-[11px] px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-800 text-amber-100">
+                Queued for liquidity — waiting for next bar (see events timeline).
+              </div>
+            )}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-[11px] uppercase text-slate-400 mb-1">Events</div>
+                <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                  <Timeline events={(auditState.events || []).concat(auditState.order?.audit_events || [])} />
+                </div>
+                {showPinnedInModal && auditPinned && (
+                  <div className="mt-2">
+                    <div className="text-[11px] uppercase text-slate-400 mb-1">Pinned Timeline</div>
+                    <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-40 overflow-auto divide-y divide-slate-800">
+                      <Timeline events={(auditPinned.events || []).concat(auditPinned.order?.audit_events || [])} />
                     </div>
-                  ))
-                ) : (
-                  <div className="px-3 py-3 text-slate-500">No trades</div>
+                  </div>
                 )}
               </div>
+              <div>
+                <div className="text-[11px] uppercase text-slate-400 mb-1">Trades</div>
+                <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-48 overflow-auto divide-y divide-slate-800">
+                  {(auditState.trades || []).length ? (
+                    auditState.trades.map((t) => (
+                      <div key={t.id} className="px-3 py-2 text-xs flex justify-between">
+                        <div className="space-y-1">
+                          <div className="font-semibold">
+                            {t.side.toUpperCase()} {t.quantity} @ {t.price}
+                          </div>
+                          <div className="text-slate-400 font-mono">{t.created_at}</div>
+                        </div>
+                        <div className="text-right text-slate-300">
+                          Fees: {t.fees} <br />
+                          Slippage: {t.slippage}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-3 text-slate-500">No trades</div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
           </div>
         </div>
       )}
@@ -919,7 +952,7 @@ export default function Orders() {
   );
 }
 
-function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }) {
+function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, onSymbolChange }) {
   const [form, setForm] = useState({
     portfolio: "",
     symbol: "",
@@ -963,6 +996,20 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   const [instrumentLoading, setInstrumentLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const formQuotes = useQuotes(form.symbol ? [form.symbol] : []);
+  const [yfPrice, setYfPrice] = useState(null);
+  const [yfPriceSymbol, setYfPriceSymbol] = useState("");
+  const [yfPriceLoading, setYfPriceLoading] = useState(false);
+  const [yfPriceError, setYfPriceError] = useState("");
+  const [showCosts, setShowCosts] = useState(false);
+  const [showBacktest, setShowBacktest] = useState(false);
+  const formatCurrencyLocal = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    return num.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -985,9 +1032,17 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
   );
   const capViolation = submitError?.toLowerCase().includes("cap");
   const liveFormPrice =
-    formQuotes[form.symbol] || formQuotes[form.symbol?.toUpperCase()];
+    formQuotes[form.symbol] ||
+    formQuotes[form.symbol?.toUpperCase()] ||
+    (yfPriceSymbol &&
+    (form.symbol?.toUpperCase() === yfPriceSymbol ||
+      instrumentQuery?.toUpperCase() === yfPriceSymbol)
+      ? yfPrice
+      : null);
   const estPrice = Number(form.limit_price || liveFormPrice || 0);
   const estNotional = estPrice > 0 ? Number(form.quantity || 0) * estPrice : 0;
+  const formattedFormQuote = formatCurrencyLocal(liveFormPrice);
+  const formattedFormNotional = formatCurrencyLocal(estNotional);
   const capPreview =
     selectedPortfolio && estNotional > 0
       ? {
@@ -1079,6 +1134,49 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
     if (value) {
       updateField("symbol", value);
     }
+  };
+
+  const fetchOneMinutePrice = async () => {
+    const candidateSymbol = form.symbol?.trim().toUpperCase();
+    if (!candidateSymbol) {
+      setYfPriceError("Enter a symbol first.");
+      return;
+    }
+    try {
+      setYfPriceLoading(true);
+      setYfPriceError("");
+      const res = await fetch(
+        `${BASE}/api/paper/symbols/${encodeURIComponent(
+          candidateSymbol
+        )}/interval/?interval=1m&period=max`
+      );
+      if (!res.ok) {
+        const detail = await res.text();
+        throw new Error(detail || "Quote lookup failed");
+      }
+      const data = await res.json();
+      setYfPrice(data?.last_close ?? null);
+      setYfPriceSymbol((data?.symbol || candidateSymbol).toUpperCase());
+    } catch (err) {
+      setYfPrice(null);
+      setYfPriceSymbol("");
+      setYfPriceError(err.message || "Quote lookup failed");
+    } finally {
+      setYfPriceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // reset manual 1m price when symbol changes
+    setYfPrice(null);
+    setYfPriceSymbol("");
+    setYfPriceError("");
+  }, [form.symbol]);
+
+  const applySymbolChange = () => {
+    if (!onSymbolChange) return;
+    const sym = form.symbol?.trim().toUpperCase() || "";
+    onSymbolChange(sym);
   };
 
   const submit = async (e) => {
@@ -1214,7 +1312,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
         <select
           value={form.portfolio}
           onChange={(e) => updateField("portfolio", e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-xs h-8 w-full md:w-48"
         >
           <option value="">Select portfolio</option>
           {portfolios.map((portfolio) => (
@@ -1224,60 +1322,128 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           ))}
         </select>
         <div className="space-y-2">
-          <input
-            value={form.symbol}
-            onChange={(e) => updateField("symbol", e.target.value)}
-            placeholder="Symbol"
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          />
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <input
-              value={instrumentQuery}
-              onChange={(e) => setInstrumentQuery(e.target.value)}
-              placeholder="Lookup symbol…"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              value={form.symbol}
+              onChange={(e) => updateField("symbol", e.target.value)}
+              placeholder="Symbol"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
             />
             <button
               type="button"
-              onClick={searchInstruments}
-              className="px-3 py-1.5 rounded-lg border border-slate-700"
+              onClick={applySymbolChange}
+              className={`${BTN_GHOST} px-2 py-1 rounded-lg text-[11px] whitespace-nowrap`}
             >
-              {instrumentLoading ? "..." : "Search"}
+              Set symbol
             </button>
           </div>
-          {instrumentResults.length > 0 && (
-            <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-32 overflow-auto">
-              {instrumentResults.map((inst) => (
-                <button
-                  key={inst.id || inst.symbol}
-                  type="button"
-                  className="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-[12px] flex justify-between"
-                  onClick={() => updateField("symbol", inst.symbol)}
-                >
-                  <span className="font-semibold">{inst.symbol}</span>
-                  <span className="text-slate-400 text-right">
-                    {inst.exchange ? `${inst.exchange} · ` : ""}
-                    {inst.asset_class}
-                  </span>
-                </button>
-              ))}
+          <div className="hidden">
+            <div className="flex gap-2">
+              <input
+                value={instrumentQuery}
+                onChange={(e) => setInstrumentQuery(e.target.value)}
+                placeholder="Lookup symbol…"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+              <button
+                type="button"
+                onClick={searchInstruments}
+                className={`${BTN_GHOST} px-3 py-1.5 rounded-lg text-xs`}
+              >
+                {instrumentLoading ? "..." : "Search"}
+              </button>
             </div>
-          )}
+            <div className="text-[11px] text-slate-400 flex items-center gap-2">
+              <span>Live price:</span>
+              <span className="font-semibold text-emerald-200">
+                {yfPriceLoading
+                  ? "Loading..."
+                  : yfPrice
+                  ? `$${formatCurrencyLocal(yfPrice)}`
+                  : "—"}
+              </span>
+              {yfPriceError && <span className="text-rose-300">{yfPriceError}</span>}
+            </div>
+            {instrumentResults.length > 0 && (
+              <div className="bg-slate-950 border border-slate-800 rounded-lg max-h-32 overflow-auto">
+                {instrumentResults.map((inst) => (
+                  <button
+                    key={inst.id || inst.symbol}
+                    type="button"
+                    className={`${BTN_BASE} w-full text-left px-3 py-1.5 rounded-lg hover:bg-slate-800/70 text-[12px] flex justify-between`}
+                    onClick={() => updateField("symbol", inst.symbol)}
+                  >
+                    <span className="font-semibold">{inst.symbol}</span>
+                    <span className="text-slate-400 text-right">
+                      {inst.exchange ? `${inst.exchange} · ` : ""}
+                      {inst.asset_class}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <input
           value={form.quantity}
           onChange={(e) => updateField("quantity", e.target.value)}
           placeholder="Quantity"
-          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-xs h-8 w-full md:w-32"
         />
         <select
           value={form.side}
           onChange={(e) => updateField("side", e.target.value)}
-          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-xs h-8 w-full md:w-28"
         >
           <option value="buy">Buy</option>
           <option value="sell">Sell</option>
         </select>
+      </div>
+      <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div>
+            <div className="text-[11px] uppercase text-slate-400">Price &amp; Cost</div>
+            <div className="text-[11px] text-slate-500">
+              Fetch 1m price on demand to size your order.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchOneMinutePrice}
+            disabled={!form.symbol || yfPriceLoading}
+            className={`${BTN_GHOST} px-2 py-1 rounded-lg text-[11px] disabled:opacity-60`}
+          >
+            {yfPriceLoading ? "Fetching..." : "Get 1m price"}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-4 items-end">
+          <div>
+            <div className="text-[11px] text-slate-400">Live</div>
+            <div className="font-semibold text-emerald-200">
+              {yfPriceLoading
+                ? "Loading..."
+                : formattedFormQuote
+                ? `$${formattedFormQuote}`
+                : "—"}
+            </div>
+              {yfPriceError && (
+              <div className="text-[11px] text-rose-300">{yfPriceError}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-400">Est. cost</div>
+            <div className="font-semibold text-slate-100">
+              {formattedFormNotional ? `$${formattedFormNotional}` : "—"}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {form.limit_price
+                ? "using limit price"
+                : formattedFormQuote
+                ? "using live quote"
+                : "awaiting quote"}
+            </div>
+          </div>
+        </div>
       </div>
       <div className="grid md:grid-cols-4 gap-3 text-xs">
         <select
@@ -1309,237 +1475,265 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess }
           className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
         />
       </div>
-      <div className="grid md:grid-cols-3 gap-3 text-xs">
-        <div className="space-y-2">
-          <div className="text-[11px] text-slate-400">Slippage</div>
-          <select
-            value={form.slippage_mode}
-            onChange={(e) => updateField("slippage_mode", e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Default (bps)</option>
-            <option value="bps">bps</option>
-            <option value="fixed">fixed</option>
-            <option value="none">none</option>
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={form.slippage_bps}
-              onChange={(e) => updateField("slippage_bps", e.target.value)}
-              placeholder="Slippage bps"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-            <input
-              value={form.slippage_fixed}
-              onChange={(e) => updateField("slippage_fixed", e.target.value)}
-              placeholder="Fixed ($)"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="text-[11px] text-slate-400">Fees</div>
-          <select
-            value={form.fee_mode}
-            onChange={(e) => updateField("fee_mode", e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Default (per-share)</option>
-            <option value="per_share">per share</option>
-            <option value="bps">bps</option>
-            <option value="none">none</option>
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={form.fee_bps}
-              onChange={(e) => updateField("fee_bps", e.target.value)}
-              placeholder="Fee bps"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-            <input
-              value={form.fee_per_share}
-              onChange={(e) => updateField("fee_per_share", e.target.value)}
-              placeholder="Fee per share"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="text-[11px] text-slate-400">Backtest fills</div>
-          <select
-            value={form.backtest_fill_mode}
-            onChange={(e) => updateField("backtest_fill_mode", e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Default</option>
-            <option value="history">History VWAP</option>
-            <option value="live">Live</option>
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={form.max_fill_participation}
-              onChange={(e) => updateField("max_fill_participation", e.target.value)}
-              placeholder="Max participation (0-1)"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-            <input
-              value={form.min_fill_size}
-              onChange={(e) => updateField("min_fill_size", e.target.value)}
-              placeholder="Min fill size"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-            />
-          </div>
-          <div className="text-[11px] text-slate-500">
-            Controls bar VWAP slices + volume participation in backtests.
+      <div className="flex items-center justify-between text-[11px] text-slate-400">
+        <span>Advanced costs (slippage & fees)</span>
+        <button
+          type="button"
+          onClick={() => setShowCosts((v) => !v)}
+          className={`${BTN_GHOST} px-2 py-1 rounded-lg text-[11px]`}
+        >
+          {showCosts ? "Hide costs" : "Show costs"}
+        </button>
+      </div>
+      {showCosts && (
+        <div className="grid md:grid-cols-2 gap-3 text-xs">
+          <div className="space-y-2">
+            <div className="text-[11px] text-slate-400">Slippage</div>
+            <select
+              value={form.slippage_mode}
+              onChange={(e) => updateField("slippage_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Default (bps)</option>
+              <option value="bps">bps</option>
+              <option value="fixed">fixed</option>
+              <option value="none">none</option>
+            </select>
+            <div className="flex gap-2">
+              <input
+                value={form.slippage_bps}
+                onChange={(e) => updateField("slippage_bps", e.target.value)}
+                placeholder="Slippage bps"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+              <input
+                value={form.slippage_fixed}
+                onChange={(e) => updateField("slippage_fixed", e.target.value)}
+                placeholder="Fixed ($)"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+            </div>
           </div>
           <div className="space-y-2">
-            <div className="text-[11px] text-slate-400">Backtest profile (defaults)</div>
+            <div className="text-[11px] text-slate-400">Fees</div>
+            <select
+              value={form.fee_mode}
+              onChange={(e) => updateField("fee_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Default (per-share)</option>
+              <option value="per_share">per share</option>
+              <option value="bps">bps</option>
+              <option value="none">none</option>
+            </select>
             <div className="flex gap-2">
-              <select
-                value={backtestProfile.fill_mode}
-                onChange={(e) =>
-                  setBacktestProfile((p) => ({ ...p, fill_mode: e.target.value }))
-                }
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-              >
-                <option value="">Use setting</option>
-                <option value="history">History VWAP</option>
-                <option value="live">Live</option>
-              </select>
               <input
-                value={backtestProfile.participation}
-                onChange={(e) =>
-                  setBacktestProfile((p) => ({ ...p, participation: e.target.value }))
-                }
-                placeholder="Default max participation"
+                value={form.fee_bps}
+                onChange={(e) => updateField("fee_bps", e.target.value)}
+                placeholder="Fee bps"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+              <input
+                value={form.fee_per_share}
+                onChange={(e) => updateField("fee_per_share", e.target.value)}
+                placeholder="Fee per share"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center justify-between text-[11px] text-slate-400">
+        <span>Backtest fills & defaults</span>
+        <button
+          type="button"
+          onClick={() => setShowBacktest((v) => !v)}
+          className={`${BTN_GHOST} px-2 py-1 rounded-lg text-[11px]`}
+        >
+          {showBacktest ? "Hide backtest" : "Show backtest"}
+        </button>
+      </div>
+      {showBacktest && (
+        <div className="grid md:grid-cols-1 gap-3 text-xs">
+          <div className="space-y-2">
+            <div className="text-[11px] text-slate-400">Backtest fills</div>
+            <select
+              value={form.backtest_fill_mode}
+              onChange={(e) => updateField("backtest_fill_mode", e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Default</option>
+              <option value="history">History VWAP</option>
+              <option value="live">Live</option>
+            </select>
+            <div className="flex gap-2">
+              <input
+                value={form.max_fill_participation}
+                onChange={(e) => updateField("max_fill_participation", e.target.value)}
+                placeholder="Max participation (0-1)"
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+              />
+              <input
+                value={form.min_fill_size}
+                onChange={(e) => updateField("min_fill_size", e.target.value)}
+                placeholder="Min fill size"
                 className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
               />
             </div>
             <div className="text-[11px] text-slate-500">
-              Applied to new orders unless overridden above.
+              Controls bar VWAP slices + volume participation in backtests.
             </div>
-            <div className="flex gap-2 flex-wrap">
-              {backtestPresets.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => setBacktestProfile({ fill_mode: preset.fill_mode, participation: preset.participation })}
-                  className="px-2 py-1 rounded-lg border border-slate-700 text-[11px]"
+            <div className="space-y-2">
+              <div className="text-[11px] text-slate-400">Backtest profile (defaults)</div>
+              <div className="flex gap-2">
+                <select
+                  value={backtestProfile.fill_mode}
+                  onChange={(e) =>
+                    setBacktestProfile((p) => ({ ...p, fill_mode: e.target.value }))
+                  }
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
                 >
-                  {preset.label}
-                </button>
-              ))}
+                  <option value="">Use setting</option>
+                  <option value="history">History VWAP</option>
+                  <option value="live">Live</option>
+                </select>
+                <input
+                  value={backtestProfile.participation}
+                  onChange={(e) =>
+                    setBacktestProfile((p) => ({ ...p, participation: e.target.value }))
+                  }
+                  placeholder="Default max participation"
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+                />
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Applied to new orders unless overridden above.
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {backtestPresets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setBacktestProfile({ fill_mode: preset.fill_mode, participation: preset.participation })}
+                    className={`${BTN_GHOST} px-2 py-1 rounded-lg text-[11px]`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      {selectedPortfolio && (
-        <div className="text-[11px] text-slate-400">
-          Caps:{" "}
-          {selectedPortfolio.max_positions
-            ? `${selectedPortfolio.max_positions} positions`
-            : "—"}{" "}
-          | Single pos %:{" "}
-          {selectedPortfolio.max_single_position_pct || "—"} | Gross %:{" "}
-          {selectedPortfolio.max_gross_exposure_pct || "—"}
-        </div>
       )}
-      {estNotional > 0 && (
-        <div className="text-[11px] text-slate-300">
-          Est. notional ~ {estNotional.toLocaleString()} (price using{" "}
-          {form.limit_price ? "limit" : liveFormPrice ? "live quote" : "qty only"})
-          {capPreview && (capPreview.single || capPreview.gross) && (
-            <span className="text-rose-300 ml-2">Possible cap breach</span>
-          )}
+      <div className="hidden">
+        {selectedPortfolio && (
+          <div className="text-[11px] text-slate-400">
+            Caps:{" "}
+            {selectedPortfolio.max_positions
+              ? `${selectedPortfolio.max_positions} positions`
+              : "—"}{" "}
+            | Single pos %:{" "}
+            {selectedPortfolio.max_single_position_pct || "—"} | Gross %:{" "}
+            {selectedPortfolio.max_gross_exposure_pct || "—"}
+          </div>
+        )}
+        {estNotional > 0 && (
+          <div className="text-[11px] text-slate-300">
+            Est. notional ~ {formattedFormNotional ? `$${formattedFormNotional}` : estNotional.toLocaleString()} (price using{" "}
+            {form.limit_price ? "limit" : liveFormPrice ? "live quote" : "qty only"})
+            {capPreview && (capPreview.single || capPreview.gross) && (
+              <span className="text-rose-300 ml-2">Possible cap breach</span>
+            )}
+          </div>
+        )}
+        {capViolation && (
+          <div className="inline-flex items-center gap-2 text-[11px] px-3 py-2 rounded-lg bg-rose-900/30 border border-rose-800 text-rose-100">
+            Exposure cap violation — adjust size or allocate another portfolio.
+          </div>
+        )}
+        <div className="text-[11px] text-slate-500">
+          Market data mode: {DATA_MODE}
         </div>
-      )}
-      {capViolation && (
-        <div className="inline-flex items-center gap-2 text-[11px] px-3 py-2 rounded-lg bg-rose-900/30 border border-rose-800 text-rose-100">
-          Exposure cap violation — adjust size or allocate another portfolio.
-        </div>
-      )}
-      <div className="text-[11px] text-slate-500">
-        Market data mode: {DATA_MODE}
-      </div>
-      <div className="grid md:grid-cols-2 gap-4 text-xs">
-        <div className="space-y-2">
-          <label className="text-slate-300 text-[13px]">From watchlist</label>
-          <select
-            value={selectedWatchlist}
-            onChange={onWatchlistSelect}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Select watchlist…</option>
-            {(watchlists || []).map((wl) => (
-              <option key={wl.id} value={wl.id}>
-                {wl.name} ({wl.items?.length || 0})
+        <div className="grid md:grid-cols-2 gap-4 text-xs">
+          <div className="space-y-2">
+            <label className="text-slate-300 text-[13px]">From watchlist</label>
+            <select
+              value={selectedWatchlist}
+              onChange={onWatchlistSelect}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Select watchlist…</option>
+              {(watchlists || []).map((wl) => (
+                <option key={wl.id} value={wl.id}>
+                  {wl.name} ({wl.items?.length || 0})
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedWatchlistSymbol}
+              onChange={onWatchlistSymbolSelect}
+              disabled={!watchlistSymbols.length}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 disabled:opacity-60"
+            >
+              <option value="">
+                {watchlistSymbols.length
+                  ? "Pick a symbol to fill"
+                  : "No symbols in list"}
               </option>
-            ))}
-          </select>
-          <select
-            value={selectedWatchlistSymbol}
-            onChange={onWatchlistSymbolSelect}
-            disabled={!watchlistSymbols.length}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 disabled:opacity-60"
-          >
-            <option value="">
-              {watchlistSymbols.length
-                ? "Pick a symbol to fill"
-                : "No symbols in list"}
-            </option>
-            {watchlistSymbols.map((item) => (
-              <option key={item.id} value={item.symbol}>
-                {item.symbol}
+              {watchlistSymbols.map((item) => (
+                <option key={item.id} value={item.symbol}>
+                  {item.symbol}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-slate-300 text-[13px]">
+              From scorer universe
+            </label>
+            <select
+              value={selectedScreen}
+              onChange={handleScreenChange}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Select universe…</option>
+              {(screenHelpers?.screenChoices || SCREEN_CHOICES).map((screen) => (
+                <option key={screen} value={screen}>
+                  {screen.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedScreenSymbol}
+              onChange={handleScreenSymbolSelect}
+              disabled={!screenSymbols.length && !screenLoading}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 disabled:opacity-60"
+            >
+              <option value="">
+                {screenLoading
+                  ? "Loading symbols…"
+                  : screenSymbols.length
+                  ? "Pick symbol"
+                  : "No symbols loaded"}
               </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-2">
-          <label className="text-slate-300 text-[13px]">
-            From scorer universe
-          </label>
-          <select
-            value={selectedScreen}
-            onChange={handleScreenChange}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
-          >
-            <option value="">Select universe…</option>
-            {(screenHelpers?.screenChoices || SCREEN_CHOICES).map((screen) => (
-              <option key={screen} value={screen}>
-                {screen.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedScreenSymbol}
-            onChange={handleScreenSymbolSelect}
-            disabled={!screenSymbols.length && !screenLoading}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 disabled:opacity-60"
-          >
-            <option value="">
-              {screenLoading
-                ? "Loading symbols…"
-                : screenSymbols.length
-                ? "Pick symbol"
-                : "No symbols loaded"}
-            </option>
-            {screenSymbols.map((symbol) => (
-              <option key={symbol} value={symbol}>
-                {symbol}
-              </option>
-            ))}
-          </select>
-          {(screenErr || screenHelpers?.error) && (
-            <p className="text-rose-300 text-[11px]">
-              {screenErr || screenHelpers?.error}
-            </p>
-          )}
+              {screenSymbols.map((symbol) => (
+                <option key={symbol} value={symbol}>
+                  {symbol}
+                </option>
+              ))}
+            </select>
+            {(screenErr || screenHelpers?.error) && (
+              <p className="text-rose-300 text-[11px]">
+                {screenErr || screenHelpers?.error}
+              </p>
+            )}
+          </div>
         </div>
       </div>
       <button
         type="submit"
         disabled={submitting}
-        className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs disabled:opacity-60"
+        className={`${BTN_PRIMARY} px-3 py-1.5 rounded-xl text-xs disabled:opacity-60`}
       >
         {submitting ? "Submitting..." : "Create order"}
       </button>
@@ -1616,7 +1810,7 @@ function OverrideModal({ order, onClose, onChange, onSave }) {
           </div>
           <button
             onClick={onClose}
-            className="text-xs text-slate-400 hover:text-white"
+            className={`${BTN_GHOST} text-xs px-2 py-1 rounded-lg`}
           >
             Close
           </button>
@@ -1638,13 +1832,13 @@ function OverrideModal({ order, onClose, onChange, onSave }) {
         <div className="flex justify-end gap-2 text-xs">
           <button
             onClick={onClose}
-            className="px-3 py-1 rounded-lg border border-slate-700"
+            className={`${BTN_GHOST} px-3 py-1 rounded-lg text-xs`}
           >
             Cancel
           </button>
           <button
             onClick={onSave}
-            className="px-3 py-1 rounded-lg bg-indigo-600 text-white"
+            className={`${BTN_PRIMARY} px-3 py-1 rounded-lg text-xs`}
           >
             Save overrides
           </button>

@@ -1,5 +1,7 @@
+import os
 from decimal import Decimal
 
+import yfinance as yf
 from django.utils import timezone
 from rest_framework import viewsets, mixins, permissions, status
 from rest_framework.decorators import action
@@ -651,4 +653,96 @@ class QuoteView(APIView):
             except Exception:
                 continue
         return Response(data)
+
+
+def _configure_yf_proxy():
+    """
+    Configure yfinance to use the rotating proxy if provided via env (WEBSHARE_PROXY/HTTPS_PROXY/HTTP_PROXY).
+    Mirrors the approach used in ranker/scoring to keep network egress consistent.
+    """
+    proxy_url = (
+        os.environ.get("WEBSHARE_PROXY")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("HTTP_PROXY")
+    )
+    if not proxy_url:
+        return
+    try:
+        from yfinance import data as yf_data
+
+        yf_data.YfData()._set_proxy(proxy_url)
+    except Exception:
+        # Non-fatal; continue without proxy if misconfigured.
+        pass
+
+
+def _to_float(val):
+    try:
+        return float(val)
+    except Exception:
+        return None
+
+
+class SymbolIntervalView(APIView):
+    """
+    GET /api/paper/symbols/{symbol}/interval/?period=max&interval=1m
+
+    Returns a light candle series (default period=max, interval=1m) and the latest close,
+    backed by yfinance and wired to the rotating proxy used elsewhere.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    ALLOWED_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d"}
+
+    def get(self, request, symbol: str):
+        sym = (symbol or "").upper()
+        interval = request.query_params.get("interval", "1m")
+        period = request.query_params.get("period", "max")
+        if interval not in self.ALLOWED_INTERVALS:
+            return Response(
+                {"detail": f"interval must be one of {sorted(self.ALLOWED_INTERVALS)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        _configure_yf_proxy()
+        try:
+            df = yf.download(
+                sym,
+                period=period,
+                interval=interval,
+                progress=False,
+            )
+        except Exception as exc:  # pragma: no cover - network failure paths are rare in tests
+            return Response(
+                {"detail": f"fetch_failed: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        if df is None or df.empty:
+            return Response(
+                {"detail": f"no data for {sym}"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # Trim to the most recent 500 bars to keep payloads small.
+        limited = df.tail(500)
+        candles = []
+        for ts, row in limited.iterrows():
+            candles.append(
+                {
+                    "timestamp": ts.isoformat(),
+                    "open": _to_float(row.get("Open")),
+                    "high": _to_float(row.get("High")),
+                    "low": _to_float(row.get("Low")),
+                    "close": _to_float(row.get("Close")),
+                    "volume": _to_float(row.get("Volume")),
+                }
+            )
+        last_close = next((c["close"] for c in reversed(candles) if c.get("close") is not None), None)
+        return Response(
+            {
+                "symbol": sym,
+                "period": period,
+                "interval": interval,
+                "last_close": last_close,
+                "candles": candles,
+            }
+        )
 from paper.engine.runner import StrategyRunner
