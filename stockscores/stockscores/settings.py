@@ -46,7 +46,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "ranker",
     "corsheaders",
-    "paper",
+    "paper.apps.PaperConfig",
 ]
 
 MIDDLEWARE = [
