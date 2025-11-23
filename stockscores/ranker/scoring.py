@@ -1,3 +1,4 @@
+import json
 import math
 import warnings
 import tempfile
@@ -5,6 +6,7 @@ from pathlib import Path
 import os
 import pandas as pd
 import yfinance as yf
+from django.core.cache import cache
 from yfinance import cache as yf_cache
 from ta import add_all_ta_features
 from .metrics import increment_yf_counter
@@ -33,6 +35,8 @@ if _PROXY_URL:
         pass
 
 warnings.filterwarnings("ignore")
+
+_SCORE_CACHE_TTL = 60 * 15  # align with ranker.services CACHE_TTL
 
 
 # ---------- helpers ----------
@@ -237,6 +241,14 @@ def technical_score_from_ta(df: pd.DataFrame, *, weights=None) -> tuple[float, d
 def technical_score(
     symbol: str, period="6mo", interval="1d", *, ta_weights=None
 ) -> tuple[float, dict]:
+    cache_key = "ranker:technical:{symbol}:{weights}".format(
+        symbol=symbol.upper(),
+        weights=json.dumps(ta_weights, sort_keys=True) if ta_weights else "default",
+    )
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
     increment_yf_counter()
     df = yf.Ticker(symbol).history(period="1y", interval="1d", auto_adjust=False)
     if df is None or df.empty:
@@ -250,11 +262,18 @@ def technical_score(
         volume="Volume",
         fillna=True,
     )
-    return technical_score_from_ta(df, weights=ta_weights)
+    result = technical_score_from_ta(df, weights=ta_weights)
+    cache.set(cache_key, result, _SCORE_CACHE_TTL)
+    return result
 
 
 # ---------- FUNDAMENTALS ----------
 def fundamental_score(symbol: str) -> tuple[float, dict]:
+    cache_key = f"ranker:fundamental:{symbol.upper()}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
     increment_yf_counter()
     tkr = yf.Ticker(symbol)
     info = tkr.info or {}
@@ -323,7 +342,9 @@ def fundamental_score(symbol: str) -> tuple[float, dict]:
     score += eff * 0.10
     comp["efficiency_raw"] = eff
 
-    return round(float(score), 2), comp
+    result = round(float(score), 2), comp
+    cache.set(cache_key, result, _SCORE_CACHE_TTL)
+    return result
 
 
 # ---------- BLEND ----------

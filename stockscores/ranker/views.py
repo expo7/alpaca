@@ -13,6 +13,7 @@ from .serializers import (
 from .models import StockScore, StrategySpec, BotConfig, Bot
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
+from django.core.cache import cache
 
 # [NOTE-WATCHLIST-VIEWS]
 from rest_framework import viewsets, status
@@ -542,13 +543,20 @@ class SparklineView(APIView):
             return Response({"results": []})
         out = []
         for sym in [s.strip().upper() for s in symbols.split(",") if s.strip()]:
+            cache_key = f"ranker:sparkline:{sym}:{period}:{interval}"
+            cached = cache.get(cache_key)
+            if cached is not None:
+                out.append(cached)
+                continue
             try:
                 increment_yf_counter()
                 df = yf.Ticker(sym).history(period=period, interval=interval)
                 closes = [
                     float(x) for x in df["Close"].dropna().tail(90).tolist()
                 ]  # cap length
-                out.append({"symbol": sym, "closes": closes})
+                entry = {"symbol": sym, "closes": closes}
+                out.append(entry)
+                cache.set(cache_key, entry, 60 * 10)
             except Exception:
                 out.append({"symbol": sym, "closes": []})
         return Response({"results": out})
