@@ -1,6 +1,5 @@
 # ranker/backtest.py
 
-import logging
 import math
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
@@ -10,8 +9,6 @@ import pandas as pd
 import yfinance as yf
 
 from .metrics import increment_yf_counter
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,33 +50,6 @@ def _max_drawdown(series: pd.Series) -> float:
     return float(dd.min()) if not dd.empty else 0.0
 
 
-def _max_drawdown_duration(series: pd.Series) -> int:
-    """
-    Longest duration (in bars) spent below a prior peak.
-    """
-    peak = series.iloc[0] if not series.empty else 0.0
-    duration = 0
-    max_duration = 0
-    for value in series:
-        if value >= peak:
-            peak = value
-            duration = 0
-        else:
-            duration += 1
-            max_duration = max(max_duration, duration)
-    return int(max_duration)
-
-
-def _contains_event_condition(node: Any) -> bool:
-    if isinstance(node, dict):
-        if node.get("type") == "event_condition":
-            return True
-        return any(_contains_event_condition(v) for v in node.values())
-    if isinstance(node, list):
-        return any(_contains_event_condition(v) for v in node)
-    return False
-
-
 def run_basket_backtest(
     tickers: List[str],
     start: str,
@@ -88,13 +58,6 @@ def run_basket_backtest(
     initial_capital: float = 10_000.0,
     rebalance_days: int = 5,
     top_n: Optional[int] = None,
-    commission_per_trade: float = 0.0,
-    commission_pct: float = 0.0,
-    slippage_model: str = "none",
-    slippage_bps: float = 0.0,
-    max_open_positions: Optional[int] = None,
-    max_per_position_pct: float = 1.0,
-    strategy_spec: Optional[Dict[str, Any]] = None,
 ) -> BacktestResult:
     """
     Top-N momentum basket backtest vs benchmark.
@@ -109,16 +72,9 @@ def run_basket_backtest(
       - Between rebalances, hold that basket.
 
     Notes:
-      - Transaction costs (commission + slippage) are applied on each rebalance.
+      - No transaction costs
       - Uses yfinance daily close prices
     """
-
-    if strategy_spec and _contains_event_condition(
-        strategy_spec.get("entry_tree")
-    ):
-        logger.warning("event_condition found in entry_tree but events are not wired yet; treating as False.")
-    if strategy_spec and _contains_event_condition(strategy_spec.get("exit_tree")):
-        logger.warning("event_condition found in exit_tree but events are not wired yet; treating as False.")
 
     # --- Clean & dedupe tickers ---
     tickers = sorted({t.upper() for t in tickers if t})
@@ -128,8 +84,6 @@ def run_basket_backtest(
     if top_n is None or top_n <= 0:
         top_n = len(tickers)
     top_n = min(top_n, len(tickers))
-    if max_open_positions is not None:
-        top_n = min(top_n, max_open_positions)
 
     # -------------------------
     # 1) Download basket prices
@@ -176,8 +130,7 @@ def run_basket_backtest(
 
     equity_series = pd.Series(index=dates, dtype=float)
     equity = float(initial_capital)
-    current_weights = pd.Series(0.0, index=price.columns)
-    trades: List[Dict[str, Any]] = []
+    weights = pd.Series(0.0, index=price.columns)
 
     for k in range(len(rebal_indices) - 1):
         start_idx = rebal_indices[k]
@@ -193,64 +146,19 @@ def run_basket_backtest(
 
         mom = mom.replace([np.inf, -np.inf], np.nan).dropna()
         if mom.empty:
-            chosen = list(price.columns)[:top_n]
+            chosen = list(price.columns)
         else:
             ranked = mom.sort_values(ascending=False)
             chosen = list(ranked.index[:top_n])
 
-        target_weights = pd.Series(0.0, index=price.columns)
+        weights = pd.Series(0.0, index=price.columns)
         if chosen:
             w = 1.0 / len(chosen)
-            w = min(w, max_per_position_pct or 1.0)
-            target_weights.loc[chosen] = w
+            weights.loc[chosen] = w
 
         # --- Apply daily returns until next rebalance ---
-        rebalance_price = price.iloc[start_idx]
-        trade_cost_total = 0.0
-        for sym in price.columns:
-            target_weight = float(target_weights.get(sym, 0.0))
-            current_weight = float(current_weights.get(sym, 0.0))
-            if abs(target_weight - current_weight) < 1e-9:
-                continue
-
-            trade_notional = (target_weight - current_weight) * equity
-            side = "buy" if trade_notional > 0 else "sell"
-            px = float(rebalance_price.get(sym, np.nan))
-            if math.isnan(px) or px == 0:
-                continue
-
-            slip_cost = 0.0
-            if slippage_model == "bps" and slippage_bps:
-                slip_cost = abs(trade_notional) * (slippage_bps / 10000.0)
-
-            commission = 0.0
-            if trade_notional != 0.0:
-                commission = float(commission_per_trade) + abs(trade_notional) * float(
-                    commission_pct
-                )
-
-            trade_cost_total += slip_cost + commission
-            qty = abs(trade_notional) / px if px else 0.0
-
-            trades.append(
-                {
-                    "symbol": sym,
-                    "side": side,
-                    "notional": trade_notional,
-                    "quantity": qty,
-                    "price": px,
-                    "commission": commission,
-                    "slippage_cost": slip_cost,
-                    "timestamp": dates[start_idx].isoformat(),
-                }
-            )
-
-        if trade_cost_total:
-            equity -= trade_cost_total
-        current_weights = target_weights
-
         for j in range(start_idx, end_idx + 1):
-            day_ret = float((daily_ret.iloc[j] * current_weights).sum())
+            day_ret = float((daily_ret.iloc[j] * weights).sum())
             equity *= 1.0 + day_ret
             equity_series.iloc[j] = equity
 
@@ -319,8 +227,6 @@ def run_basket_backtest(
         {"date": d.isoformat(), "value": float(v)} for d, v in bench_eq.items()
     ]
 
-    mdd_duration = _max_drawdown_duration(equity_series / start_val)
-
     summary = {
         "initial_capital": float(initial_capital),
         "final_value": end_val,
@@ -329,12 +235,8 @@ def run_basket_backtest(
         "alpha": alpha,
         "cagr": cagr,
         "volatility_annual": vol_annual,
-        "volatility_annualized": vol_annual,
         "sharpe_like": sharpe,
-        "sharpe_ratio": sharpe,
         "max_drawdown": mdd,
-        "max_drawdown_duration_bars": mdd_duration,
-        "trades": trades,
     }
 
     # -------------------------

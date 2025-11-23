@@ -11,7 +11,7 @@ import pandas as pd
 from .models import StockScore, Bot, BotConfig, StrategySpec
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
-from ranker.backtest import BacktestResult, run_basket_backtest
+from ranker.backtest import BacktestResult
 from ranker.tasks import run_bot_once, schedule_due_bots
 
 

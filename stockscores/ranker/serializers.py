@@ -89,12 +89,6 @@ class BotConfigSerializer(serializers.Serializer):
     rebalance_days = serializers.IntegerField(default=5, min_value=1)
     top_n = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     benchmark = serializers.CharField(required=False, default="SPY")
-    commission_per_trade = serializers.FloatField(required=False, default=0.0, min_value=0.0)
-    commission_pct = serializers.FloatField(required=False, default=0.0, min_value=0.0)
-    slippage_model = serializers.CharField(required=False, default="none")
-    slippage_bps = serializers.FloatField(required=False, default=0.0, min_value=0.0)
-    max_open_positions = serializers.IntegerField(required=False, allow_null=True, min_value=1)
-    max_per_position_pct = serializers.FloatField(required=False, default=1.0, min_value=0.0, max_value=1.0)
 
 
 class BotSerializer(serializers.ModelSerializer):

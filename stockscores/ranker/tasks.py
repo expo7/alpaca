@@ -41,12 +41,6 @@ def run_bot_engine(bot: Bot) -> Dict[str, Any]:
         initial_capital=float(config.get("capital", 10000.0)),
         rebalance_days=int(config.get("rebalance_days", 5)),
         top_n=config.get("top_n"),
-        commission_per_trade=float(config.get("commission_per_trade", 0.0)),
-        commission_pct=float(config.get("commission_pct", 0.0)),
-        slippage_model=config.get("slippage_model", "none"),
-        slippage_bps=float(config.get("slippage_bps", 0.0)),
-        max_open_positions=config.get("max_open_positions"),
-        max_per_position_pct=float(config.get("max_per_position_pct", 1.0)),
     )
 
     return {"status": "completed", "summary": result.summary}

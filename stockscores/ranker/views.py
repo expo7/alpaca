@@ -337,13 +337,6 @@ class StrategyBacktestView(APIView):
                 initial_capital=float(bot_cfg.get("capital", 10000.0)),
                 rebalance_days=int(bot_cfg.get("rebalance_days", 5)),
                 top_n=bot_cfg.get("top_n"),
-                commission_per_trade=float(bot_cfg.get("commission_per_trade", 0.0)),
-                commission_pct=float(bot_cfg.get("commission_pct", 0.0)),
-                slippage_model=bot_cfg.get("slippage_model", "none"),
-                slippage_bps=float(bot_cfg.get("slippage_bps", 0.0)),
-                max_open_positions=bot_cfg.get("max_open_positions"),
-                max_per_position_pct=float(bot_cfg.get("max_per_position_pct", 1.0)),
-                strategy_spec=strategy_serializer.validated_data,
             )
         except Exception as exc:
             return Response(
