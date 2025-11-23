@@ -287,6 +287,9 @@ def _build_backtest_stats(summary):
         "max_drawdown_pct": (summary.get("max_drawdown") or 0.0) * 100.0,
         "num_trades": summary.get("num_trades", 0),
         "win_rate_pct": summary.get("win_rate_pct", 0.0),
+        "volatility_annualized": summary.get("volatility_annualized"),
+        "sharpe_ratio": summary.get("sharpe_ratio"),
+        "max_drawdown_duration_bars": summary.get("max_drawdown_duration_bars"),
     }
 
 
@@ -337,6 +340,13 @@ class StrategyBacktestView(APIView):
                 initial_capital=float(bot_cfg.get("capital", 10000.0)),
                 rebalance_days=int(bot_cfg.get("rebalance_days", 5)),
                 top_n=bot_cfg.get("top_n"),
+                commission_per_trade=float(bot_cfg.get("commission_per_trade", 0.0)),
+                commission_pct=float(bot_cfg.get("commission_pct", 0.0)),
+                slippage_model=bot_cfg.get("slippage_model", "none"),
+                slippage_bps=float(bot_cfg.get("slippage_bps", 0.0)),
+                max_open_positions=bot_cfg.get("max_open_positions"),
+                max_per_position_pct=float(bot_cfg.get("max_per_position_pct", 1.0)),
+                strategy_spec=strategy_serializer.validated_data,
             )
         except Exception as exc:
             return Response(
@@ -393,6 +403,12 @@ class BacktestView(APIView):
         initial_capital = data.get("initial_capital", 10_000.0)
         rebalance_days = data.get("rebalance_days", 5)
         top_n = data.get("top_n", None)
+        commission_per_trade = data.get("commission_per_trade", 0.0)
+        commission_pct = data.get("commission_pct", 0.0)
+        slippage_model = data.get("slippage_model", "none")
+        slippage_bps = data.get("slippage_bps", 0.0)
+        max_open_positions = data.get("max_open_positions")
+        max_per_position_pct = data.get("max_per_position_pct", 1.0)
 
         # allow tickers as comma-separated string too
         if isinstance(tickers, str):
@@ -418,6 +434,14 @@ class BacktestView(APIView):
                 initial_capital=float(initial_capital),
                 rebalance_days=int(rebalance_days),
                 top_n=int(top_n) if top_n is not None else None,
+                commission_per_trade=float(commission_per_trade),
+                commission_pct=float(commission_pct),
+                slippage_model=slippage_model,
+                slippage_bps=float(slippage_bps),
+                max_open_positions=int(max_open_positions)
+                if max_open_positions is not None
+                else None,
+                max_per_position_pct=float(max_per_position_pct),
             )
         except ValueError as e:
             return Response(

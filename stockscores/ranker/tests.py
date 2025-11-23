@@ -11,7 +11,8 @@ import pandas as pd
 from .models import StockScore, Bot, BotConfig, StrategySpec
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
-from ranker.backtest import BacktestResult
+from .serializers import StrategySpecSerializer
+from ranker.backtest import BacktestResult, run_basket_backtest
 from ranker.tasks import run_bot_once, schedule_due_bots
 
 
@@ -290,6 +291,84 @@ class StrategyApiTests(TestCase):
         )
         self.assertTrue(any(err.get("field") == "bot.symbols" for err in errors))
         self.assertTrue(any(err.get("field") == "dates" for err in errors))
+
+
+class BacktestEngineAdvancedTests(TestCase):
+    def setUp(self):
+        self.dates = pd.date_range("2024-01-01", periods=4, freq="D")
+
+    @patch("ranker.backtest.yf.download")
+    def test_commission_and_slippage_reduce_equity(self, mock_download):
+        basket_df = pd.DataFrame(
+            {
+                ("Close", "AAA"): [100, 110, 120, 130],
+            },
+            index=self.dates,
+        )
+        bench_df = pd.DataFrame({"Close": [100, 101, 102, 103]}, index=self.dates)
+        mock_download.side_effect = [basket_df, bench_df, basket_df, bench_df]
+
+        no_cost = run_basket_backtest(
+            ["AAA"],
+            start="2024-01-01",
+            end="2024-01-04",
+            rebalance_days=1,
+        )
+
+        with_cost = run_basket_backtest(
+            ["AAA"],
+            start="2024-01-01",
+            end="2024-01-04",
+            rebalance_days=1,
+            commission_per_trade=100.0,
+            commission_pct=0.01,
+            slippage_model="bps",
+            slippage_bps=100,
+        )
+
+        self.assertGreater(no_cost.summary["final_value"], with_cost.summary["final_value"])
+        self.assertTrue(with_cost.summary["trades"])
+        trade = with_cost.summary["trades"][0]
+        self.assertIn("commission", trade)
+        self.assertIn("slippage_cost", trade)
+
+    @patch("ranker.backtest.yf.download")
+    def test_risk_limits_and_stats_present(self, mock_download):
+        basket_df = pd.DataFrame(
+            {
+                ("Close", "AAA"): [100, 102, 104, 106],
+                ("Close", "BBB"): [100, 101, 99, 98],
+            },
+            index=self.dates,
+        )
+        bench_df = pd.DataFrame({"Close": [100, 101, 102, 103]}, index=self.dates)
+        mock_download.side_effect = [basket_df, bench_df]
+
+        result = run_basket_backtest(
+            ["AAA", "BBB"],
+            start="2024-01-01",
+            end="2024-01-04",
+            rebalance_days=1,
+            max_open_positions=1,
+            max_per_position_pct=0.4,
+        )
+
+        trade_symbols = {t["symbol"] for t in result.summary.get("trades", [])}
+        self.assertLessEqual(len(trade_symbols), 1)
+
+        summary = result.summary
+        self.assertIn("volatility_annualized", summary)
+        self.assertIn("sharpe_ratio", summary)
+        self.assertIn("max_drawdown_duration_bars", summary)
+
+    def test_strategy_spec_allows_event_condition(self):
+        data = {
+            "entry_tree": {"type": "event_condition", "event": "earnings"},
+            "exit_tree": {"type": "condition", "indicator": "rsi", "operator": "gt", "value": {"param": "rsi_exit"}},
+            "parameters": {"rsi_exit": {"type": "float", "default": 60}},
+        }
+        serializer = StrategySpecSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
 
 class StrategyTemplateApiTests(TestCase):
