@@ -17,7 +17,7 @@ import Performance from "./pages/Performance.jsx";
 import Leaderboards from "./pages/Leaderboards.jsx";
 import Sparkline from "./components/Sparkline.jsx";
 import { APP_NAME } from "./brand";
-import Backtests from "./pages/Backtests.jsx";
+import StrategyBacktestPage from "./pages/StrategyBacktestPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -476,8 +476,11 @@ export default function App() {
                       email when scores move.
                     </li>
                     <li>
-                      Try the <span className="font-semibold">Backtests</span> tab
-                      to see if a simple Top-N strategy had an edge vs SPY.
+                      Try the{" "}
+                      <span className="font-semibold">
+                        Strategy Backtest (Exp)
+                      </span>{" "}
+                      tab to validate JSON specs and run explicit backtests.
                     </li>
                   </ol>
                 </div>
@@ -782,9 +785,7 @@ export default function App() {
 
         {page === "alerts" && <Alerts />}
 
-        {page === "backtests" && (
-          <Backtests defaultTickers={body.tickers} />
-        )}
+        {page === "strategy-backtest" && <StrategyBacktestPage />}
 
         {page === "orders" && <Orders />}
 

@@ -14,7 +14,7 @@ const tabs = [
   { id: "performance", label: "Performance" },
   { id: "leaderboards", label: "Leaderboards" },
   { id: "settings", label: "Settings" },
-  { id: "backtests", label: "Backtests" },
+  { id: "strategy-backtest", label: "Backtest (Exp)" },
   { id: "strategies", label: "Strategies" },
 ];
 

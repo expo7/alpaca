@@ -9,7 +9,7 @@ export const BRAND = {
 export const NAV_LINKS = [
   { label: "Dashboard", id: "dashboard" },
   { label: "Watchlists", id: "watchlists"}, // future
-  { label: "Backtests",  id: "backtests",  disabled: true }, // future
+  { label: "Strategy Backtest (Exp)",  id: "strategy-backtest",  disabled: false }, // future
   { label: "Alerts",     id: "alerts",     disabled: false }, // future
   { label: "Settings",   id: "settings"   },
 ];

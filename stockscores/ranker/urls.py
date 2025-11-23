@@ -17,6 +17,8 @@ from .views import (
     BacktestConfigViewSet,
     StrategyValidateView,
     StrategyBacktestView,
+    StrategyTemplateDetailView,
+    StrategyTemplateListView,
     UserPreferenceView,
     RegisterView,
     AggressiveSmallCapsView,
@@ -136,6 +138,16 @@ urlpatterns = [
         "strategies/validate/",
         StrategyValidateView.as_view(),
         name="strategy-validate",
+    ),
+    path(
+        "strategies/templates/",
+        StrategyTemplateListView.as_view(),
+        name="strategy-template-list",
+    ),
+    path(
+        "strategies/templates/<str:template_id>/",
+        StrategyTemplateDetailView.as_view(),
+        name="strategy-template-detail",
     ),
     path(
         "backtests/run/",

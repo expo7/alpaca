@@ -14,6 +14,7 @@ from .models import StockScore, StrategySpec, BotConfig, Bot
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
+from .strategy_templates import get_template, list_templates
 
 # [NOTE-WATCHLIST-VIEWS]
 from rest_framework import viewsets, status
@@ -260,6 +261,24 @@ class StrategyValidateView(APIView):
 
         return Response({"valid": False, "errors": errors}, status=status.HTTP_200_OK)
 
+
+class StrategyTemplateListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(list_templates(), status=status.HTTP_200_OK)
+
+
+class StrategyTemplateDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, template_id, *args, **kwargs):
+        template = get_template(template_id)
+        if not template:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(template, status=status.HTTP_200_OK)
+
+
 def _build_backtest_stats(summary):
     return {
         "start_equity": summary.get("initial_capital"),
@@ -318,6 +337,13 @@ class StrategyBacktestView(APIView):
                 initial_capital=float(bot_cfg.get("capital", 10000.0)),
                 rebalance_days=int(bot_cfg.get("rebalance_days", 5)),
                 top_n=bot_cfg.get("top_n"),
+                commission_per_trade=float(bot_cfg.get("commission_per_trade", 0.0)),
+                commission_pct=float(bot_cfg.get("commission_pct", 0.0)),
+                slippage_model=bot_cfg.get("slippage_model", "none"),
+                slippage_bps=float(bot_cfg.get("slippage_bps", 0.0)),
+                max_open_positions=bot_cfg.get("max_open_positions"),
+                max_per_position_pct=float(bot_cfg.get("max_per_position_pct", 1.0)),
+                strategy_spec=strategy_serializer.validated_data,
             )
         except Exception as exc:
             return Response(

@@ -11,7 +11,7 @@ import pandas as pd
 from .models import StockScore, Bot, BotConfig, StrategySpec
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
-from ranker.backtest import BacktestResult
+from ranker.backtest import BacktestResult, run_basket_backtest
 from ranker.tasks import run_bot_once, schedule_due_bots
 
 
@@ -290,6 +290,36 @@ class StrategyApiTests(TestCase):
         )
         self.assertTrue(any(err.get("field") == "bot.symbols" for err in errors))
         self.assertTrue(any(err.get("field") == "dates" for err in errors))
+
+
+class StrategyTemplateApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="template-user", password="test-pass"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_list_templates(self):
+        res = self.client.get("/api/strategies/templates/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsInstance(res.data, list)
+        ids = {tpl["id"] for tpl in res.data}
+        self.assertIn("rsi_dip_buyer", ids)
+        self.assertIn("macd_trend_follower", ids)
+        for tpl in res.data:
+            spec = tpl.get("strategy_spec") or {}
+            self.assertTrue(spec.get("entry_tree"))
+            self.assertIn("parameters", spec)
+
+    def test_template_detail_and_not_found(self):
+        res = self.client.get("/api/strategies/templates/rsi_dip_buyer/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["id"], "rsi_dip_buyer")
+        self.assertIn("strategy_spec", res.data)
+
+        missing = self.client.get("/api/strategies/templates/does_not_exist/")
+        self.assertEqual(missing.status_code, 404)
 
 
 class BotRunnerTests(TestCase):
