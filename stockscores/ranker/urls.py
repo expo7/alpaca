@@ -19,6 +19,7 @@ from .views import (
     StrategyBacktestView,
     BacktestBatchCreateView,
     BacktestBatchDetailView,
+    BacktestBatchListView,
     StrategyTemplateDetailView,
     StrategyTemplateListView,
     UserPreferenceView,
@@ -160,6 +161,11 @@ urlpatterns = [
         "backtests/batch/",
         BacktestBatchCreateView.as_view(),
         name="strategy-backtest-batch",
+    ),
+    path(
+        "backtests/batch/list/",
+        BacktestBatchListView.as_view(),
+        name="strategy-backtest-batch-list",
     ),
     path(
         "backtests/batch/<int:batch_id>/",

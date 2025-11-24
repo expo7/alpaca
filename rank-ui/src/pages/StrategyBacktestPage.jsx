@@ -10,37 +10,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const BASE = "http://127.0.0.1:8000";
-
-async function apiFetch(path, token, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (options.body && !headers["Content-Type"]) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
-  const text = await res.text();
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!res.ok) {
-    const msg =
-      (data && (data.detail || data.error || data.message)) ||
-      data.raw ||
-      `HTTP ${res.status}`;
-    const err = new Error(msg);
-    err.payload = data;
-    throw err;
-  }
-
-  return data;
-}
+import {
+  validateStrategy,
+  runBacktest,
+  createBatchBacktest,
+  getBatchBacktest,
+} from "../api/backtests.js";
 
 const DEFAULT_STRATEGY_SPEC = {
   name: "RSI Bounce",
@@ -129,9 +104,57 @@ export default function StrategyBacktestPage() {
     end_date: formatDate(0),
     starting_equity: 10000,
     benchmark: "SPY",
+    commission_per_trade: "",
+    commission_pct: "",
+    slippage_bps: "",
   });
 
   const [result, setResult] = useState(null);
+
+  // Batch state
+  const [paramGridRows, setParamGridRows] = useState([{ name: "", values: "" }]);
+  const [batchLabel, setBatchLabel] = useState("");
+  const [batchId, setBatchId] = useState("");
+  const [batchStatus, setBatchStatus] = useState("");
+  const [batchRuns, setBatchRuns] = useState([]);
+  const [batchError, setBatchError] = useState("");
+  const [sortField, setSortField] = useState("sharpe_ratio");
+  const [sortDir, setSortDir] = useState("desc");
+  const [minTrades, setMinTrades] = useState(0);
+  const sortedRuns = useMemo(() => {
+    const completed = (batchRuns || []).filter(
+      (r) =>
+        r.status === "completed" &&
+        r.stats &&
+        (minTrades ? (r.stats.num_trades || 0) >= Number(minTrades) : true)
+    );
+
+    const getMetric = (run) => {
+      const s = run.stats || {};
+      switch (sortField) {
+        case "return_pct":
+          return s.return_pct ?? s.total_return ?? 0;
+        case "max_drawdown_pct":
+          return s.max_drawdown_pct ?? s.max_drawdown ?? 0;
+        case "num_trades":
+          return s.num_trades ?? 0;
+        case "sharpe_ratio":
+        default:
+          return s.sharpe_ratio ?? s.sharpe_like ?? 0;
+      }
+    };
+
+    completed.sort((a, b) => {
+      const av = getMetric(a);
+      const bv = getMetric(b);
+      if (av === bv) return 0;
+      if (sortDir === "desc") return bv - av;
+      return av - bv;
+    });
+
+    const best = completed.length ? completed[0] : null;
+    return { completed, best };
+  }, [batchRuns, sortField, sortDir, minTrades]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -140,7 +163,10 @@ export default function StrategyBacktestPage() {
     async function loadTemplates() {
       try {
         setTemplateErr("");
-        const data = await apiFetch("/api/strategies/templates/", token);
+        const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await res.json();
         if (!active) return;
         setTemplates(Array.isArray(data) ? data : []);
         if (Array.isArray(data) && data.length) {
@@ -182,10 +208,7 @@ export default function StrategyBacktestPage() {
     setBacktestError("");
 
     try {
-      const res = await apiFetch("/api/strategies/validate/", token, {
-        method: "POST",
-        body: JSON.stringify(parsed),
-      });
+      const res = await validateStrategy(parsed, token);
       if (res.valid) {
         setValidationMsg("Strategy looks valid.");
       } else {
@@ -231,15 +254,19 @@ export default function StrategyBacktestPage() {
           mode: "backtest",
           benchmark: botConfig.benchmark || "SPY",
           capital: Number(botConfig.starting_equity) || 0,
+          commission_per_trade: botConfig.commission_per_trade
+            ? Number(botConfig.commission_per_trade)
+            : undefined,
+          commission_pct: botConfig.commission_pct
+            ? Number(botConfig.commission_pct)
+            : undefined,
+          slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
         },
         start_date: botConfig.start_date,
         end_date: botConfig.end_date,
       };
 
-      const res = await apiFetch("/api/backtests/run/", token, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const res = await runBacktest(parsed, payload.bot, payload.start_date, payload.end_date, token);
       setResult(res);
     } catch (err) {
       if (err.payload?.errors) {
@@ -259,11 +286,90 @@ export default function StrategyBacktestPage() {
     setParseError("");
   }
 
+  function paramGridToObject() {
+    const grid = {};
+    for (const row of paramGridRows) {
+      if (!row.name.trim()) continue;
+      const nums = row.values
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .map((v) => Number(v))
+        .filter((v) => !Number.isNaN(v));
+      if (nums.length) grid[row.name.trim()] = nums;
+    }
+    return grid;
+  }
+
+  async function handleBatchRun() {
+    const parsed = parseStrategy();
+    if (!parsed) return;
+
+    const symbols = (botConfig.symbols || "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (!symbols.length) {
+      setBatchError("At least one symbol is required.");
+      return;
+    }
+
+    const grid = paramGridToObject();
+    setBatchError("");
+    try {
+        const payload = {
+          strategy: parsed,
+          bot: {
+            symbols,
+            mode: "backtest",
+            benchmark: botConfig.benchmark || "SPY",
+            capital: Number(botConfig.starting_equity) || 0,
+            commission_per_trade: botConfig.commission_per_trade
+              ? Number(botConfig.commission_per_trade)
+              : undefined,
+            commission_pct: botConfig.commission_pct
+              ? Number(botConfig.commission_pct)
+              : undefined,
+            slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
+          },
+          param_grid: grid,
+          start_date: botConfig.start_date,
+          end_date: botConfig.end_date,
+          label: batchLabel,
+        };
+        const res = await createBatchBacktest(payload, token);
+        setBatchId(String(res.batch_id));
+        setBatchStatus(res.status);
+        setBatchRuns([]);
+    } catch (err) {
+      if (err.payload?.errors) {
+        setStrategyErrors(err.payload.errors);
+      }
+      setBatchError(err.message || "Batch request failed");
+    }
+  }
+
+  async function handleBatchRefresh() {
+    if (!batchId) {
+      setBatchError("Enter a batch id to refresh.");
+      return;
+    }
+    setBatchError("");
+    try {
+      const res = await getBatchBacktest(batchId, token);
+      setBatchStatus(res.status);
+      setBatchRuns(res.runs || []);
+      setBatchLabel(res.label || batchLabel);
+    } catch (err) {
+      setBatchError(err.message || "Failed to load batch");
+    }
+  }
+
   const chartData = useMemo(() => {
     const eq = result?.equity_curve || [];
     return eq.map((pt) => ({
-      date: (pt.date || "").slice(0, 10),
-      value: pt.value,
+      date: (pt.date || pt.time || "").slice(0, 10),
+      value: pt.value || pt.equity || pt.amount,
     }));
   }, [result]);
 
@@ -278,15 +384,14 @@ export default function StrategyBacktestPage() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="grid md:grid-cols-[220px,1fr] gap-3">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Templates</div>
-                {templateErr && (
-                  <span className="text-[11px] text-rose-300">{templateErr}</span>
-                )}
+      <div className="sbp-grid two-col">
+        <div className="space-y-3">
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Templates</div>
+              {templateErr && (
+                <span className="text-[11px] text-rose-300">{templateErr}</span>
+              )}
               </div>
               {templates.map((tpl) => (
                 <button
@@ -306,51 +411,50 @@ export default function StrategyBacktestPage() {
               {!templates.length && !templateErr && (
                 <div className="text-xs text-slate-500">Loading templates...</div>
               )}
-            </div>
+          </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <div className="text-sm font-semibold">StrategySpec JSON</div>
-                  <div className="text-[11px] text-slate-400">
-                    Edit freely or start from a template.
-                  </div>
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <div className="text-sm font-semibold">StrategySpec JSON</div>
+                <div className="text-[11px] text-slate-400">
+                  Edit freely or start from a template.
                 </div>
-                <button
-                  type="button"
-                  onClick={handleValidate}
-                  disabled={isValidating}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-xs"
-                >
-                  {isValidating ? "Validating..." : "Validate Strategy"}
-                </button>
               </div>
-
-              <textarea
-                value={strategyText}
-                onChange={(e) => setStrategyText(e.target.value)}
-                rows={18}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
-              />
-
-              {parseError && (
-                <div className="mt-2 text-xs text-rose-300">
-                  JSON parse error: {parseError}
-                </div>
-              )}
-              {validationMsg && (
-                <div className="mt-2 text-xs text-emerald-300">{validationMsg}</div>
-              )}
-              {strategyErrors.length > 0 && (
-                <div className="mt-2 text-xs text-amber-200 space-y-1">
-                  {strategyErrors.map((err, idx) => (
-                    <div key={`${err.field}-${idx}`}>
-                      {err.field}: {err.message}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={handleValidate}
+                disabled={isValidating}
+                className="btn-primary disabled:opacity-60"
+              >
+                {isValidating ? "Validating..." : "Validate Strategy"}
+              </button>
             </div>
+
+            <textarea
+              value={strategyText}
+              onChange={(e) => setStrategyText(e.target.value)}
+              rows={18}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
+            />
+
+            {parseError && (
+              <div className="mt-2 text-xs text-rose-300">
+                JSON parse error: {parseError}
+              </div>
+            )}
+            {validationMsg && (
+              <div className="mt-2 text-xs text-emerald-300">{validationMsg}</div>
+            )}
+            {strategyErrors.length > 0 && (
+              <div className="mt-2 text-xs text-amber-200 space-y-1">
+                {strategyErrors.map((err, idx) => (
+                  <div key={`${err.field}-${idx}`}>
+                    {err.field}: {err.message}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -401,6 +505,39 @@ export default function StrategyBacktestPage() {
               </label>
 
               <label className="block">
+                <span className="text-xs text-slate-400">Commission per trade</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={botConfig.commission_per_trade}
+                  onChange={(e) => updateBotConfig("commission_per_trade", e.target.value)}
+                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs text-slate-400">Commission pct</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={botConfig.commission_pct}
+                  onChange={(e) => updateBotConfig("commission_pct", e.target.value)}
+                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs text-slate-400">Slippage (bps)</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={botConfig.slippage_bps}
+                  onChange={(e) => updateBotConfig("slippage_bps", e.target.value)}
+                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                />
+              </label>
+
+              <label className="block">
                 <span className="text-xs text-slate-400">Mode</span>
                 <input
                   value="backtest"
@@ -414,7 +551,7 @@ export default function StrategyBacktestPage() {
               type="button"
               onClick={handleRun}
               disabled={isRunning}
-              className="w-full px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-sm font-semibold"
+              className="w-full btn-primary disabled:opacity-60 text-sm font-semibold text-center"
             >
               {isRunning ? "Running…" : "Run Backtest"}
             </button>
@@ -452,6 +589,216 @@ export default function StrategyBacktestPage() {
         </div>
       )}
 
+      {/* Batch backtest / optimizer */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">Batch backtest / optimizer</div>
+            <div className="text-[11px] text-slate-400">
+              Define param grid overrides and run multiple backtests (no auto-refresh).
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleBatchRun}
+              className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs"
+            >
+              Run batch backtest
+            </button>
+            <button
+              type="button"
+              onClick={handleBatchRefresh}
+              className="px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs"
+            >
+              Refresh results
+            </button>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-[2fr,1fr] gap-3">
+          <div className="space-y-2">
+            {paramGridRows.map((row, idx) => (
+              <div key={idx} className="flex gap-2 text-sm">
+                <input
+                  value={row.name}
+                  onChange={(e) =>
+                    setParamGridRows((rows) =>
+                      rows.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r))
+                    )
+                  }
+                  placeholder="param name"
+                  className="w-1/3 bg-slate-950 border border-slate-800 rounded-xl p-2"
+                />
+                <input
+                  value={row.values}
+                  onChange={(e) =>
+                    setParamGridRows((rows) =>
+                      rows.map((r, i) => (i === idx ? { ...r, values: e.target.value } : r))
+                    )
+                  }
+                  placeholder="values (comma-separated numbers)"
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-2"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setParamGridRows((rows) => rows.filter((_, i) => i !== idx))
+                  }
+                  className="px-2 rounded-lg border border-rose-900 text-rose-200 hover:bg-rose-950"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setParamGridRows((rows) => [...rows, { name: "", values: "" }])}
+              className="px-3 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 text-xs"
+            >
+              Add param
+            </button>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <label className="block">
+              <span className="text-xs text-slate-400">Batch label (optional)</span>
+              <input
+                value={batchLabel}
+                onChange={(e) => setBatchLabel(e.target.value)}
+                className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-400">Batch ID</span>
+              <input
+                value={batchId}
+                onChange={(e) => setBatchId(e.target.value)}
+                className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                placeholder="from latest run or enter manually"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 text-xs items-center">
+              <label className="flex items-center gap-1">
+                <span>Sort by</span>
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-1"
+                >
+                  <option value="sharpe_ratio">Sharpe ratio</option>
+                  <option value="return_pct">Return %</option>
+                  <option value="max_drawdown_pct">Max drawdown %</option>
+                  <option value="num_trades">Number of trades</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                <span>Direction</span>
+                <select
+                  value={sortDir}
+                  onChange={(e) => setSortDir(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-1"
+                >
+                  <option value="desc">Descending</option>
+                  <option value="asc">Ascending</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                <span>Min trades</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={minTrades}
+                  onChange={(e) => setMinTrades(Number(e.target.value))}
+                  className="w-20 bg-slate-950 border border-slate-800 rounded-lg p-1"
+                />
+              </label>
+            </div>
+            {batchStatus && (
+              <div className="text-xs text-slate-300">Status: {batchStatus}</div>
+            )}
+            {batchError && (
+              <div className="text-xs text-rose-300">Batch error: {batchError}</div>
+            )}
+          </div>
+        </div>
+
+        {sortedRuns.best ? (
+          <div className="text-xs text-emerald-200 bg-emerald-500/10 border border-emerald-600/40 rounded-xl p-3">
+            <div className="font-semibold mb-1">Best config (filtered)</div>
+            <div>
+              {Object.entries(sortedRuns.best.params || {})
+                .map(([k, v]) => `${k}=${v}`)
+                .join(", ")}
+            </div>
+            <div className="flex gap-3 mt-1">
+              <span>Sharpe: {sortedRuns.best.stats?.sharpe_ratio ?? "-"}</span>
+              <span>Return %: {sortedRuns.best.stats?.return_pct ?? sortedRuns.best.stats?.total_return ?? "-"}</span>
+              <span>Max DD %: {sortedRuns.best.stats?.max_drawdown_pct ?? sortedRuns.best.stats?.max_drawdown ?? "-"}</span>
+              <span>Trades: {sortedRuns.best.stats?.num_trades ?? "-"}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400">
+            No completed runs match the current filters.
+          </div>
+        )}
+
+        {batchRuns.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-slate-400 border-b border-slate-800">
+                <tr className="text-left">
+                  <th className="py-2 pr-2">Index</th>
+                  <th className="py-2 pr-2">Params</th>
+                  <th className="py-2 pr-2">Status</th>
+                  <th className="py-2 pr-2">Return %</th>
+                  <th className="py-2 pr-2">Max DD %</th>
+                  <th className="py-2 pr-2">Sharpe</th>
+                  <th className="py-2 pr-2">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchRuns.map((run) => {
+                  const isBest = sortedRuns.best && run.index === sortedRuns.best.index;
+                  return (
+                    <tr
+                      key={run.index}
+                      className={`border-t border-slate-900 ${isBest ? "bg-emerald-500/5" : ""}`}
+                    >
+                      <td className="py-1.5 pr-2">
+                        {run.index}
+                        {isBest && (
+                          <span className="ml-2 px-2 py-0.5 text-[10px] rounded-full border border-emerald-500 text-emerald-200">
+                            Best
+                          </span>
+                        )}
+                      </td>
+                    <td className="py-1.5 pr-2 whitespace-pre">
+                      {JSON.stringify(run.params || {})}
+                    </td>
+                    <td className="py-1.5 pr-2">{run.status}</td>
+                    <td className="py-1.5 pr-2">
+                      {run.stats?.return_pct != null
+                        ? run.stats.return_pct
+                        : run.stats?.total_return}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {run.stats?.max_drawdown_pct != null
+                        ? run.stats.max_drawdown_pct
+                        : run.stats?.max_drawdown}
+                    </td>
+                    <td className="py-1.5 pr-2">{run.stats?.sharpe_ratio}</td>
+                    <td className="py-1.5 pr-2 text-rose-300">{run.error || "-"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {trades.length > 0 && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
           <div className="text-sm font-semibold mb-3">Trades</div>
@@ -462,7 +809,10 @@ export default function StrategyBacktestPage() {
                   <th className="py-2 pr-2">Symbol</th>
                   <th className="py-2 pr-2">Action</th>
                   <th className="py-2 pr-2">Qty</th>
+                  <th className="py-2 pr-2">Entry</th>
+                  <th className="py-2 pr-2">Exit</th>
                   <th className="py-2 pr-2">Price</th>
+                  <th className="py-2 pr-2">PnL %</th>
                   <th className="py-2 pr-2">Timestamp</th>
                 </tr>
               </thead>
@@ -478,7 +828,16 @@ export default function StrategyBacktestPage() {
                     <td className="py-1.5 pr-2">{t.action || t.side || "-"}</td>
                     <td className="py-1.5 pr-2">{t.qty ?? t.quantity ?? "-"}</td>
                     <td className="py-1.5 pr-2">
+                      {t.entry_price ?? t.price ?? "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {t.exit_price ?? "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
                       {typeof t.price === "number" ? t.price : t.fill_price ?? "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {t.pnl_pct != null ? `${Number(t.pnl_pct).toFixed(2)}%` : "-"}
                     </td>
                     <td className="py-1.5 pr-2">
                       {t.timestamp || t.time || "-"}

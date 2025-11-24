@@ -13,6 +13,8 @@ const tabs = [
   { id: "positions", label: "Positions" },
   { id: "performance", label: "Performance" },
   { id: "leaderboards", label: "Leaderboards" },
+  { id: "bots", label: "Bots" },
+  { id: "backtest-history", label: "Backtest History" },
   { id: "settings", label: "Settings" },
   { id: "strategy-backtest", label: "Backtest (Exp)" },
   { id: "strategies", label: "Strategies" },
@@ -27,8 +29,8 @@ export default function Navbar({
   showYfCounter = false,
 }) {
   return (
-    <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+    <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
         {/* Left: logo + brand */}
         <div className="flex items-center gap-3">
           <Logo className="w-8 h-8" />

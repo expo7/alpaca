@@ -264,6 +264,13 @@ def expand_param_grid(grid: dict) -> list[dict]:
 
 
 class BotSerializer(serializers.ModelSerializer):
+    symbols = serializers.SerializerMethodField()
+
+    def get_symbols(self, obj):
+        cfg = obj.bot_config.config if obj.bot_config else {}
+        syms = cfg.get("symbols") or []
+        return syms
+
     class Meta:
         model = Bot
         fields = [
@@ -276,6 +283,7 @@ class BotSerializer(serializers.ModelSerializer):
             "schedule",
             "last_run_at",
             "next_run_at",
+            "symbols",
             "created_at",
             "updated_at",
         ]

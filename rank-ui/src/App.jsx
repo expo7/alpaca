@@ -18,6 +18,8 @@ import Leaderboards from "./pages/Leaderboards.jsx";
 import Sparkline from "./components/Sparkline.jsx";
 import { APP_NAME } from "./brand";
 import StrategyBacktestPage from "./pages/StrategyBacktestPage.jsx";
+import BotsPage from "./pages/BotsPage.jsx";
+import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -431,7 +433,7 @@ export default function App() {
   // [NOTE-UI] App Shell
   // ==============================
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="app-shell">
       {/* NAVBAR */}
       <Navbar
         user={user}
@@ -442,7 +444,7 @@ export default function App() {
         showYfCounter={import.meta.env.DEV}
       />
 
-      <main className="max-w-7xl mx-auto p-6 space-y-6">
+      <main className="app-main">
         {/* ==============================
           DASHBOARD PAGE
          ============================== */}
@@ -794,6 +796,10 @@ export default function App() {
         {page === "performance" && <Performance />}
 
         {page === "leaderboards" && <Leaderboards />}
+
+        {page === "bots" && <BotsPage />}
+
+        {page === "backtest-history" && <BacktestHistoryPage />}
 
         {page === "settings" && (
           <Settings

@@ -464,6 +464,30 @@ class BacktestBatchDetailView(APIView):
         )
 
 
+class BacktestBatchListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        batches = (
+            BacktestBatch.objects.filter(user=request.user)
+            .order_by("-created_at")
+            .prefetch_related("runs")
+        )
+        payload = []
+        for batch in batches:
+            payload.append(
+                {
+                    "id": batch.id,
+                    "label": batch.label,
+                    "status": batch.status,
+                    "created_at": batch.created_at,
+                    "updated_at": batch.updated_at,
+                    "num_runs": batch.runs.count(),
+                }
+            )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class BacktestView(APIView):
     """
     POST /api/backtest/

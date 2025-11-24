@@ -1,3 +1,70 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.08), transparent 25%),
+    radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.08), transparent 20%),
+    #0f172a;
+  color: #e2e8f0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+}
+
+.btn-primary {
+  background: #6366f1;
+  color: white;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid #4f46e5;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.btn-primary:hover {
+  background: #4f46e5;
+}
+
+.btn-secondary {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid #1e293b;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.btn-secondary:hover {
+  background: #1e293b;
+}
+
+.sbp-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 1024px) {
+  .sbp-grid.two-col {
+    grid-template-columns: 1fr 0.9fr;
+    align-items: start;
+  }
+}
