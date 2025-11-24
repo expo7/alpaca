@@ -12,8 +12,10 @@ from .models import StockScore, Bot, BotConfig, StrategySpec
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
 from .serializers import StrategySpecSerializer
+from .serializers import expand_param_grid
 from ranker.backtest import BacktestResult, run_basket_backtest
-from ranker.tasks import run_bot_once, schedule_due_bots
+from ranker.tasks import run_bot_once, schedule_due_bots, run_backtest_batch
+from .models import BacktestBatch, BacktestBatchRun
 
 
 class TechnicalScoreTests(SimpleTestCase):
@@ -293,6 +295,137 @@ class StrategyApiTests(TestCase):
         self.assertTrue(any(err.get("field") == "dates" for err in errors))
 
 
+class StrategyValidationGapTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="validator", password="test-pass"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_missing_value_param_rejected(self):
+        payload = {
+            "entry_tree": {
+                "type": "condition",
+                "indicator": "sma",
+                "operator": "gt",
+                "value_param": "missing_param",
+            },
+            "exit_tree": {
+                "type": "condition",
+                "indicator": "sma",
+                "operator": "lt",
+                "value_param": "missing_param",
+            },
+            "parameters": {},
+        }
+        res = self.client.post("/api/strategies/validate/", data=payload, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data["valid"])
+        errors = res.data["errors"]
+        self.assertTrue(
+            any("missing_param" in err.get("message", "") for err in errors)
+        )
+
+    def test_invalid_node_type_rejected(self):
+        payload = {
+            "entry_tree": {"type": "weird_node_type"},
+            "exit_tree": {},
+            "parameters": {},
+        }
+        res = self.client.post("/api/strategies/validate/", data=payload, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data["valid"])
+        self.assertTrue(
+            any(err.get("field") == "entry_tree.type" for err in res.data["errors"])
+        )
+
+    def test_group_missing_children_rejected(self):
+        payload = {
+            "entry_tree": {"type": "group", "op": "AND", "children": []},
+            "parameters": {},
+        }
+        res = self.client.post("/api/strategies/validate/", data=payload, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data["valid"])
+        self.assertTrue(
+            any(err.get("field") == "entry_tree.children" for err in res.data["errors"])
+        )
+
+    def test_event_condition_allowed(self):
+        payload = {
+            "entry_tree": {
+                "type": "event_condition",
+                "event_type": "earnings",
+                "field": "eps",
+                "operator": "gt",
+                "value": 0,
+            },
+            "exit_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "gt",
+                "value": {"param": "rsi_exit"},
+            },
+            "parameters": {
+                "rsi_entry": {"type": "float", "default": 30},
+                "rsi_exit": {"type": "float", "default": 60},
+            },
+        }
+        res = self.client.post("/api/strategies/validate/", data=payload, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["valid"])
+
+    def test_invalid_slippage_model_rejected(self):
+        strategy = {
+            "entry_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "lt",
+                "value": {"param": "rsi_entry"},
+            },
+            "exit_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "gt",
+                "value": {"param": "rsi_exit"},
+            },
+            "parameters": {
+                "rsi_entry": {"type": "float", "default": 30},
+                "rsi_exit": {"type": "float", "default": 60},
+            },
+        }
+        bot = {"symbols": ["AAPL"], "slippage_model": "wat"}
+        res = self.client.post(
+            "/api/backtests/run/",
+            data={
+                "strategy": strategy,
+                "bot": bot,
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-10",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.data["valid"])
+        self.assertTrue(
+            any(err.get("field") == "bot.slippage_model" for err in res.data["errors"])
+        )
+
+    def test_expand_param_grid_helper(self):
+        grid = {"a": [1, 2], "b": [3, 4]}
+        combos = expand_param_grid(grid)
+        self.assertEqual(
+            combos,
+            [
+                {"a": 1, "b": 3},
+                {"a": 1, "b": 4},
+                {"a": 2, "b": 3},
+                {"a": 2, "b": 4},
+            ],
+        )
+
+
 class BacktestEngineAdvancedTests(TestCase):
     def setUp(self):
         self.dates = pd.date_range("2024-01-01", periods=4, freq="D")
@@ -363,7 +496,13 @@ class BacktestEngineAdvancedTests(TestCase):
 
     def test_strategy_spec_allows_event_condition(self):
         data = {
-            "entry_tree": {"type": "event_condition", "event": "earnings"},
+            "entry_tree": {
+                "type": "event_condition",
+                "event_type": "earnings",
+                "field": "eps",
+                "operator": "gt",
+                "value": 0,
+            },
             "exit_tree": {"type": "condition", "indicator": "rsi", "operator": "gt", "value": {"param": "rsi_exit"}},
             "parameters": {"rsi_exit": {"type": "float", "default": 60}},
         }
@@ -399,6 +538,134 @@ class StrategyTemplateApiTests(TestCase):
 
         missing = self.client.get("/api/strategies/templates/does_not_exist/")
         self.assertEqual(missing.status_code, 404)
+
+
+class BacktestBatchTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="batcher", password="test-pass"
+        )
+        self.client.force_authenticate(user=self.user)
+        self.strategy = {
+            "entry_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "lt",
+                "value": {"param": "rsi_entry"},
+            },
+            "exit_tree": {
+                "type": "condition",
+                "indicator": "rsi",
+                "operator": "gt",
+                "value": {"param": "rsi_exit"},
+            },
+            "parameters": {
+                "rsi_entry": {"type": "float", "default": 30},
+                "rsi_exit": {"type": "float", "default": 60},
+            },
+        }
+        self.bot = {
+            "symbols": ["AAPL"],
+            "capital": 10000,
+            "rebalance_days": 5,
+        }
+
+    @patch("ranker.views.run_backtest_batch.delay")
+    def test_create_backtest_batch_valid(self, mock_delay):
+        payload = {
+            "strategy": self.strategy,
+            "bot": self.bot,
+            "param_grid": {"rsi_entry": [25, 30]},
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-10",
+            "label": "RSI sweep",
+        }
+        res = self.client.post("/api/backtests/batch/", data=payload, format="json")
+        self.assertEqual(res.status_code, 201)
+        body = res.data
+        self.assertIn("batch_id", body)
+        self.assertEqual(body["num_runs"], 2)
+        self.assertEqual(body["status"], "running")
+        mock_delay.assert_called_once()
+
+        batch = BacktestBatch.objects.get(id=body["batch_id"])
+        self.assertEqual(batch.runs.count(), 2)
+        self.assertTrue(
+            all(r.status == BacktestBatchRun.STATUS_PENDING for r in batch.runs.all())
+        )
+
+    def test_create_backtest_batch_invalid_param_grid(self):
+        payload = {
+            "strategy": self.strategy,
+            "bot": self.bot,
+            "param_grid": {"unknown_param": [1, 2]},
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-10",
+        }
+        res = self.client.post("/api/backtests/batch/", data=payload, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.data["valid"])
+        self.assertTrue(any(err.get("field") == "param_grid" for err in res.data["errors"]))
+
+    @patch("ranker.tasks.run_basket_backtest")
+    def test_run_backtest_batch_task_completes_runs(self, mock_backtest):
+        mock_backtest.return_value = BacktestResult(
+            tickers=["AAPL"],
+            start="2024-01-01",
+            end="2024-01-10",
+            equity_curve=[],
+            benchmark_symbol="SPY",
+            benchmark_curve=[],
+            summary={"final_value": 11000, "initial_capital": 10000, "total_return": 0.1},
+            per_ticker=[],
+        )
+        batch = BacktestBatch.objects.create(
+            user=self.user,
+            status=BacktestBatch.STATUS_PENDING,
+            config={
+                "strategy": self.strategy,
+                "bot": self.bot,
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-10",
+            },
+        )
+        BacktestBatchRun.objects.create(
+            batch=batch, index=0, params={"rsi_entry": 25}, status=BacktestBatchRun.STATUS_PENDING
+        )
+        BacktestBatchRun.objects.create(
+            batch=batch, index=1, params={"rsi_entry": 30}, status=BacktestBatchRun.STATUS_PENDING
+        )
+
+        result = run_backtest_batch(batch.id)
+        batch.refresh_from_db()
+        runs = list(batch.runs.all())
+
+        self.assertEqual(result["status"], BacktestBatch.STATUS_COMPLETED)
+        self.assertEqual(batch.status, BacktestBatch.STATUS_COMPLETED)
+        self.assertTrue(all(r.status == BacktestBatchRun.STATUS_COMPLETED for r in runs))
+        self.assertTrue(all(r.stats for r in runs))
+
+    def test_get_backtest_batch_detail_permissions(self):
+        batch = BacktestBatch.objects.create(
+            user=self.user,
+            status=BacktestBatch.STATUS_RUNNING,
+            label="demo",
+        )
+        BacktestBatchRun.objects.create(
+            batch=batch, index=0, params={"rsi_entry": 25}, status=BacktestBatchRun.STATUS_PENDING
+        )
+
+        res = self.client.get(f"/api/backtests/batch/{batch.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["id"], batch.id)
+        self.assertEqual(res.data["num_runs"], 1)
+        self.assertEqual(len(res.data["runs"]), 1)
+
+        other = get_user_model().objects.create_user(username="other", password="x")
+        self.client.force_authenticate(user=other)
+        res_forbidden = self.client.get(f"/api/backtests/batch/{batch.id}/")
+        self.assertEqual(res_forbidden.status_code, 404)
 
 
 class BotRunnerTests(TestCase):

@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
 from .models import StockScore
-from .models import StrategySpec, BotConfig, Bot
+from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun
 
 # [NOTE-WATCHLIST-SERIALIZERS]
 from .models import Watchlist, WatchlistItem
@@ -21,15 +21,32 @@ from .models import BacktestRun
 # ranker/serializers.py
 from rest_framework import serializers
 from .models import UserPreference
+from itertools import product
+from datetime import datetime
 
 User = get_user_model()
+
+
+ALLOWED_NODE_TYPES = {
+    "group",
+    "and",
+    "or",
+    "condition",
+    "indicator_condition",
+    "position_condition",
+    "action",
+    "event_condition",
+}
 
 
 def _collect_param_refs(node):
     refs = set()
     if isinstance(node, dict):
         for key, val in node.items():
-            if key == "param" and isinstance(val, str):
+            if (
+                isinstance(val, str)
+                and (key == "param" or key == "value_param" or key.endswith("_param"))
+            ):
                 refs.add(val)
             else:
                 refs.update(_collect_param_refs(val))
@@ -37,6 +54,59 @@ def _collect_param_refs(node):
         for val in node:
             refs.update(_collect_param_refs(val))
     return refs
+
+
+def _validate_tree_node(node, path, errors):
+    if not isinstance(node, dict):
+        errors.setdefault(path, []).append("must be an object")
+        return
+
+    node_type = node.get("type") or node.get("node_type")
+    if not node_type:
+        errors.setdefault(f"{path}.type", []).append("type is required")
+        return
+
+    node_type = str(node_type)
+    node_type = node_type.lower()
+    if node_type not in ALLOWED_NODE_TYPES:
+        errors.setdefault(f"{path}.type", []).append(f"unsupported node type: {node_type}")
+        return
+
+    if node_type in {"group", "and", "or"}:
+        op = node.get("op") or node.get("operator") or ("AND" if node_type == "and" else "OR" if node_type == "or" else None)
+        if not op:
+            errors.setdefault(f"{path}.op", []).append("group op is required")
+        elif str(op).lower() not in {"and", "or"}:
+            errors.setdefault(f"{path}.op", []).append("op must be AND or OR")
+
+        children = node.get("children")
+        if not isinstance(children, list) or not children:
+            errors.setdefault(f"{path}.children", []).append("children must be a non-empty list")
+        else:
+            for idx, child in enumerate(children):
+                _validate_tree_node(child, f"{path}.children[{idx}]", errors)
+    elif node_type in {"condition", "indicator_condition", "position_condition"}:
+        op = node.get("operator")
+        if not op:
+            errors.setdefault(f"{path}.operator", []).append("operator is required")
+        has_left = any(k in node for k in ("indicator", "left", "metric"))
+        has_right = any(k in node for k in ("value", "value_param", "param", "right"))
+        if not (has_left and has_right):
+            errors.setdefault(f"{path}.operands", []).append(
+                "condition must define indicator/left and value/right"
+            )
+    elif node_type == "action":
+        if not node.get("action"):
+            errors.setdefault(f"{path}.action", []).append("action is required")
+    elif node_type == "event_condition":
+        if not (node.get("event_type") or node.get("event")):
+            errors.setdefault(f"{path}.event_type", []).append("event_type is required")
+        if not node.get("field"):
+            errors.setdefault(f"{path}.field", []).append("field is required")
+        if not node.get("operator"):
+            errors.setdefault(f"{path}.operator", []).append("operator is required")
+        if "value" not in node and "value_param" not in node:
+            errors.setdefault(f"{path}.value", []).append("value or value_param is required")
 
 
 class ParameterDefinitionSerializer(serializers.Serializer):
@@ -75,6 +145,13 @@ class StrategySpecSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"parameters": f"Missing parameter definitions for: {names}"}
             )
+
+        errors = {}
+        _validate_tree_node(entry, "entry_tree", errors)
+        if data.get("exit_tree"):
+            _validate_tree_node(data["exit_tree"], "exit_tree", errors)
+        if errors:
+            raise serializers.ValidationError(errors)
         return data
 
 
@@ -101,6 +178,89 @@ class BotConfigSerializer(serializers.Serializer):
     max_per_position_pct = serializers.FloatField(
         required=False, default=1.0, min_value=0.0, max_value=1.0
     )
+
+    def validate_slippage_model(self, value):
+        val = (value or "none").lower()
+        allowed = {"none", "bps"}
+        if val not in allowed:
+            raise serializers.ValidationError(f"slippage_model must be one of {sorted(allowed)}")
+        return val
+
+
+class BacktestBatchRequestSerializer(serializers.Serializer):
+    strategy = StrategySpecSerializer()
+    bot = BotConfigSerializer()
+    param_grid = serializers.DictField(required=False, default=dict)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    label = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_param_grid(self, grid):
+        if grid is None:
+            return {}
+        if not isinstance(grid, dict):
+            raise serializers.ValidationError("param_grid must be a dict of lists")
+        cleaned = {}
+        for key, val in grid.items():
+            if not isinstance(val, list) or not val:
+                raise serializers.ValidationError(f"param_grid[{key}] must be a non-empty list")
+            for v in val:
+                if not isinstance(v, (int, float)):
+                    raise serializers.ValidationError(f"param_grid[{key}] values must be numbers")
+            cleaned[key] = val
+        return cleaned
+
+    def validate(self, data):
+        # validate nested serializers explicitly to reuse their errors
+        strat = StrategySpecSerializer(data=data.get("strategy") or {})
+        bot = BotConfigSerializer(data=data.get("bot") or {})
+        errors = {}
+        if not strat.is_valid():
+            errors["strategy"] = strat.errors
+        if not bot.is_valid():
+            errors["bot"] = bot.errors
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        param_grid = data.get("param_grid") or {}
+        strategy_params = set((strat.validated_data.get("parameters") or {}).keys())
+
+        for key in param_grid.keys():
+            if key not in strategy_params and key not in bot.validated_data:
+                raise serializers.ValidationError(
+                    {"param_grid": f"param_grid key '{key}' not found in strategy parameters or bot config"}
+                )
+
+        try:
+            combos = expand_param_grid(param_grid)
+        except ValueError as exc:
+            raise serializers.ValidationError({"param_grid": str(exc)})
+        if not combos:
+            raise serializers.ValidationError({"param_grid": "param_grid produced zero combinations"})
+
+        return {
+            **data,
+            "strategy": strat.validated_data,
+            "bot": bot.validated_data,
+            "param_grid": param_grid,
+            "combinations": combos,
+        }
+
+
+def expand_param_grid(grid: dict) -> list[dict]:
+    if not grid:
+        return [dict()]
+    keys = list(grid.keys())
+    values = []
+    for key in keys:
+        vals = grid[key]
+        if not isinstance(vals, list) or not vals:
+            raise ValueError(f"param_grid[{key}] must be a non-empty list")
+        values.append(vals)
+    combos = []
+    for prod in product(*values):
+        combos.append({k: v for k, v in zip(keys, prod)})
+    return combos
 
 
 class BotSerializer(serializers.ModelSerializer):

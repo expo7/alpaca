@@ -9,8 +9,9 @@ from .serializers import (
     StrategySpecSerializer,
     BotConfigSerializer,
     BotSerializer,
+    BacktestBatchRequestSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -40,7 +41,7 @@ from rest_framework import generics, permissions
 from .models import UserSettings
 from .serializers import UserSettingsSerializer
 from .metrics import get_yf_counter, increment_yf_counter
-from .tasks import compute_next_run_at, run_bot_once
+from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
 
 # ranker/views.py
 
@@ -371,6 +372,93 @@ class StrategyBacktestView(APIView):
                 "equity_curve": result.equity_curve,
                 "stats": _build_backtest_stats(summary),
                 "per_ticker": result.per_ticker or [],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BacktestBatchCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = BacktestBatchRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            errors = _structured_errors(serializer.errors)
+            return Response({"valid": False, "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        combos = data.pop("combinations")
+        config_to_store = {
+            **data,
+            "start_date": str(data.get("start_date")),
+            "end_date": str(data.get("end_date")),
+        }
+
+        batch = BacktestBatch.objects.create(
+            user=request.user,
+            status=BacktestBatch.STATUS_PENDING,
+            label=data.get("label") or "",
+            config=config_to_store,
+        )
+
+        runs = []
+        for idx, params in enumerate(combos):
+            runs.append(
+                BacktestBatchRun(
+                    batch=batch,
+                    index=idx,
+                    params=params,
+                    status=BacktestBatchRun.STATUS_PENDING,
+                )
+            )
+        BacktestBatchRun.objects.bulk_create(runs)
+
+        batch.status = BacktestBatch.STATUS_RUNNING
+        batch.save(update_fields=["status"])
+        run_backtest_batch.delay(batch.id)
+
+        return Response(
+            {
+                "batch_id": batch.id,
+                "num_runs": len(combos),
+                "status": batch.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class BacktestBatchDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, batch_id, *args, **kwargs):
+        try:
+            batch = BacktestBatch.objects.prefetch_related("runs").get(
+                id=batch_id, user=request.user
+            )
+        except BacktestBatch.DoesNotExist:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        runs_payload = []
+        for run in batch.runs.all():
+            runs_payload.append(
+                {
+                    "index": run.index,
+                    "params": run.params,
+                    "status": run.status,
+                    "stats": run.stats,
+                    "error": run.error,
+                }
+            )
+
+        return Response(
+            {
+                "id": batch.id,
+                "label": batch.label,
+                "status": batch.status,
+                "created_at": batch.created_at,
+                "updated_at": batch.updated_at,
+                "num_runs": batch.runs.count(),
+                "runs": runs_payload,
             },
             status=status.HTTP_200_OK,
         )

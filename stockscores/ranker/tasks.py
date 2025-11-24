@@ -4,8 +4,9 @@ from typing import Any, Dict
 from celery import shared_task
 from django.utils import timezone
 
-from .backtest import run_basket_backtest
-from .models import Bot
+from .backtest import BacktestResult, run_basket_backtest
+from .models import Bot, BacktestBatch, BacktestBatchRun
+from .serializers import StrategySpecSerializer, BotConfigSerializer
 
 SCHEDULE_OFFSETS = {
     "1m": timedelta(minutes=1),
@@ -88,3 +89,85 @@ def schedule_due_bots():
     for bot in due:
         run_bot_once.delay(bot.id)
     return {"enqueued": due.count()}
+
+
+def _apply_param_overrides(strategy_data: dict, bot_data: dict, params: dict) -> tuple[dict, dict]:
+    strat_copy = {**strategy_data}
+    strat_copy["parameters"] = {**(strategy_data.get("parameters") or {})}
+    for key, val in params.items():
+        if key in strat_copy["parameters"]:
+            strat_copy["parameters"][key] = {**strat_copy["parameters"][key], "default": val}
+        elif key in bot_data:
+            bot_data[key] = val
+        else:
+            overrides = bot_data.get("overrides") or {}
+            overrides[key] = val
+            bot_data["overrides"] = overrides
+    return strat_copy, bot_data
+
+
+@shared_task
+def run_backtest_batch(batch_id: int) -> Dict[str, Any]:
+    try:
+        batch = BacktestBatch.objects.prefetch_related("runs").get(id=batch_id)
+    except BacktestBatch.DoesNotExist:
+        return {"status": "missing"}
+
+    if batch.status == BacktestBatch.STATUS_PENDING:
+        batch.status = BacktestBatch.STATUS_RUNNING
+        batch.save(update_fields=["status"])
+
+    config = batch.config or {}
+    strategy_data = config.get("strategy") or {}
+    bot_data_base = config.get("bot") or {}
+    start_date = config.get("start_date") or config.get("start")
+    end_date = config.get("end_date") or config.get("end")
+
+    any_failed = False
+    completed = 0
+
+    for run in batch.runs.filter(status__in=[BacktestBatchRun.STATUS_PENDING, BacktestBatchRun.STATUS_RUNNING]).order_by("index"):
+        run.status = BacktestBatchRun.STATUS_RUNNING
+        run.save(update_fields=["status"])
+        try:
+            strat_payload, bot_payload = _apply_param_overrides(
+                strategy_data, bot_data_base.copy(), run.params or {}
+            )
+            strat_serializer = StrategySpecSerializer(data=strat_payload)
+            bot_serializer = BotConfigSerializer(data=bot_payload)
+            strat_serializer.is_valid(raise_exception=True)
+            bot_serializer.is_valid(raise_exception=True)
+            bot_cfg = bot_serializer.validated_data
+
+            result: BacktestResult = run_basket_backtest(
+                tickers=bot_cfg["symbols"],
+                start=str(start_date),
+                end=str(end_date),
+                benchmark=bot_cfg.get("benchmark", "SPY"),
+                initial_capital=float(bot_cfg.get("capital", 10000.0)),
+                rebalance_days=int(bot_cfg.get("rebalance_days", 5)),
+                top_n=bot_cfg.get("top_n"),
+                commission_per_trade=float(bot_cfg.get("commission_per_trade", 0.0)),
+                commission_pct=float(bot_cfg.get("commission_pct", 0.0)),
+                slippage_model=bot_cfg.get("slippage_model", "none"),
+                slippage_bps=float(bot_cfg.get("slippage_bps", 0.0)),
+                max_open_positions=bot_cfg.get("max_open_positions"),
+                max_per_position_pct=float(bot_cfg.get("max_per_position_pct", 1.0)),
+                strategy_spec=strat_serializer.validated_data,
+            )
+            run.stats = result.summary
+            run.status = BacktestBatchRun.STATUS_COMPLETED
+            completed += 1
+        except Exception as exc:  # pragma: no cover
+            run.error = str(exc)
+            run.status = BacktestBatchRun.STATUS_FAILED
+            any_failed = True
+        run.save(update_fields=["status", "stats", "error"])
+
+    if any_failed:
+        batch.status = BacktestBatch.STATUS_FAILED
+    elif completed == batch.runs.count():
+        batch.status = BacktestBatch.STATUS_COMPLETED
+    batch.save(update_fields=["status"])
+
+    return {"status": batch.status, "completed": completed, "total": batch.runs.count()}

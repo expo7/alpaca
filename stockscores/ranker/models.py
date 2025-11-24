@@ -169,6 +169,65 @@ class BacktestRun(models.Model):
         return f"{self.name} ({self.user})"
 
 
+class BacktestBatch(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="backtest_batches",
+    )
+    label = models.CharField(max_length=255, blank=True, null=True)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
+    config = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Batch {self.id} ({self.status})"
+
+
+class BacktestBatchRun(models.Model):
+    STATUS_PENDING = BacktestBatch.STATUS_PENDING
+    STATUS_RUNNING = BacktestBatch.STATUS_RUNNING
+    STATUS_COMPLETED = BacktestBatch.STATUS_COMPLETED
+    STATUS_FAILED = BacktestBatch.STATUS_FAILED
+    STATUS_CHOICES = BacktestBatch.STATUS_CHOICES
+
+    batch = models.ForeignKey(
+        BacktestBatch,
+        related_name="runs",
+        on_delete=models.CASCADE,
+    )
+    index = models.IntegerField()
+    params = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
+    stats = models.JSONField(null=True, blank=True)
+    error = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["index"]
+
+    def __str__(self):
+        return f"BatchRun {self.batch_id}#{self.index} ({self.status})"
+
+
 class BacktestConfig(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
