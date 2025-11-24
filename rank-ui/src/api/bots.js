@@ -42,3 +42,7 @@ export async function pauseBot(id, token) {
 export async function stopBot(id, token) {
   return apiFetch(`/api/bots/${id}/stop/`, token, { method: "POST" });
 }
+
+export async function fetchConfig(token) {
+  return apiFetch("/api/config/", token, { method: "GET" });
+}

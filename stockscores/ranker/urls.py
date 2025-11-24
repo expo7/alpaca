@@ -27,6 +27,7 @@ from .views import (
     AggressiveSmallCapsView,
     BotViewSet,
     YFinanceUsageView,
+    ConfigView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -179,4 +180,5 @@ urlpatterns = [
         name="aggressive-small-caps",
     ),
     path("metrics/yfinance/", YFinanceUsageView.as_view(), name="yfinance-usage"),
+    path("config/", ConfigView.as_view(), name="config"),
 ]

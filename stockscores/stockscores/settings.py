@@ -238,6 +238,9 @@ AUTOSCAN_TECH_WEIGHT = 0.6
 AUTOSCAN_FUND_WEIGHT = 0.4
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+# Live trading safeguard
+ALLOW_LIVE_BOTS = os.getenv("ALLOW_LIVE_BOTS", "false").lower() in ("1", "true", "yes")
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True

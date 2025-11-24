@@ -731,6 +731,21 @@ class BotViewSet(viewsets.ModelViewSet):
     def start(self, request, pk=None):
         bot = self.get_object()
         run_now = bool(request.data.get("run_now"))
+        mode = bot.mode or (bot.bot_config.config.get("mode") if bot.bot_config else "")
+        if mode == Bot.MODE_LIVE and not getattr(settings, "ALLOW_LIVE_BOTS", False):
+            return Response(
+                {
+                    "valid": False,
+                    "errors": [
+                        {
+                            "field": "mode",
+                            "message": "Live trading is disabled in this environment. Set ALLOW_LIVE_BOTS=true to enable.",
+                        }
+                    ],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if bot.state != Bot.STATE_RUNNING:
             bot.state = Bot.STATE_RUNNING
             bot.next_run_at = compute_next_run_at(bot)
@@ -776,6 +791,13 @@ class YFinanceUsageView(APIView):
 
     def get(self, request, *args, **kwargs):
         return Response({"count": get_yf_counter()})
+
+
+class ConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response({"allow_live_bots": getattr(settings, "ALLOW_LIVE_BOTS", False)})
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
