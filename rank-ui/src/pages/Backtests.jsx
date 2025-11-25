@@ -47,11 +47,8 @@ async function apiFetch(path, token, options = {}) {
 
 export default function Backtests() {
 
-  const [strategyName, setStrategyName] = useState("");
-  const [savedRuns, setSavedRuns] = useState([]);
-  const [loadingRuns, setLoadingRuns] = useState(false);
-
   const { token } = useAuth();
+  const isAuthed = Boolean(token);
 
   // -------- form state --------
   const [tickers, setTickers] = useState("AAPL,MSFT,NVDA,TSLA,AMD");
@@ -71,19 +68,10 @@ export default function Backtests() {
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
 
-  if (!token) {
-    return (
-      <div className="text-sm text-rose-300">
-        You must be logged in to run backtests.
-      </div>
-    );
-  }
-
   // -------- load saved configs on mount --------
   useEffect(() => {
     if (!token) return;
     loadConfigs();
-    loadRuns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -96,44 +84,7 @@ export default function Backtests() {
       setSaveErr(e.message || String(e));
     }
   }
-  async function saveRun() {
-    if (!result) return;
-    setSaveErr("");
-
-    try {
-      const parsedTickers = tickers
-        .split(",")
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean);
-
-      const payload = {
-        name:
-          strategyName.trim() ||
-          `Run ${new Date().toLocaleString()}`,
-        tickers: parsedTickers,
-        start,
-        end,
-        benchmark: result?.benchmark?.symbol || "SPY",
-        initial_capital: Number(initialCap),
-        rebalance_days: Number(rebalanceDays),
-        top_n: Number(topN) || null,
-        summary: result?.summary || {},
-      };
-
-      await apiFetch("/api/backtest-runs/", token, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      setStrategyName("");
-      await loadRuns();
-    } catch (e) {
-      setSaveErr(e.message || String(e));
-    }
-  }
-
-  async function runBacktest(e, fromConfig) {
+  async function runBacktest(e) {
     if (e) e.preventDefault();
     setLoading(true);
     setErr("");
@@ -173,20 +124,6 @@ export default function Backtests() {
       setLoading(false);
     }
   }
-  async function loadRuns() {
-    if (!token) return;
-    setLoadingRuns(true);
-    try {
-      const data = await apiFetch("/api/backtest-runs/", token);
-      setSavedRuns(Array.isArray(data) ? data : []);
-    } catch (e) {
-      // optional: setSaveErr(e.message || String(e));
-    } finally {
-      setLoadingRuns(false);
-    }
-  }
-
-
   async function saveConfig() {
     setSaveErr("");
 
@@ -278,6 +215,14 @@ export default function Backtests() {
 
   const summary = result?.summary || null;
   const perTicker = result?.per_ticker || [];
+
+  if (!isAuthed) {
+    return (
+      <div className="text-sm text-rose-300">
+        You must be logged in to run backtests.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -473,7 +418,7 @@ export default function Backtests() {
                           type="button"
                           onClick={() => {
                             applyConfig(cfg);
-                            runBacktest(null, true);
+                            runBacktest(null);
                           }}
                           className="px-2 py-1 rounded-lg border border-indigo-600 text-indigo-200 hover:bg-indigo-950"
                         >

@@ -1,6 +1,6 @@
 // [NOTE-WATCHLIST-PAGE]
 // Minimal CRUD + "Use in Ranker" action
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
 import InstrumentSearch from "../components/InstrumentSearch.jsx";
@@ -24,7 +24,7 @@ export default function Watchlists({ onUseTickers }) {
   const [symbol, setSymbol] = useState("");
   const [err, setErr] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr("");
     try {
       const json = await apiFetch(`/api/watchlists/`, { token });
@@ -32,9 +32,9 @@ export default function Watchlists({ onUseTickers }) {
     } catch (e) {
       setErr(String(e));
     }
-  }
+  }, [token]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   async function createList() {
     if (!name.trim()) return;

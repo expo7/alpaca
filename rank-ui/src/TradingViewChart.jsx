@@ -29,19 +29,18 @@ export default function TradingViewChart({
 }) {
   const id = useId().replace(/:/g, "_");
   const containerRef = useRef(null);
-  const isTest = typeof process !== "undefined" && process.env.NODE_ENV === "test";
+  const isTest = import.meta.env.MODE === "test";
   const studiesList = studies || DEFAULT_STUDIES;
 
   useEffect(() => {
     if (!symbol || isTest) return undefined;
-    let widget;
     let mounted = true;
 
     loadTV()
       .then(() => {
         if (!mounted || !window.TradingView) return;
         const fullSymbol = symbol.includes(":") ? symbol : `${exchangePrefix}${symbol}`;
-        widget = new window.TradingView.widget({
+        new window.TradingView.widget({
           symbol: fullSymbol,
           interval,
           timezone: "Etc/UTC",

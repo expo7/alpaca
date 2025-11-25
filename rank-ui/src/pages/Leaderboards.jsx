@@ -21,6 +21,7 @@ async function apiFetch(path, { token, ...opts } = {}) {
 
 export default function Leaderboards() {
   const { token } = useAuth();
+  const authed = Boolean(token);
   const [entries, setEntries] = useState([]);
   const [seasons, setSeasons] = useState([]);
   const [season, setSeason] = useState("");
@@ -43,7 +44,7 @@ export default function Leaderboards() {
         console.error(err);
       }
     })();
-  }, [token]);
+  }, [token, season]);
 
   useEffect(() => {
     if (!token) return;
@@ -67,14 +68,6 @@ export default function Leaderboards() {
     })();
   }, [token, metric, season]);
 
-  if (!token) {
-    return (
-      <div className="p-4 text-sm text-amber-300">
-        Login required to view leaderboards.
-      </div>
-    );
-  }
-
   const seasonMap = useMemo(() => {
     const map = {};
     seasons.forEach((s) => {
@@ -82,6 +75,14 @@ export default function Leaderboards() {
     });
     return map;
   }, [seasons]);
+
+  if (!authed) {
+    return (
+      <div className="p-4 text-sm text-amber-300">
+        Login required to view leaderboards.
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-4">

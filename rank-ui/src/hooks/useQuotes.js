@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const BASE = "http://127.0.0.1:8000";
 
 // Shared hook to fetch live quotes for a list of symbols with a debounce/poll.
 export default function useQuotes(symbols = [], { pollMs = 20000, debounceMs = 400 } = {}) {
   const [quotes, setQuotes] = useState({});
+  const symbolsKey = useMemo(() => {
+    if (!Array.isArray(symbols) || !symbols.length) return "";
+    return [...symbols].sort().join(",");
+  }, [symbols]);
 
   useEffect(() => {
-    if (!symbols.length) return;
+    const symbolList = symbolsKey ? symbolsKey.split(",") : [];
+    if (!symbolList.length) return;
     let timeoutId;
     let cancelled = false;
 
@@ -15,7 +20,7 @@ export default function useQuotes(symbols = [], { pollMs = 20000, debounceMs = 4
       if (cancelled) return;
       try {
         const res = await fetch(
-          `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbols.join(","))}`
+          `${BASE}/api/paper/quotes/?symbols=${encodeURIComponent(symbolList.join(","))}`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -37,7 +42,7 @@ export default function useQuotes(symbols = [], { pollMs = 20000, debounceMs = 4
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [symbols.sort().join(","), pollMs, debounceMs]); // stable key
+  }, [symbolsKey, pollMs, debounceMs]); // stable key
 
   return quotes;
 }

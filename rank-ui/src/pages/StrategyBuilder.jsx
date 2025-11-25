@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 
 const BASE = "http://127.0.0.1:8000";
@@ -102,6 +102,8 @@ export default function StrategyBuilder() {
       loadStrategies();
       loadPortfolios();
     }
+    // Intentional: avoid re-running on helper re-creations
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   async function loadPortfolios({ autoCreate = true } = {}) {
@@ -155,7 +157,7 @@ export default function StrategyBuilder() {
         setStatus(data?.detail || "Failed to create default portfolio");
       }
     } catch (err) {
-      setStatus("Failed to create default portfolio");
+      setStatus(err.message || "Failed to create default portfolio");
     } finally {
       setCreatingPortfolio(false);
     }
@@ -436,18 +438,16 @@ export default function StrategyBuilder() {
             .filter((p) => String(p.portfolio) === String(pid))
             .reduce((sum, p) => sum + Math.abs(Number(p.market_value || 0)), 0);
           if (singleCap || grossCap) {
-          const entryPct = Number(form.orderTemplates.entry.quantity_pct || 0) / 100;
-          const notionalPer = equity * entryPct;
-          const symbolWarns = matches.filter(
-            (sym) => singleCap && notionalPer > singleCap
-          );
-          const projectedGross = currentGross + notionalPer * matches.length;
-          if (symbolWarns.length || (grossCap && projectedGross > grossCap)) {
-            setStatus("Preview blocked: caps would be breached.");
-            alert("Preview blocked: caps would be breached.");
-            return;
+            const entryPct = Number(form.orderTemplates.entry.quantity_pct || 0) / 100;
+            const notionalPer = equity * entryPct;
+            const projectedGross = currentGross + notionalPer * matches.length;
+            const breachesSingle = singleCap && notionalPer > singleCap;
+            if (breachesSingle || (grossCap && projectedGross > grossCap)) {
+              setStatus("Preview blocked: caps would be breached.");
+              alert("Preview blocked: caps would be breached.");
+              return;
+            }
           }
-        }
         }
       }
       setStatus("Preview updated");
@@ -647,7 +647,6 @@ export default function StrategyBuilder() {
 
           <RuleSection
             title="Entry rules"
-            section="entry"
             data={form.entry}
             onTemplateChange={(value) =>
               setForm((prev) => ({
@@ -660,7 +659,6 @@ export default function StrategyBuilder() {
 
           <RuleSection
             title="Exit rules"
-            section="exit"
             data={form.exit}
             onTemplateChange={(value) =>
               setForm((prev) => ({
@@ -931,7 +929,6 @@ function OrderTemplateEditor({ title, template, onChange }) {
 function RuleSection({
   title,
   data,
-  section,
   onTemplateChange,
   onRuleChange,
 }) {

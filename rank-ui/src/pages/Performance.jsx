@@ -41,7 +41,7 @@ export default function Performance() {
         setError("Failed to load portfolios");
       }
     })();
-  }, [token]);
+  }, [token, selectedId]);
 
   useEffect(() => {
     if (!token || !selectedId) return;

@@ -2,7 +2,7 @@
 // File: src/App.jsx
 // ==============================
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import Login from "./Login.jsx";
 import TradingViewChart from "./TradingViewChart.jsx";
@@ -89,9 +89,7 @@ function IndicatorCell({
 
 export default function App() {
   const { token, user, logout } = useAuth();
-
-  // [NOTE-AUTH-GATE]
-  if (!token) return <Landing />;
+  const isAuthed = Boolean(token);
 
   // -------------------
   // [NOTE-NAV-STATE]
@@ -163,7 +161,7 @@ export default function App() {
       try {
         const res = await apiFetch("/api/metrics/yfinance/", { token });
         if (active) setYfCount(res.count);
-      } catch (e) {
+      } catch {
         if (active) setYfCount(null);
       }
     }
@@ -256,7 +254,7 @@ export default function App() {
   }
 
   // [NOTE-WATCHLISTS-FOR-SAVE] load into modal
-  async function fetchWatchlistsForSave() {
+  const fetchWatchlistsForSave = useCallback(async () => {
     try {
       const data = await apiFetch("/api/watchlists/", { token });
       const list = Array.isArray(data) ? data : data.results || [];
@@ -268,7 +266,7 @@ export default function App() {
     } catch {
       // ignore
     }
-  }
+  }, [token, saveListId]);
   useEffect(() => {
     localStorage.setItem("seenOnboarding", showOnboarding ? "0" : "1");
   }, [showOnboarding]);
@@ -277,14 +275,13 @@ export default function App() {
     if (saveOpen) {
       fetchWatchlistsForSave();
     }
-  }, [saveOpen]);
+  }, [saveOpen, fetchWatchlistsForSave]);
 
   useEffect(() => {
     if (token) {
       fetchWatchlistsForSave();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, fetchWatchlistsForSave]);
 
   // refetch sparklines when period changes
   useEffect(() => {
@@ -366,6 +363,18 @@ export default function App() {
     }
   }
 
+  function openQuickAlert(symbol, finalScore) {
+    setQuickAlertSym(symbol);
+    setQuickAlertFinal(
+      finalScore != null && !Number.isNaN(Number(finalScore))
+        ? Number(finalScore)
+        : null
+    );
+    setQuickAlertMinFinal("");
+    setQuickAlertTriggerOnce(true);
+    setQuickAlertErr("");
+  }
+
   // [NOTE-ACTIONS] Explain
   async function openExplain(symbol) {
     setErrMsg("");
@@ -432,6 +441,10 @@ export default function App() {
   // ==============================
   // [NOTE-UI] App Shell
   // ==============================
+  if (!isAuthed) {
+    return <Landing />;
+  }
+
   return (
     <div className="app-shell">
       {/* NAVBAR */}

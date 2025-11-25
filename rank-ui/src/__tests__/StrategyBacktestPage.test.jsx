@@ -54,7 +54,7 @@ const templateList = [
 
 describe("StrategyBacktestPage", () => {
   test("loads templates, validates, and runs backtest", async () => {
-    const fetchImpl = (url, opts = {}) => {
+    const fetchImpl = (url) => {
       if (url.includes("/api/strategies/templates/")) {
         return Promise.resolve(mockResponse(templateList));
       }
@@ -105,7 +105,7 @@ describe("StrategyBacktestPage", () => {
   });
 
   test("surfaces validation and backtest errors", async () => {
-    const fetchImpl = (url, opts = {}) => {
+    const fetchImpl = (url) => {
       if (url.includes("/api/strategies/templates/")) {
         return Promise.resolve(mockResponse(templateList));
       }

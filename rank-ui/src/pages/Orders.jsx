@@ -114,7 +114,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, auditPinned, detailModal]);
 
   const loadPortfolios = useCallback(async () => {
     if (!token) return;
@@ -212,17 +212,25 @@ export default function Orders() {
           if (Array.isArray(data) && data.length) {
             setInstrumentMeta((prev) => ({ ...prev, [sym]: data[0] }));
           }
-        } catch (err) {
+        } catch {
           // ignore lookup failures
         }
       }
     };
-    if (symbols.length) fetchMeta();
-  }, [orders]);
+    if (symbols.length && symbols.some((sym) => !instrumentMeta[sym])) fetchMeta();
+  }, [orders, instrumentMeta]);
 
   useEffect(() => {
     if (!Object.keys(liveQuotes).length) return;
-    setCapsByPortfolio((prev) => ({ ...prev, quotes: liveQuotes }));
+    setCapsByPortfolio((prev) => {
+      const prevQuotes = prev.quotes || {};
+      const sameSize = Object.keys(prevQuotes).length === Object.keys(liveQuotes).length;
+      const sameValues =
+        sameSize &&
+        Object.entries(liveQuotes).every(([sym, price]) => prevQuotes[sym] === price);
+      if (sameValues) return prev;
+      return { ...prev, quotes: liveQuotes };
+    });
   }, [liveQuotes]);
 
   useEffect(() => {
@@ -1401,11 +1409,9 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
       </div>
       <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <div>
-            <div className="text-[11px] uppercase text-slate-400">Price &amp; Cost</div>
-            <div className="text-[11px] text-slate-500">
-              Fetch 1m price on demand to size your order.
-            </div>
+          <div className="text-[11px] uppercase text-slate-400">Price &amp; Cost</div>
+          <div className="text-[11px] text-slate-500">
+            Fetch 1m price on demand to size your order.
           </div>
           <button
             type="button"

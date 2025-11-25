@@ -90,14 +90,13 @@ export default function Positions() {
         setErr("");
       } catch (e) {
         setErr(e.message || "Failed to load positions");
-      } finally {
       }
     };
     setLoading(true);
     load().finally(() => setLoading(false));
     const id = setInterval(() => load(), REFRESH_MS);
     return () => clearInterval(id);
-  }, [token]);
+  }, [token, pagination.limit]);
 
   useEffect(() => {
     if (!Object.keys(liveQuotes).length) return;
@@ -188,21 +187,20 @@ export default function Positions() {
       }
     }
     if (action === "close") {
-        const caps = capsByPortfolio[pos.portfolio] || {};
-        const equity = caps.equity || 0;
-        const live = liveQuotes[pos.symbol] || pos.live_price || 0;
-        const mvAfter = 0; // fully closed
-        const currentGross = grossByPortfolio[pos.portfolio] || 0;
-        const newGross = currentGross - Math.abs(Number(pos.market_value || 0));
-        if (equity && caps.maxGross && newGross > equity * (caps.maxGross / 100)) {
-          alert("Cannot close because portfolio caps are hard limits.");
-          return;
-        }
-        if (live) {
-          const proceed = window.confirm(`Close at approx ${live}?`);
-          if (!proceed) return;
-        }
+      const caps = capsByPortfolio[pos.portfolio] || {};
+      const equity = caps.equity || 0;
+      const live = liveQuotes[pos.symbol] || pos.live_price || 0;
+      const currentGross = grossByPortfolio[pos.portfolio] || 0;
+      const newGross = currentGross - Math.abs(Number(pos.market_value || 0));
+      if (equity && caps.maxGross && newGross > equity * (caps.maxGross / 100)) {
+        alert("Cannot close because portfolio caps are hard limits.");
+        return;
       }
+      if (live) {
+        const proceed = window.confirm(`Close at approx ${live}?`);
+        if (!proceed) return;
+      }
+    }
     try {
       await apiFetch(`/api/paper/positions/${pos.id}/${action}/`, {
         token,
