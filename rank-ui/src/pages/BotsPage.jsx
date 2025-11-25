@@ -101,117 +101,118 @@ export default function BotsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-lg font-semibold">Bots</div>
-          <div className="text-sm text-slate-400">Start, pause, or stop your bots.</div>
+    <>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-lg font-semibold">Bots</div>
+            <div className="text-sm text-slate-400">Start, pause, or stop your bots.</div>
+          </div>
+          <button
+            type="button"
+            onClick={loadBots}
+            className="btn-secondary"
+            disabled={loading}
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={loadBots}
-          className="btn-secondary"
-          disabled={loading}
-        >
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
-      </div>
 
-      {!config.allow_live_bots && (
-        <div className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700 rounded-xl p-3">
-          Live trading is disabled in this environment. Live bots cannot be started.
-        </div>
-      )}
+        {!config.allow_live_bots && (
+          <div className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700 rounded-xl p-3">
+            Live trading is disabled in this environment. Live bots cannot be started.
+          </div>
+        )}
 
-      {error && (
-        <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-800 rounded-xl p-3">
-          {error}
-        </div>
-      )}
-      {actionError && (
-        <div className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700 rounded-xl p-3">
-          {actionError}
-        </div>
-      )}
+        {error && (
+          <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-800 rounded-xl p-3">
+            {error}
+          </div>
+        )}
+        {actionError && (
+          <div className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700 rounded-xl p-3">
+            {actionError}
+          </div>
+        )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-slate-400 border-b border-slate-800">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-slate-400 border-b border-slate-800">
               <tr className="text-left">
                 <th className="py-2 pr-2">Name</th>
                 <th className="py-2 pr-2">Symbols</th>
                 <th className="py-2 pr-2">Mode</th>
                 <th className="py-2 pr-2">State</th>
-              <th className="py-2 pr-2">Schedule</th>
-              <th className="py-2 pr-2">Last run</th>
-              <th className="py-2 pr-2">Next run</th>
-              <th className="py-2 pr-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {bots.map((bot) => (
-              <tr key={bot.id} className="border-t border-slate-900 hover:bg-slate-900/40">
-                <td className="py-2 pr-2 font-semibold">{bot.name || `Bot ${bot.id}`}</td>
-                <td className="py-2 pr-2 text-slate-300">
-                  {(bot.symbols || []).join(", ")}
-                </td>
-                <td className="py-2 pr-2">
-                  <span className={modeBadge(bot.mode)}>{bot.mode}</span>
-                </td>
-                <td className="py-2 pr-2">
-                  <span className={stateBadge(bot.state)}>{bot.state}</span>
-                </td>
-                <td className="py-2 pr-2 text-slate-300">{bot.schedule}</td>
-                <td className="py-2 pr-2 text-slate-400 text-xs">
-                  {bot.last_run_at ? new Date(bot.last_run_at).toLocaleString() : "-"}
-                </td>
-                <td className="py-2 pr-2 text-slate-400 text-xs">
-                  {bot.next_run_at ? new Date(bot.next_run_at).toLocaleString() : "-"}
-                </td>
-                <td className="py-2 pr-2">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleStart(bot)}
-                      disabled={
-                        bot.state === "running" ||
-                        (bot.mode === "live" && !config.allow_live_bots)
-                      }
-                      className="btn-primary disabled:opacity-50"
-                    >
-                      Start
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAction(bot.id, "pause")}
-                      disabled={bot.state === "paused" || bot.state === "stopped"}
-                      className="btn-secondary disabled:opacity-50"
-                    >
-                      Pause
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAction(bot.id, "stop")}
-                      disabled={bot.state === "stopped"}
-                      className="btn-secondary disabled:opacity-50"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                </td>
+                <th className="py-2 pr-2">Schedule</th>
+                <th className="py-2 pr-2">Last run</th>
+                <th className="py-2 pr-2">Next run</th>
+                <th className="py-2 pr-2 text-right">Actions</th>
               </tr>
-            ))}
-            {!bots.length && !loading && (
-              <tr>
-                <td colSpan={8} className="py-4 text-center text-slate-500">
-                  No bots yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {bots.map((bot) => (
+                <tr key={bot.id} className="border-t border-slate-900 hover:bg-slate-900/40">
+                  <td className="py-2 pr-2 font-semibold">{bot.name || `Bot ${bot.id}`}</td>
+                  <td className="py-2 pr-2 text-slate-300">
+                    {(bot.symbols || []).join(", ")}
+                  </td>
+                  <td className="py-2 pr-2">
+                    <span className={modeBadge(bot.mode)}>{bot.mode}</span>
+                  </td>
+                  <td className="py-2 pr-2">
+                    <span className={stateBadge(bot.state)}>{bot.state}</span>
+                  </td>
+                  <td className="py-2 pr-2 text-slate-300">{bot.schedule}</td>
+                  <td className="py-2 pr-2 text-slate-400 text-xs">
+                    {bot.last_run_at ? new Date(bot.last_run_at).toLocaleString() : "-"}
+                  </td>
+                  <td className="py-2 pr-2 text-slate-400 text-xs">
+                    {bot.next_run_at ? new Date(bot.next_run_at).toLocaleString() : "-"}
+                  </td>
+                  <td className="py-2 pr-2">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStart(bot)}
+                        disabled={
+                          bot.state === "running" ||
+                          (bot.mode === "live" && !config.allow_live_bots)
+                        }
+                        className="btn-primary disabled:opacity-50"
+                      >
+                        Start
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAction(bot.id, "pause")}
+                        disabled={bot.state === "paused" || bot.state === "stopped"}
+                        className="btn-secondary disabled:opacity-50"
+                      >
+                        Pause
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAction(bot.id, "stop")}
+                        disabled={bot.state === "stopped"}
+                        className="btn-secondary disabled:opacity-50"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!bots.length && !loading && (
+                <tr>
+                  <td colSpan={8} className="py-4 text-center text-slate-500">
+                    No bots yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
       {liveModal.open && liveModal.bot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 w-full max-w-md space-y-3">
@@ -270,5 +271,6 @@ export default function BotsPage() {
           </div>
         </div>
       )}
+    </>
   );
 }

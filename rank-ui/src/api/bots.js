@@ -46,3 +46,10 @@ export async function stopBot(id, token) {
 export async function fetchConfig(token) {
   return apiFetch("/api/config/", token, { method: "GET" });
 }
+
+export async function createBot(payload, token) {
+  return apiFetch("/api/bots/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

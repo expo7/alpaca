@@ -16,6 +16,7 @@ import {
   createBatchBacktest,
   getBatchBacktest,
 } from "../api/backtests.js";
+import { createBot } from "../api/bots.js";
 
 const DEFAULT_STRATEGY_SPEC = {
   name: "RSI Bounce",
@@ -58,7 +59,7 @@ function StatsTable({ stats }) {
   const rows = [
     { k: "Start equity", v: stats?.start_equity },
     { k: "End equity", v: stats?.end_equity },
-    { k: "Return %", v: stats?.return_pct },
+    { k: "Total return", v: stats?.return_pct },
     { k: "Max drawdown %", v: stats?.max_drawdown_pct },
     { k: "Trades", v: stats?.num_trades },
     { k: "Win rate %", v: stats?.win_rate_pct },
@@ -81,7 +82,7 @@ function StatsTable({ stats }) {
   );
 }
 
-export default function StrategyBacktestPage() {
+export default function StrategyBacktestPage({ onNavigate }) {
   const { token } = useAuth();
 
   const [strategyText, setStrategyText] = useState(() =>
@@ -118,6 +119,14 @@ export default function StrategyBacktestPage() {
   const [batchStatus, setBatchStatus] = useState("");
   const [batchRuns, setBatchRuns] = useState([]);
   const [batchError, setBatchError] = useState("");
+  const [promoteModal, setPromoteModal] = useState({
+    open: false,
+    run: null,
+    name: "",
+    mode: "paper",
+    saving: false,
+    error: "",
+  });
   const [sortField, setSortField] = useState("sharpe_ratio");
   const [sortDir, setSortDir] = useState("desc");
   const [minTrades, setMinTrades] = useState(0);
@@ -166,7 +175,18 @@ export default function StrategyBacktestPage() {
         const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        const data = await res.json();
+        let data = [];
+        try {
+          if (res.json) {
+            data = await res.json();
+          } else {
+            const txt = await res.text();
+            data = txt ? JSON.parse(txt) : [];
+          }
+        } catch {
+          const txt = await res.text();
+          data = txt ? JSON.parse(txt) : [];
+        }
         if (!active) return;
         setTemplates(Array.isArray(data) ? data : []);
         if (Array.isArray(data) && data.length) {
@@ -362,6 +382,61 @@ export default function StrategyBacktestPage() {
       setBatchLabel(res.label || batchLabel);
     } catch (err) {
       setBatchError(err.message || "Failed to load batch");
+    }
+  }
+
+  function applyParamsToStrategy(baseStrategy, params) {
+    const updated = { ...(baseStrategy || {}) };
+    const paramsObj = { ...((baseStrategy || {}).parameters || {}) };
+    Object.entries(params || {}).forEach(([key, val]) => {
+      if (paramsObj[key]) {
+        paramsObj[key] = { ...paramsObj[key], default: val };
+      }
+    });
+    updated.parameters = paramsObj;
+    return updated;
+  }
+
+  async function promoteRunToBot(run) {
+    const parsedStrategy = parseStrategy();
+    if (!parsedStrategy) return;
+    const symbols = (botConfig.symbols || "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    const botPayload = {
+      symbols,
+      mode: promoteModal.mode,
+      benchmark: botConfig.benchmark || "SPY",
+      capital: Number(botConfig.starting_equity) || 0,
+      commission_per_trade: botConfig.commission_per_trade
+        ? Number(botConfig.commission_per_trade)
+        : undefined,
+      commission_pct: botConfig.commission_pct ? Number(botConfig.commission_pct) : undefined,
+      slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
+    };
+
+    const strategyWithParams = applyParamsToStrategy(parsedStrategy, run.params || {});
+
+    setPromoteModal((m) => ({ ...m, saving: true, error: "" }));
+    try {
+      await createBot(
+        {
+          name: promoteModal.name || run.params?.name || `Bot from batch ${batchId}`,
+          mode: promoteModal.mode,
+          strategy: strategyWithParams,
+          bot: botPayload,
+        },
+        token
+      );
+      setPromoteModal({ open: false, run: null, name: "", mode: "paper", saving: false, error: "" });
+      if (onNavigate) onNavigate("bots");
+    } catch (err) {
+      setPromoteModal((m) => ({
+        ...m,
+        saving: false,
+        error: err.message || "Failed to create bot",
+      }));
     }
   }
 
@@ -687,8 +762,8 @@ export default function StrategyBacktestPage() {
                   className="bg-slate-950 border border-slate-800 rounded-lg p-1"
                 >
                   <option value="sharpe_ratio">Sharpe ratio</option>
-                  <option value="return_pct">Return %</option>
-                  <option value="max_drawdown_pct">Max drawdown %</option>
+                  <option value="return_pct">Return % (sort)</option>
+                  <option value="max_drawdown_pct">Max drawdown % (sort)</option>
                   <option value="num_trades">Number of trades</option>
                 </select>
               </label>
@@ -756,6 +831,7 @@ export default function StrategyBacktestPage() {
                   <th className="py-2 pr-2">Max DD %</th>
                   <th className="py-2 pr-2">Sharpe</th>
                   <th className="py-2 pr-2">Error</th>
+                  <th className="py-2 pr-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -790,6 +866,28 @@ export default function StrategyBacktestPage() {
                     </td>
                     <td className="py-1.5 pr-2">{run.stats?.sharpe_ratio}</td>
                     <td className="py-1.5 pr-2 text-rose-300">{run.error || "-"}</td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {run.status === "completed" && run.stats ? (
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs"
+                          onClick={() =>
+                            setPromoteModal({
+                              open: true,
+                              run,
+                              name: "",
+                              mode: "paper",
+                              saving: false,
+                              error: "",
+                            })
+                          }
+                        >
+                          Create Bot
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     </tr>
                   );
                 })}
@@ -798,6 +896,87 @@ export default function StrategyBacktestPage() {
           </div>
         )}
       </div>
+
+      {promoteModal.open && promoteModal.run && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 w-full max-w-lg space-y-3">
+            <div className="text-lg font-semibold">
+              Create Bot from run #{promoteModal.run.index}
+            </div>
+            <div className="text-xs text-slate-300">
+              Params:{" "}
+              {Object.entries(promoteModal.run.params || {})
+                .map(([k, v]) => `${k}=${v}`)
+                .join(", ")}
+            </div>
+            <div className="text-xs text-slate-300">
+              Stats: Sharpe {promoteModal.run.stats?.sharpe_ratio ?? "-"} · Return %
+              {promoteModal.run.stats?.return_pct ??
+                promoteModal.run.stats?.total_return ??
+                "-"}{" "}
+              · Max DD %
+              {promoteModal.run.stats?.max_drawdown_pct ??
+                promoteModal.run.stats?.max_drawdown ??
+                "-"}{" "}
+              · Trades {promoteModal.run.stats?.num_trades ?? "-"}
+            </div>
+            <label className="block text-sm">
+              <span className="text-xs text-slate-400">Bot name</span>
+              <input
+                value={promoteModal.name}
+                onChange={(e) =>
+                  setPromoteModal((m) => ({ ...m, name: e.target.value }))
+                }
+                className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-sm"
+                placeholder="Bot name"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs text-slate-400">Mode</span>
+              <select
+                value={promoteModal.mode}
+                onChange={(e) =>
+                  setPromoteModal((m) => ({ ...m, mode: e.target.value }))
+                }
+                className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-sm"
+              >
+                <option value="paper">paper</option>
+                <option value="backtest">backtest</option>
+                <option value="live">live</option>
+              </select>
+            </label>
+            {promoteModal.error && (
+              <div className="text-xs text-rose-300">{promoteModal.error}</div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setPromoteModal({
+                    open: false,
+                    run: null,
+                    name: "",
+                    mode: "paper",
+                    saving: false,
+                    error: "",
+                  })
+                }
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={promoteModal.saving}
+                onClick={() => promoteRunToBot(promoteModal.run)}
+                className="btn-primary disabled:opacity-50"
+              >
+                {promoteModal.saving ? "Creating..." : "Create Bot"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {trades.length > 0 && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">

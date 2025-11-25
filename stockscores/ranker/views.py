@@ -727,6 +727,42 @@ class BotViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user, state=Bot.STATE_STOPPED, next_run_at=None)
 
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        created_objs = {}
+
+        if not data.get("strategy_spec") and data.get("strategy"):
+            strat_serializer = StrategySpecSerializer(data=data.get("strategy"))
+            strat_serializer.is_valid(raise_exception=True)
+            strat = StrategySpec.objects.create(
+                user=request.user,
+                name=strat_serializer.validated_data.get("name", ""),
+                spec=strat_serializer.validated_data,
+            )
+            data["strategy_spec"] = strat.id
+            created_objs["strategy_spec"] = strat.id
+
+        if not data.get("bot_config") and data.get("bot"):
+            bot_serializer = BotConfigSerializer(data=data.get("bot"))
+            bot_serializer.is_valid(raise_exception=True)
+            bot_cfg = BotConfig.objects.create(
+                user=request.user,
+                name=bot_serializer.validated_data.get("name", ""),
+                config=bot_serializer.validated_data,
+            )
+            data["bot_config"] = bot_cfg.id
+            created_objs["bot_config"] = bot_cfg.id
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {**serializer.data, **created_objs},
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
         bot = self.get_object()

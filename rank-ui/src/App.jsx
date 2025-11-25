@@ -787,7 +787,7 @@ export default function App() {
 
         {page === "alerts" && <Alerts />}
 
-        {page === "strategy-backtest" && <StrategyBacktestPage />}
+        {page === "strategy-backtest" && <StrategyBacktestPage onNavigate={setPage} />}
 
         {page === "orders" && <Orders />}
 
