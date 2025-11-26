@@ -928,12 +928,6 @@ class ExecutionEngine:
                     updates.append("notes")
                 if updates:
                     order.save(update_fields=list(dict.fromkeys(updates)))
-        if order.tif in {"ioc", "fok"}:
-            order.status = "canceled"
-            order.save(update_fields=["status"])
-        elif result and order.status == "new":
-            order.status = "working"
-            order.save(update_fields=["status"])
 
     @transaction.atomic
     def _apply_fill(
@@ -1139,3 +1133,68 @@ class ExecutionEngine:
     def _in_regular_hours(self, now) -> bool:
         local = timezone.localtime(now).time()
         return MARKET_OPEN <= local <= MARKET_CLOSE
+
+
+def simulate_order_fill(
+    order: PaperOrder,
+    check_time: Optional[datetime] = None,
+    data_provider: Optional[MarketDataProvider] = None,
+):
+    """
+    Lightweight paper-only fill simulator that replays 1m bars from submit time to now.
+
+    If the order fills, portfolio/trades are updated using the standard execution engine
+    helpers and the order is returned with updated status/average_fill_price.
+    """
+    if order.status not in {"new", "working", "part_filled"}:
+        return order
+    check_time = check_time or timezone.now()
+    data_provider = data_provider or get_market_data_provider()
+    submitted_at = order.created_at or order.algo_next_run_at or timezone.now()
+    try:
+        bars = data_provider.get_history(
+            order.symbol,
+            start=submitted_at,
+            end=check_time,
+            interval="1m",
+        )
+    except Exception:
+        return order
+    if bars is None or len(bars) == 0:
+        return order
+
+    engine = ExecutionEngine(data_provider=data_provider)
+    portfolio = order.portfolio
+
+    # Ensure deterministic ordering
+    df = bars.sort_index()
+    for ts, row in df.iterrows():
+        if timezone.is_naive(ts):
+            ts = timezone.make_aware(ts, dt_timezone.utc)
+        if ts <= submitted_at:
+            continue
+        quote = Quote(
+            symbol=order.symbol.upper(),
+            price=float(row["Open"]) if "Open" in row else float(row.get("Close", 0)),
+            timestamp=ts,
+            open=float(row["Open"]) if "Open" in row else None,
+            high=float(row["High"]) if "High" in row else None,
+            low=float(row["Low"]) if "Low" in row else None,
+            close=float(row["Close"]) if "Close" in row else None,
+            volume=float(row["Volume"]) if "Volume" in row else None,
+        )
+        handler = engine.handlers.get(order.order_type, MarketOrderHandler())
+        try:
+            result = handler.maybe_fill(order, portfolio, quote, ts)
+        except Exception:
+            continue
+        if result and result.filled and result.quantity > 0:
+            with transaction.atomic():
+                # Use bar timestamp for audit trail
+                prev_override = engine._override_now
+                engine._override_now = ts
+                engine._apply_fill(order, portfolio, result)
+                engine._override_now = prev_override
+            return PaperOrder.objects.select_related("portfolio").get(id=order.id)
+
+    return order

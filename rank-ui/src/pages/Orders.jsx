@@ -3,6 +3,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import Toast from "../components/Toast.jsx";
 import useQuotes from "../hooks/useQuotes.js";
 import TradingViewChart from "../TradingViewChart.jsx";
+import { simulateOrderFill } from "../api/paper.js";
 
 const BASE = "http://127.0.0.1:8000";
 const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
@@ -61,6 +62,7 @@ export default function Orders() {
   const [instrumentMeta, setInstrumentMeta] = useState({});
   const [capsByPortfolio, setCapsByPortfolio] = useState({});
   const [chartSymbol, setChartSymbol] = useState("");
+  const [simulatingId, setSimulatingId] = useState(null);
 
   const formatCurrency = (value) => {
     const num = Number(value);
@@ -239,6 +241,19 @@ export default function Orders() {
       setDetailModal(auditState.order);
     }
   }, [auditState, auditPinned]);
+
+  async function handleSimulate(orderId) {
+    if (!token) return;
+    setSimulatingId(orderId);
+    try {
+      const updated = await simulateOrderFill(orderId, token);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      setToastState({ msg: err.message || "Simulation failed", tone: "warn" });
+    } finally {
+      setSimulatingId(null);
+    }
+  }
 
   const loadAudit = async (order) => {
     if (!token) return;
@@ -551,6 +566,7 @@ export default function Orders() {
   const renderActions = (order) => {
     const isEditable = EDITABLE_TYPES.has(order.order_type);
     const isEditing = !!editing[order.id];
+    const canSimulate = ["new", "working", "part_filled"].includes(order.status);
     return (
       <div className="flex flex-wrap gap-2 text-xs">
         {isEditable && !isEditing && (
@@ -583,6 +599,17 @@ export default function Orders() {
               Cancel
             </button>
           </>
+        )}
+        {canSimulate && (
+          <button
+            type="button"
+            onClick={() => handleSimulate(order.id)}
+            disabled={simulatingId === order.id}
+            onClickCapture={(e) => e.stopPropagation()}
+            className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
+          >
+            {simulatingId === order.id ? "Checking…" : "Check fill"}
+          </button>
         )}
         <button
           type="button"

@@ -24,6 +24,7 @@ from paper.models import (
     PortfolioCashMovement,
     Instrument,
 )
+from paper.services.execution import simulate_order_fill
 from .serializers import (
     PaperPortfolioSerializer,
     PaperOrderSerializer,
@@ -220,6 +221,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         if order.parent_id:
             payload["parent"] = PaperOrderSerializer(order.parent).data
         return Response(payload)
+
+    @action(detail=True, methods=["post"])
+    def simulate_fill(self, request, pk=None):
+        order = self.get_object()
+        updated = simulate_order_fill(order)
+        serializer = self.get_serializer(updated)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         portfolio = serializer.validated_data["portfolio"]
