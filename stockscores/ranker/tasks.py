@@ -1,11 +1,12 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, Dict
 
 from celery import shared_task
+from django.db import models, transaction
 from django.utils import timezone
 
 from .backtest import BacktestResult, run_basket_backtest
-from .models import Bot, BacktestBatch, BacktestBatchRun
+from .models import Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 
 SCHEDULE_OFFSETS = {
@@ -25,6 +26,9 @@ def compute_next_run_at(bot: Bot, from_time=None):
 
 def run_bot_engine(bot: Bot) -> Dict[str, Any]:
     """Execute a single bot iteration using the existing backtester."""
+
+    if bot.mode == Bot.MODE_PAPER:
+        return run_forward_bot(bot)
 
     config = bot.bot_config.config if bot.bot_config else {}
     symbols = config.get("symbols") or []
@@ -56,6 +60,73 @@ def run_bot_engine(bot: Bot) -> Dict[str, Any]:
     return {"status": "completed", "summary": result.summary}
 
 
+def _forward_start(bot, today):
+    cfg = bot.bot_config.config if bot.bot_config else {}
+    if bot.forward_start_date:
+        return bot.forward_start_date
+    start_cfg = cfg.get("start_date") or cfg.get("start")
+    if start_cfg:
+        try:
+            return datetime.fromisoformat(str(start_cfg)).date()
+        except Exception:
+            pass
+    return today - timedelta(days=365)
+
+
+def run_forward_bot(bot: Bot) -> Dict[str, Any]:
+    cfg = bot.bot_config.config if bot.bot_config else {}
+    symbols = cfg.get("symbols") or []
+    if not symbols:
+        return {"status": "no_symbols"}
+    today = timezone.now().date()
+    if bot.last_forward_run_at and bot.last_forward_run_at >= today:
+        return {"status": "up_to_date"}
+    start_date = _forward_start(bot, today)
+
+    result = run_basket_backtest(
+        tickers=symbols,
+        start=str(start_date),
+        end=str(today),
+        benchmark=cfg.get("benchmark", "SPY"),
+        initial_capital=float(cfg.get("capital", 10000.0)),
+        rebalance_days=int(cfg.get("rebalance_days", 5)),
+        top_n=cfg.get("top_n"),
+        commission_per_trade=float(cfg.get("commission_per_trade", 0.0)),
+        commission_pct=float(cfg.get("commission_pct", 0.0)),
+        slippage_model=cfg.get("slippage_model", "none"),
+        slippage_bps=float(cfg.get("slippage_bps", 0.0)),
+        max_open_positions=int(cfg.get("max_open_positions"))
+        if cfg.get("max_open_positions") is not None
+        else None,
+        max_per_position_pct=float(cfg.get("max_per_position_pct", 1.0)),
+        strategy_spec=bot.strategy_spec.spec if bot.strategy_spec else None,
+    )
+    summary = result.summary or {}
+    equity = summary.get("final_value") or summary.get("final_equity") or 0.0
+    cash = summary.get("final_cash", 0.0)
+    positions_value = summary.get("final_positions_value") or (equity - cash)
+    pnl = summary.get("total_return", 0.0)
+    num_trades = summary.get("num_trades", len(summary.get("trades", []) or []))
+    with transaction.atomic():
+        BotForwardRun.objects.update_or_create(
+            bot=bot,
+            as_of=today,
+            defaults={
+                "equity": equity,
+                "cash": cash,
+                "positions_value": positions_value,
+                "pnl": pnl,
+                "num_trades": num_trades,
+                "stats": summary,
+            },
+        )
+        bot.last_forward_run_at = today
+        if not bot.forward_start_date:
+            bot.forward_start_date = start_date
+        bot.save(update_fields=["last_forward_run_at", "forward_start_date"])
+    return {"status": "completed", "equity": equity, "num_trades": num_trades}
+
+
 @shared_task
 def run_bot_once(bot_id: int):
     try:
@@ -85,8 +156,13 @@ def run_bot_once(bot_id: int):
 @shared_task
 def schedule_due_bots():
     now = timezone.now()
-    due = Bot.objects.filter(state=Bot.STATE_RUNNING, next_run_at__lte=now)
+    due = Bot.objects.filter(state=Bot.STATE_RUNNING).filter(
+        (models.Q(next_run_at__lte=now)) | models.Q(next_run_at__isnull=True)
+    )
+    today = now.date()
     for bot in due:
+        if bot.mode == Bot.MODE_PAPER and bot.last_forward_run_at and bot.last_forward_run_at >= today:
+            continue
         run_bot_once.delay(bot.id)
     return {"enqueued": due.count()}
 

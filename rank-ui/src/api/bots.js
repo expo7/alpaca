@@ -53,3 +53,11 @@ export async function createBot(payload, token) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function fetchBotForwardRuns(botId, token) {
+  return apiFetch(`/api/bots/${botId}/forward-runs/`, token, { method: "GET" });
+}
+
+export async function fetchBotLatestForwardRun(botId, token) {
+  return apiFetch(`/api/bots/${botId}/forward-runs/latest/`, token, { method: "GET" });
+}

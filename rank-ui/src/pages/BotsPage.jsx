@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
-import { fetchBots, startBot, pauseBot, stopBot, fetchConfig } from "../api/bots.js";
+import { fetchBots, startBot, pauseBot, stopBot, fetchConfig, fetchBotForwardRuns } from "../api/bots.js";
 
 function stateBadge(state) {
   const common = "px-2 py-1 rounded-full text-[11px] font-semibold";
@@ -29,6 +29,13 @@ export default function BotsPage() {
     bot: null,
     confirmed: false,
     confirmText: "",
+    error: "",
+  });
+  const [forwardModal, setForwardModal] = useState({
+    open: false,
+    bot: null,
+    runs: [],
+    loading: false,
     error: "",
   });
 
@@ -89,6 +96,21 @@ export default function BotsPage() {
     setLiveModal({ open: false, bot: null, confirmed: false, confirmText: "", error: "" });
   }
 
+  async function openForwardHistory(bot) {
+    if (!bot) return;
+    setForwardModal({ open: true, bot, runs: [], loading: true, error: "" });
+    try {
+      const runs = await fetchBotForwardRuns(bot.id, token);
+      setForwardModal((m) => ({ ...m, runs, loading: false }));
+    } catch (err) {
+      setForwardModal((m) => ({
+        ...m,
+        loading: false,
+        error: err.message || "Failed to load forward runs",
+      }));
+    }
+  }
+
   async function confirmLiveStart() {
     if (!liveModal.bot) return;
     try {
@@ -145,6 +167,7 @@ export default function BotsPage() {
                 <th className="py-2 pr-2">State</th>
                 <th className="py-2 pr-2">Schedule</th>
                 <th className="py-2 pr-2">Rebalance</th>
+                <th className="py-2 pr-2">Last forward</th>
                 <th className="py-2 pr-2">Last run</th>
                 <th className="py-2 pr-2">Next run</th>
                 <th className="py-2 pr-2 text-right">Actions</th>
@@ -166,6 +189,11 @@ export default function BotsPage() {
                   <td className="py-2 pr-2 text-slate-300">{bot.schedule}</td>
                   <td className="py-2 pr-2 text-slate-300">
                     {bot.rebalance_days ?? bot.config?.rebalance_days ?? "—"}
+                  </td>
+                  <td className="py-2 pr-2 text-slate-300">
+                    {bot.last_forward_run_at
+                      ? new Date(bot.last_forward_run_at).toLocaleDateString()
+                      : "—"}
                   </td>
                   <td className="py-2 pr-2 text-slate-400 text-xs">
                     {bot.last_run_at ? new Date(bot.last_run_at).toLocaleString() : "-"}
@@ -202,13 +230,20 @@ export default function BotsPage() {
                       >
                         Stop
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => openForwardHistory(bot)}
+                        className="btn-secondary"
+                      >
+                        Forward history
+                      </button>
                     </div>
                   </td>
                 </tr>
-            ))}
+              ))}
             {!bots.length && !loading && (
               <tr>
-                <td colSpan={9} className="py-4 text-center text-slate-500">
+                <td colSpan={10} className="py-4 text-center text-slate-500">
                   No bots yet.
                 </td>
               </tr>
@@ -272,6 +307,73 @@ export default function BotsPage() {
                 Confirm & Start
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {forwardModal.open && forwardModal.bot && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 w-full max-w-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold text-slate-100">
+                Forward history · {forwardModal.bot.name || `Bot ${forwardModal.bot.id}`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setForwardModal({ open: false, bot: null, runs: [], loading: false, error: "" })}
+                className="text-slate-300 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            {forwardModal.loading && (
+              <div className="text-xs text-slate-300">Loading forward runs…</div>
+            )}
+            {forwardModal.error && (
+              <div className="text-xs text-rose-300">{forwardModal.error}</div>
+            )}
+            {!forwardModal.loading && !forwardModal.error && (
+              <div className="space-y-3">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-slate-400 border-b border-slate-800">
+                      <tr className="text-left">
+                        <th className="py-2 pr-2">As of</th>
+                        <th className="py-2 pr-2">Equity</th>
+                        <th className="py-2 pr-2">Cash</th>
+                        <th className="py-2 pr-2">PnL</th>
+                        <th className="py-2 pr-2">Trades</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(forwardModal.runs || []).map((run) => (
+                        <tr key={run.id} className="border-t border-slate-900">
+                          <td className="py-1 pr-2 text-xs">
+                            {run.as_of ? new Date(run.as_of).toLocaleDateString() : "—"}
+                          </td>
+                          <td className="py-1 pr-2 text-xs text-emerald-200">
+                            ${Number(run.equity || 0).toLocaleString()}
+                          </td>
+                          <td className="py-1 pr-2 text-xs text-slate-300">
+                            ${Number(run.cash || 0).toLocaleString()}
+                          </td>
+                          <td className="py-1 pr-2 text-xs text-slate-200">
+                            {Number(run.pnl || 0).toFixed(2)}
+                          </td>
+                          <td className="py-1 pr-2 text-xs">{run.num_trades}</td>
+                        </tr>
+                      ))}
+                      {!forwardModal.runs.length && (
+                        <tr>
+                          <td colSpan={5} className="py-2 text-center text-slate-500 text-xs">
+                            No forward runs yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

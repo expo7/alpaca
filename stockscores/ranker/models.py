@@ -126,6 +126,8 @@ class Bot(models.Model):
     schedule = models.CharField(max_length=16, choices=SCHEDULE_CHOICES, default="5m")
     last_run_at = models.DateTimeField(null=True, blank=True)
     next_run_at = models.DateTimeField(null=True, blank=True)
+    forward_start_date = models.DateField(null=True, blank=True)
+    last_forward_run_at = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -134,6 +136,25 @@ class Bot(models.Model):
 
     def __str__(self):
         return self.name or f"Bot {self.id}"
+
+
+class BotForwardRun(models.Model):
+    bot = models.ForeignKey(Bot, related_name="forward_runs", on_delete=models.CASCADE)
+    as_of = models.DateField()
+    equity = models.DecimalField(max_digits=20, decimal_places=2)
+    cash = models.DecimalField(max_digits=20, decimal_places=2)
+    positions_value = models.DecimalField(max_digits=20, decimal_places=2)
+    pnl = models.DecimalField(max_digits=20, decimal_places=2)
+    num_trades = models.IntegerField(default=0)
+    stats = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("bot", "as_of")
+        ordering = ["bot", "as_of"]
+
+    def __str__(self):
+        return f"Forward run {self.bot_id} @ {self.as_of}"
 
 
 class BacktestRun(models.Model):

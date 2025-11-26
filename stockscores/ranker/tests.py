@@ -8,13 +8,13 @@ from django.utils import timezone
 from unittest.mock import patch
 import pandas as pd
 
-from .models import StockScore, Bot, BotConfig, StrategySpec
+from .models import StockScore, Bot, BotConfig, StrategySpec, BotForwardRun
 from .scoring import technical_score_from_ta
 from .services import compute_and_store
 from .serializers import StrategySpecSerializer
 from .serializers import expand_param_grid
 from ranker.backtest import BacktestResult, run_basket_backtest
-from ranker.tasks import run_bot_once, schedule_due_bots, run_backtest_batch
+from ranker.tasks import run_bot_once, schedule_due_bots, run_backtest_batch, run_bot_engine, run_forward_bot
 from .models import BacktestBatch, BacktestBatchRun
 
 
@@ -794,3 +794,74 @@ class BotRunnerTests(TestCase):
         bot.refresh_from_db()
         self.assertIsNotNone(bot.last_run_at)
         self.assertIsNotNone(bot.next_run_at)
+
+
+class ForwardBotTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="forward", password="pass1234")
+        self.strategy = StrategySpec.objects.create(
+            user=self.user, name="spec", spec={"entry_tree": {"type": "condition", "indicator": "rsi", "operator": "lt", "value": 30}, "parameters": {"dummy": {"type": "int", "default": 1}}}
+        )
+        cfg = {
+            "symbols": ["AAPL"],
+            "capital": 10000,
+            "benchmark": "SPY",
+            "rebalance_days": 5,
+        }
+        self.bot_config = BotConfig.objects.create(user=self.user, name="cfg", config=cfg)
+        self.bot = Bot.objects.create(
+            user=self.user,
+            name="fwd",
+            bot_config=self.bot_config,
+            strategy_spec=self.strategy,
+            state=Bot.STATE_RUNNING,
+            mode=Bot.MODE_PAPER,
+        )
+
+    @patch("ranker.tasks.run_basket_backtest")
+    def test_forward_run_creates_snapshot(self, mock_backtest):
+        mock_backtest.return_value = BacktestResult(
+            tickers=["AAPL"],
+            start="2024-01-01",
+            end="2024-01-02",
+            equity_curve=[],
+            benchmark_symbol="SPY",
+            benchmark_curve=[],
+            summary={"final_value": 12000, "total_return": 0.2, "num_trades": 3},
+        )
+        out = run_forward_bot(self.bot)
+        self.assertEqual(out["status"], "completed")
+        self.bot.refresh_from_db()
+        self.assertIsNotNone(self.bot.last_forward_run_at)
+        self.assertTrue(
+            BotForwardRun.objects.filter(bot=self.bot, as_of=self.bot.last_forward_run_at).exists()
+        )
+
+    @patch("ranker.tasks.run_basket_backtest")
+    def test_forward_run_up_to_date_skips(self, mock_backtest):
+        today = timezone.now().date()
+        self.bot.last_forward_run_at = today
+        self.bot.save(update_fields=["last_forward_run_at"])
+        out = run_forward_bot(self.bot)
+        self.assertEqual(out["status"], "up_to_date")
+        mock_backtest.assert_not_called()
+
+    @patch("ranker.tasks.run_basket_backtest")
+    def test_forward_runs_api(self, mock_backtest):
+        mock_backtest.return_value = BacktestResult(
+            tickers=["AAPL"],
+            start="2024-01-01",
+            end="2024-01-02",
+            equity_curve=[],
+            benchmark_symbol="SPY",
+            benchmark_curve=[],
+            summary={"final_value": 12000, "total_return": 0.2, "num_trades": 1},
+        )
+        run_forward_bot(self.bot)
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        resp = client.get(f"/api/bots/{self.bot.id}/forward-runs/")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(isinstance(payload, list))
+        self.assertGreaterEqual(len(payload), 1)

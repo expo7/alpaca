@@ -96,6 +96,8 @@ bot_detail = BotViewSet.as_view(
 bot_start = BotViewSet.as_view({"post": "start"})
 bot_pause = BotViewSet.as_view({"post": "pause"})
 bot_stop = BotViewSet.as_view({"post": "stop"})
+bot_forward_runs = BotViewSet.as_view({"get": "forward_runs"})
+bot_forward_latest = BotViewSet.as_view({"get": "forward_runs_latest"})
 
 urlpatterns = [
     # Watchlists + nested items
@@ -123,6 +125,8 @@ urlpatterns = [
     path("bots/<int:pk>/start/", bot_start, name="bot-start"),
     path("bots/<int:pk>/pause/", bot_pause, name="bot-pause"),
     path("bots/<int:pk>/stop/", bot_stop, name="bot-stop"),
+    path("bots/<int:pk>/forward-runs/", bot_forward_runs, name="bot-forward-runs"),
+    path("bots/<int:pk>/forward-runs/latest/", bot_forward_latest, name="bot-forward-latest"),
     # Backtests + configs
     path("backtests/", backtest_config_list, name="backtest-config-list"),
     path("backtests/<int:pk>/", backtest_config_detail, name="backtest-config-detail"),

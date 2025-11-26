@@ -10,8 +10,9 @@ from .serializers import (
     BotConfigSerializer,
     BotSerializer,
     BacktestBatchRequestSerializer,
+    BotForwardRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -819,6 +820,22 @@ class BotViewSet(viewsets.ModelViewSet):
         if updates:
             bot.save(update_fields=updates)
         serializer = self.get_serializer(bot)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="forward-runs")
+    def forward_runs(self, request, pk=None):
+        bot = self.get_object()
+        runs = BotForwardRun.objects.filter(bot=bot).order_by("-as_of")
+        serializer = BotForwardRunSerializer(runs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="forward-runs/latest")
+    def forward_runs_latest(self, request, pk=None):
+        bot = self.get_object()
+        latest = BotForwardRun.objects.filter(bot=bot).order_by("-as_of").first()
+        if not latest:
+            return Response({})
+        serializer = BotForwardRunSerializer(latest)
         return Response(serializer.data)
 
 

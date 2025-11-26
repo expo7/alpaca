@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
 from .models import StockScore
-from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun
+from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
 
 # [NOTE-WATCHLIST-SERIALIZERS]
 from .models import Watchlist, WatchlistItem
@@ -265,11 +265,18 @@ def expand_param_grid(grid: dict) -> list[dict]:
 
 class BotSerializer(serializers.ModelSerializer):
     symbols = serializers.SerializerMethodField()
+    last_forward_equity = serializers.SerializerMethodField()
 
     def get_symbols(self, obj):
         cfg = obj.bot_config.config if obj.bot_config else {}
         syms = cfg.get("symbols") or []
         return syms
+
+    def get_last_forward_equity(self, obj):
+        latest = obj.forward_runs.order_by("-as_of").first()
+        if not latest:
+            return None
+        return latest.equity
 
     class Meta:
         model = Bot
@@ -283,6 +290,9 @@ class BotSerializer(serializers.ModelSerializer):
             "schedule",
             "last_run_at",
             "next_run_at",
+            "forward_start_date",
+            "last_forward_run_at",
+            "last_forward_equity",
             "symbols",
             "created_at",
             "updated_at",
@@ -292,9 +302,28 @@ class BotSerializer(serializers.ModelSerializer):
             "state",
             "last_run_at",
             "next_run_at",
+            "last_forward_run_at",
             "created_at",
             "updated_at",
         ]
+
+
+class BotForwardRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BotForwardRun
+        fields = [
+            "id",
+            "bot",
+            "as_of",
+            "equity",
+            "cash",
+            "positions_value",
+            "pnl",
+            "num_trades",
+            "stats",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 class UserPreferenceSerializer(serializers.ModelSerializer):
