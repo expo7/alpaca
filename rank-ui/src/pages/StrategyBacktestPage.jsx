@@ -17,33 +17,9 @@ import {
   getBatchBacktest,
 } from "../api/backtests.js";
 import { createBot } from "../api/bots.js";
+import { STRATEGY_TEMPLATES } from "../strategies/templates.js";
 
-const DEFAULT_STRATEGY_SPEC = {
-  name: "RSI Bounce",
-  entry_tree: {
-    type: "condition",
-    indicator: "rsi",
-    operator: "lt",
-    value: { param: "rsi_entry" },
-    lookback: { param: "rsi_period" },
-  },
-  exit_tree: {
-    type: "condition",
-    indicator: "rsi",
-    operator: "gt",
-    value: { param: "rsi_exit" },
-    lookback: { param: "rsi_period" },
-  },
-  parameters: {
-    rsi_period: { type: "int", default: 14, min: 2, max: 50 },
-    rsi_entry: { type: "float", default: 30, min: 5, max: 50 },
-    rsi_exit: { type: "float", default: 55, min: 30, max: 90 },
-  },
-  metadata: {
-    style: "mean_reversion",
-    notes: "Sample RSI-based dip buyer.",
-  },
-};
+const DEFAULT_TEMPLATE = STRATEGY_TEMPLATES[0];
 
 function formatDate(offsetDays = 0) {
   const d = new Date();
@@ -85,8 +61,9 @@ function StatsTable({ stats }) {
 export default function StrategyBacktestPage({ onNavigate }) {
   const { token } = useAuth();
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState(DEFAULT_TEMPLATE.id);
   const [strategyText, setStrategyText] = useState(() =>
-    pretty(DEFAULT_STRATEGY_SPEC)
+    pretty(DEFAULT_TEMPLATE.spec)
   );
   const [strategyErrors, setStrategyErrors] = useState([]);
   const [parseError, setParseError] = useState("");
@@ -95,8 +72,8 @@ export default function StrategyBacktestPage({ onNavigate }) {
   const [isValidating, setIsValidating] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
-  const [templates, setTemplates] = useState([]);
-  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [templates, setTemplates] = useState(STRATEGY_TEMPLATES);
+  const [selectedTemplate, setSelectedTemplate] = useState(DEFAULT_TEMPLATE.id);
   const [templateErr, setTemplateErr] = useState("");
 
   const [botConfig, setBotConfig] = useState({
@@ -104,6 +81,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
     start_date: formatDate(-120),
     end_date: formatDate(0),
     starting_equity: 10000,
+    rebalance_days: 5,
     benchmark: "SPY",
     commission_per_trade: "",
     commission_pct: "",
@@ -170,38 +148,47 @@ export default function StrategyBacktestPage({ onNavigate }) {
     let active = true;
 
     async function loadTemplates() {
+    try {
+      setTemplateErr("");
+      const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      let data = [];
       try {
-        setTemplateErr("");
-        const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        let data = [];
-        try {
-          if (res.json) {
-            data = await res.json();
-          } else {
-            const txt = await res.text();
-            data = txt ? JSON.parse(txt) : [];
-          }
-        } catch {
+        if (res.json) {
+          data = await res.json();
+        } else {
           const txt = await res.text();
           data = txt ? JSON.parse(txt) : [];
         }
-        if (!active) return;
-        setTemplates(Array.isArray(data) ? data : []);
-        if (Array.isArray(data) && data.length) {
-          setSelectedTemplate(data[0].id);
-          setStrategyText(pretty(data[0].strategy_spec));
-        }
-      } catch (err) {
-        if (active) setTemplateErr(err.message || "Failed to load templates");
+      } catch {
+        const txt = await res.text();
+        data = txt ? JSON.parse(txt) : [];
       }
+      if (!active) return;
+      const merged = [...STRATEGY_TEMPLATES];
+      (Array.isArray(data) ? data : []).forEach((tpl) => {
+        if (!merged.some((t) => t.id === tpl.id)) {
+          merged.push({ ...tpl, spec: tpl.strategy_spec || tpl.spec });
+        }
+      });
+      setTemplates(merged);
+      if (!selectedTemplateId && merged.length) {
+        setSelectedTemplateId(merged[0].id);
+        setSelectedTemplate(merged[0].id);
+        setStrategyText(pretty(merged[0].spec));
+      }
+    } catch (err) {
+      if (active) setTemplateErr(err.message || "Failed to load templates");
+    }
     }
 
     loadTemplates();
     return () => {
       active = false;
     };
+    // we intentionally do not reset on template id change to preserve user edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   function parseStrategy() {
@@ -210,6 +197,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
       return JSON.parse(strategyText);
     } catch (err) {
       setParseError(err.message);
+      setSelectedTemplateId("custom");
       return null;
     }
   }
@@ -274,6 +262,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
           mode: "backtest",
           benchmark: botConfig.benchmark || "SPY",
           capital: Number(botConfig.starting_equity) || 0,
+          rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
           commission_per_trade: botConfig.commission_per_trade
             ? Number(botConfig.commission_per_trade)
             : undefined,
@@ -299,8 +288,11 @@ export default function StrategyBacktestPage({ onNavigate }) {
   }
 
   function applyTemplate(tpl) {
+    const spec = tpl?.strategy_spec || tpl?.spec;
+    if (!spec) return;
     setSelectedTemplate(tpl.id);
-    setStrategyText(pretty(tpl.strategy_spec));
+    setSelectedTemplateId(tpl.id);
+    setStrategyText(pretty(spec));
     setStrategyErrors([]);
     setValidationMsg("");
     setParseError("");
@@ -344,6 +336,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
             mode: "backtest",
             benchmark: botConfig.benchmark || "SPY",
             capital: Number(botConfig.starting_equity) || 0,
+            rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
             commission_per_trade: botConfig.commission_per_trade
               ? Number(botConfig.commission_per_trade)
               : undefined,
@@ -409,6 +402,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
       mode: promoteModal.mode,
       benchmark: botConfig.benchmark || "SPY",
       capital: Number(botConfig.starting_equity) || 0,
+      rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
       commission_per_trade: botConfig.commission_per_trade
         ? Number(botConfig.commission_per_trade)
         : undefined,
@@ -459,6 +453,21 @@ export default function StrategyBacktestPage({ onNavigate }) {
         </div>
       </div>
 
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-sm">
+        <div className="text-sm font-semibold mb-1">How to use this page</div>
+        <ul className="list-disc ml-4 space-y-1 text-slate-300">
+          <li>Pick a strategy template (or paste your own JSON) and tweak the spec.</li>
+          <li>Fill in symbols, dates, capital, and costs in the Bot Config panel.</li>
+          <li>Click “Validate strategy” to check the JSON before running.</li>
+          <li>Click “Run backtest” to see trades and performance.</li>
+          <li>Use the Batch Optimizer to sweep parameters and find a best config.</li>
+          <li>Click “Create Bot” on a good run to spin up a paper bot from the Bots page.</li>
+        </ul>
+        <div className="text-[11px] text-slate-400 mt-2">
+          This page is for research and paper trading. Live bots are gated by ALLOW_LIVE_BOTS and require extra confirmation.
+        </div>
+      </div>
+
       <div className="sbp-grid two-col">
         <div className="space-y-3">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 space-y-2">
@@ -467,25 +476,25 @@ export default function StrategyBacktestPage({ onNavigate }) {
               {templateErr && (
                 <span className="text-[11px] text-rose-300">{templateErr}</span>
               )}
-              </div>
-              {templates.map((tpl) => (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => applyTemplate(tpl)}
-                  className={`w-full text-left px-3 py-2 rounded-xl border transition ${
-                    selectedTemplate === tpl.id
-                      ? "border-amber-400/70 bg-amber-400/10 text-amber-100"
-                      : "border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-200"
-                  }`}
-                >
-                  <div className="font-semibold text-sm">{tpl.name}</div>
-                  <div className="text-[11px] text-slate-400">{tpl.description}</div>
-                </button>
-              ))}
-              {!templates.length && !templateErr && (
-                <div className="text-xs text-slate-500">Loading templates...</div>
-              )}
+            </div>
+            {templates.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => applyTemplate(tpl)}
+                className={`w-full text-left px-3 py-2 rounded-xl border transition ${
+                  selectedTemplate === tpl.id
+                    ? "border-amber-400/70 bg-amber-400/10 text-amber-100"
+                    : "border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-200"
+                }`}
+              >
+                <div className="font-semibold text-sm">{tpl.name}</div>
+                <div className="text-[11px] text-slate-400">{tpl.description}</div>
+              </button>
+            ))}
+            {!templates.length && !templateErr && (
+              <div className="text-xs text-slate-500">Loading templates...</div>
+            )}
           </div>
 
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
@@ -493,7 +502,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
               <div>
                 <div className="text-sm font-semibold">StrategySpec JSON</div>
                 <div className="text-[11px] text-slate-400">
-                  Edit freely or start from a template.
+                  This is the strategy JSON spec. Edit freely or start from a template above.
                 </div>
               </div>
               <button
@@ -508,7 +517,11 @@ export default function StrategyBacktestPage({ onNavigate }) {
 
             <textarea
               value={strategyText}
-              onChange={(e) => setStrategyText(e.target.value)}
+              onChange={(e) => {
+                setStrategyText(e.target.value);
+                setSelectedTemplateId("custom");
+                setSelectedTemplate("custom");
+              }}
               rows={18}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
             />
@@ -567,6 +580,18 @@ export default function StrategyBacktestPage({ onNavigate }) {
                   />
                 </label>
               </div>
+
+              <label className="block">
+                <span className="text-xs text-slate-400">Rebalance days</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={botConfig.rebalance_days}
+                  onChange={(e) => updateBotConfig("rebalance_days", e.target.value)}
+                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
+                  placeholder="5"
+                />
+              </label>
 
               <label className="block">
                 <span className="text-xs text-slate-400">Starting equity</span>

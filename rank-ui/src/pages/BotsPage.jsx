@@ -144,6 +144,7 @@ export default function BotsPage() {
                 <th className="py-2 pr-2">Mode</th>
                 <th className="py-2 pr-2">State</th>
                 <th className="py-2 pr-2">Schedule</th>
+                <th className="py-2 pr-2">Rebalance</th>
                 <th className="py-2 pr-2">Last run</th>
                 <th className="py-2 pr-2">Next run</th>
                 <th className="py-2 pr-2 text-right">Actions</th>
@@ -163,6 +164,9 @@ export default function BotsPage() {
                     <span className={stateBadge(bot.state)}>{bot.state}</span>
                   </td>
                   <td className="py-2 pr-2 text-slate-300">{bot.schedule}</td>
+                  <td className="py-2 pr-2 text-slate-300">
+                    {bot.rebalance_days ?? bot.config?.rebalance_days ?? "—"}
+                  </td>
                   <td className="py-2 pr-2 text-slate-400 text-xs">
                     {bot.last_run_at ? new Date(bot.last_run_at).toLocaleString() : "-"}
                   </td>
@@ -201,15 +205,15 @@ export default function BotsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
-              {!bots.length && !loading && (
-                <tr>
-                  <td colSpan={8} className="py-4 text-center text-slate-500">
-                    No bots yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
+            ))}
+            {!bots.length && !loading && (
+              <tr>
+                <td colSpan={9} className="py-4 text-center text-slate-500">
+                  No bots yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
           </table>
         </div>
       </div>
