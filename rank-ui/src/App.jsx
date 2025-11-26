@@ -20,6 +20,7 @@ import { APP_NAME } from "./brand";
 import StrategyBacktestPage from "./pages/StrategyBacktestPage.jsx";
 import BotsPage from "./pages/BotsPage.jsx";
 import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
+import BotDetailPage from "./pages/BotDetailPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -106,6 +107,7 @@ export default function App() {
   const [saveListId, setSaveListId] = useState(null);
   const [saveListName, setSaveListName] = useState("");
   const [sparkMap, setSparkMap] = useState({}); // { AAPL: [closes...] }
+  const [selectedBotId, setSelectedBotId] = useState(null);
   const [watchlistOptions, setWatchlistOptions] = useState([]);
   const [screenCache, setScreenCache] = useState({});
   const [screenLoading, setScreenLoading] = useState(false);
@@ -810,7 +812,21 @@ export default function App() {
 
         {page === "leaderboards" && <Leaderboards />}
 
-        {page === "bots" && <BotsPage />}
+        {page === "bots" && (
+          <BotsPage
+            onSelectBot={(id) => {
+              setSelectedBotId(id);
+              setPage("bot-detail");
+            }}
+          />
+        )}
+
+        {page === "bot-detail" && selectedBotId && (
+          <BotDetailPage
+            botId={selectedBotId}
+            onBack={() => setPage("bots")}
+          />
+        )}
 
         {page === "backtest-history" && <BacktestHistoryPage />}
 

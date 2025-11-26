@@ -27,3 +27,8 @@ export async function simulateOrderFill(orderId, token) {
     method: "POST",
   });
 }
+
+export async function fetchBotOrders(botId, token) {
+  const query = botId ? `?bot=${botId}` : "";
+  return apiFetch(`/api/paper/orders/${query}`, token, { method: "GET" });
+}

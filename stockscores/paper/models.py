@@ -137,6 +137,13 @@ class PaperOrder(models.Model):
     strategy = models.ForeignKey(
         "Strategy", blank=True, null=True, on_delete=models.SET_NULL
     )
+    bot = models.ForeignKey(
+        "ranker.Bot",
+        related_name="paper_orders",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     symbol = models.CharField(max_length=16)
     side = models.CharField(max_length=4, choices=[("buy", "Buy"), ("sell", "Sell")])
     order_type = models.CharField(

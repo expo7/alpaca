@@ -266,6 +266,8 @@ def expand_param_grid(grid: dict) -> list[dict]:
 class BotSerializer(serializers.ModelSerializer):
     symbols = serializers.SerializerMethodField()
     last_forward_equity = serializers.SerializerMethodField()
+    strategy_spec_data = serializers.SerializerMethodField()
+    bot_config_data = serializers.SerializerMethodField()
 
     def get_symbols(self, obj):
         cfg = obj.bot_config.config if obj.bot_config else {}
@@ -277,6 +279,12 @@ class BotSerializer(serializers.ModelSerializer):
         if not latest:
             return None
         return latest.equity
+
+    def get_strategy_spec_data(self, obj):
+        return obj.strategy_spec.spec if obj.strategy_spec else None
+
+    def get_bot_config_data(self, obj):
+        return obj.bot_config.config if obj.bot_config else None
 
     class Meta:
         model = Bot
@@ -293,6 +301,8 @@ class BotSerializer(serializers.ModelSerializer):
             "forward_start_date",
             "last_forward_run_at",
             "last_forward_equity",
+            "strategy_spec_data",
+            "bot_config_data",
             "symbols",
             "created_at",
             "updated_at",

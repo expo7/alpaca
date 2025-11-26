@@ -150,6 +150,7 @@ class PaperOrderSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "portfolio",
+            "bot",
             "strategy",
             "symbol",
             "side",

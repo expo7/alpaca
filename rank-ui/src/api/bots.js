@@ -31,6 +31,10 @@ export async function fetchBots(token) {
   return apiFetch("/api/bots/", token, { method: "GET" });
 }
 
+export async function fetchBot(botId, token) {
+  return apiFetch(`/api/bots/${botId}/`, token, { method: "GET" });
+}
+
 export async function startBot(id, token) {
   return apiFetch(`/api/bots/${id}/start/`, token, { method: "POST" });
 }

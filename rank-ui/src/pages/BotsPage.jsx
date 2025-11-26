@@ -17,8 +17,9 @@ function modeBadge(mode) {
   return `${common} bg-slate-800 text-slate-200 border-slate-700`;
 }
 
-export default function BotsPage() {
+export default function BotsPage({ onSelectBot }) {
   const { token } = useAuth();
+  const handleSelect = onSelectBot || (() => {});
   const [bots, setBots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -225,6 +226,14 @@ export default function BotsPage() {
                   </td>
                   <td className="py-2 pr-2">
                     <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelect(bot.id)}
+                        className="btn-secondary"
+                        onClickCapture={(e) => e.stopPropagation()}
+                      >
+                        View
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleStart(bot)}
