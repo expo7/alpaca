@@ -1,5 +1,6 @@
 from unittest import result
 from rest_framework.views import APIView
+from datetime import timedelta
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.generics import ListAPIView
@@ -17,6 +18,8 @@ from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
 from .strategy_templates import get_template, list_templates
+from .backtest_preview import preview_strategy_signals
+from paper.services.market_data import get_market_data_provider
 
 # [NOTE-WATCHLIST-VIEWS]
 from rest_framework import viewsets, status
@@ -796,6 +799,31 @@ class BotViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(bot)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def preview(self, request, pk=None):
+        bot = self.get_object()
+        cfg = bot.bot_config.config if bot.bot_config else {}
+        spec = bot.strategy_spec.spec if bot.strategy_spec else {}
+        if not cfg.get("symbols"):
+            return Response(
+                {"detail": "Bot has no symbols to preview."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        provider = get_market_data_provider()
+        today = timezone.now().date()
+        start = today
+        try:
+            df = provider.get_history(
+                cfg["symbols"][0] if isinstance(cfg.get("symbols"), list) else cfg.get("symbols"),
+                start=start,
+                end=today + timedelta(days=1),
+                interval="1m",
+            )
+        except Exception as exc:
+            return Response({"detail": f"Failed to fetch market data: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+        preview = preview_strategy_signals(spec, cfg, df)
+        return Response(preview)
 
     @action(detail=True, methods=["post"])
     def pause(self, request, pk=None):

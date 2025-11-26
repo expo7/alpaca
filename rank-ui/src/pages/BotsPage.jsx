@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
-import { fetchBots, startBot, pauseBot, stopBot, fetchConfig, fetchBotForwardRuns } from "../api/bots.js";
+import { fetchBots, startBot, pauseBot, stopBot, fetchConfig, fetchBotForwardRuns, previewBot } from "../api/bots.js";
 
 function stateBadge(state) {
   const common = "px-2 py-1 rounded-full text-[11px] font-semibold";
@@ -37,6 +37,13 @@ export default function BotsPage() {
     runs: [],
     loading: false,
     error: "",
+  });
+  const [previewModal, setPreviewModal] = useState({
+    open: false,
+    bot: null,
+    loading: false,
+    error: "",
+    data: null,
   });
 
   async function loadBots() {
@@ -107,6 +114,21 @@ export default function BotsPage() {
         ...m,
         loading: false,
         error: err.message || "Failed to load forward runs",
+      }));
+    }
+  }
+
+  async function openPreview(bot) {
+    if (!bot) return;
+    setPreviewModal({ open: true, bot, loading: true, error: "", data: null });
+    try {
+      const data = await previewBot(bot.id, token);
+      setPreviewModal((m) => ({ ...m, loading: false, data }));
+    } catch (err) {
+      setPreviewModal((m) => ({
+        ...m,
+        loading: false,
+        error: err.message || "Failed to preview signals",
       }));
     }
   }
@@ -227,8 +249,15 @@ export default function BotsPage() {
                         onClick={() => handleAction(bot.id, "stop")}
                         disabled={bot.state === "stopped"}
                         className="btn-secondary disabled:opacity-50"
+                    >
+                      Stop
+                    </button>
+                      <button
+                        type="button"
+                        onClick={() => openPreview(bot)}
+                        className="btn-secondary"
                       >
-                        Stop
+                        Preview signals
                       </button>
                       <button
                         type="button"
@@ -371,6 +400,74 @@ export default function BotsPage() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {previewModal.open && previewModal.bot && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 w-full max-w-3xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold text-slate-100">
+                Preview signals · {previewModal.bot.name || `Bot ${previewModal.bot.id}`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewModal({ open: false, bot: null, data: null, loading: false, error: "" })}
+                className="text-slate-300 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            {previewModal.loading && <div className="text-xs text-slate-300">Fetching preview…</div>}
+            {previewModal.error && <div className="text-xs text-rose-300">{previewModal.error}</div>}
+            {previewModal.data && (
+              <div className="space-y-3">
+                <div className="text-sm text-slate-300">
+                  Would trade?{" "}
+                  <span className={previewModal.data.would_trade ? "text-emerald-300" : "text-slate-400"}>
+                    {previewModal.data.would_trade ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                    <div className="text-sm font-semibold mb-2">Signals</div>
+                    {(previewModal.data.signals || []).map((sig) => (
+                      <div key={`${sig.symbol}-${sig.action}`} className="border-b border-slate-800 py-2 last:border-b-0">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-100">{sig.symbol}</span>
+                          <span className="text-slate-300 capitalize">{sig.action}</span>
+                          <span className="text-[11px] text-slate-400">conf {Number(sig.confidence || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex flex-wrap gap-2 mt-1">
+                          {Object.entries(sig.indicators || {}).map(([k, v]) => (
+                            <span key={k} className="px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700">
+                              {k}: {Number(v).toFixed(2)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {!previewModal.data.signals?.length && (
+                      <div className="text-xs text-slate-500">No signals.</div>
+                    )}
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <div className="text-sm font-semibold">Recommended orders</div>
+                    {(previewModal.data.recommended_orders || []).map((ord, idx) => (
+                      <div key={idx} className="text-xs text-slate-300 flex items-center gap-2">
+                        <span className="font-semibold">{ord.symbol}</span>
+                        <span>{ord.side}</span>
+                        <span>{ord.qty}</span>
+                        <span className="text-slate-500">{ord.type}</span>
+                      </div>
+                    ))}
+                    {!previewModal.data.recommended_orders?.length && (
+                      <div className="text-xs text-slate-500">No trades recommended.</div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

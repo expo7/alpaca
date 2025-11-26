@@ -61,3 +61,9 @@ export async function fetchBotForwardRuns(botId, token) {
 export async function fetchBotLatestForwardRun(botId, token) {
   return apiFetch(`/api/bots/${botId}/forward-runs/latest/`, token, { method: "GET" });
 }
+
+export async function previewBot(botId, token) {
+  return apiFetch(`/api/bots/${botId}/preview/`, token, {
+    method: "POST",
+  });
+}
