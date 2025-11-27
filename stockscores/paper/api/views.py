@@ -44,11 +44,22 @@ from paper.tasks import execute_strategy_task
 
 
 class OwnedQuerySetMixin:
+    """
+    Filter the queryset to only include objects owned by the user making the request.
+    """
+
     def get_queryset(self):
-        qs = super().get_queryset()
+        """
+        Override the get_queryset method to filter the queryset to only include
+        objects owned by the user making the request.
+        """
+        queryset = super().get_queryset()
         user = self.request.user
+
         if not user.is_authenticated:
-            return qs.none()
+            return queryset.none()
+
+        return queryset.filter(user=user)
         return qs.filter(user=user) if hasattr(qs.model, "user") else qs
 
 
@@ -77,7 +88,14 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
             portfolio.equity = portfolio.starting_balance
             portfolio.realized_pnl = Decimal("0")
             portfolio.unrealized_pnl = Decimal("0")
-            portfolio.save(update_fields=["cash_balance", "equity", "realized_pnl", "unrealized_pnl"])
+            portfolio.save(
+                update_fields=[
+                    "cash_balance",
+                    "equity",
+                    "realized_pnl",
+                    "unrealized_pnl",
+                ]
+            )
             log = PortfolioResetLog.objects.create(
                 portfolio=portfolio,
                 performed_by=request.user if request.user.is_authenticated else None,
@@ -86,14 +104,19 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
                 previous_equity=previous_equity,
                 reason=reason,
             )
-        return Response(PortfolioResetLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(
+            PortfolioResetLogSerializer(log).data, status=status.HTTP_200_OK
+        )
 
     @action(detail=True, methods=["post"])
     def deposit(self, request, pk=None):
         portfolio = self.get_object()
         amount = Decimal(str(request.data.get("amount", "0")))
         if amount <= 0:
-            return Response({"detail": "amount must be positive"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "amount must be positive"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         reason = request.data.get("reason", "")
         with transaction.atomic():
             portfolio.cash_balance = (portfolio.cash_balance or Decimal("0")) + amount
@@ -106,16 +129,24 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
                 amount=amount,
                 reason=reason,
             )
-        return Response(PortfolioCashMovementSerializer(movement).data, status=status.HTTP_200_OK)
+        return Response(
+            PortfolioCashMovementSerializer(movement).data, status=status.HTTP_200_OK
+        )
 
     @action(detail=True, methods=["post"])
     def withdraw(self, request, pk=None):
         portfolio = self.get_object()
         amount = Decimal(str(request.data.get("amount", "0")))
         if amount <= 0:
-            return Response({"detail": "amount must be positive"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "amount must be positive"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if portfolio.cash_balance < amount:
-            return Response({"detail": "insufficient cash balance"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "insufficient cash balance"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         reason = request.data.get("reason", "")
         with transaction.atomic():
             portfolio.cash_balance = portfolio.cash_balance - amount
@@ -128,7 +159,9 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
                 amount=amount,
                 reason=reason,
             )
-        return Response(PortfolioCashMovementSerializer(movement).data, status=status.HTTP_200_OK)
+        return Response(
+            PortfolioCashMovementSerializer(movement).data, status=status.HTTP_200_OK
+        )
 
     @action(detail=True, methods=["get"])
     def performance(self, request, pk=None):
@@ -154,9 +187,7 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
         started_at = (
             first_snapshot.timestamp if first_snapshot else portfolio.created_at
         )
-        days_active = max(
-            1, (timezone.now().date() - started_at.date()).days + 1
-        )
+        days_active = max(1, (timezone.now().date() - started_at.date()).days + 1)
         payload = {
             "portfolio_id": portfolio.id,
             "equity": str(equity),
@@ -281,7 +312,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         if portfolio.max_single_position_pct:
             limit_value = equity * (portfolio.max_single_position_pct / Decimal("100"))
             current_pos = portfolio.positions.filter(symbol=symbol).first()
-            current_val = abs(current_pos.market_value) if current_pos and current_pos.market_value else Decimal("0")
+            current_val = (
+                abs(current_pos.market_value)
+                if current_pos and current_pos.market_value
+                else Decimal("0")
+            )
             if current_val + notional > limit_value:
                 raise PermissionDenied("Single-position exposure cap exceeded.")
         # Gross exposure cap
@@ -300,9 +335,9 @@ class TradeViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return PaperTrade.objects.filter(portfolio__user=self.request.user).select_related(
-            "portfolio", "order"
-        )
+        return PaperTrade.objects.filter(
+            portfolio__user=self.request.user
+        ).select_related("portfolio", "order")
 
 
 class StrategyViewSet(viewsets.ModelViewSet):
@@ -321,28 +356,31 @@ class StrategyViewSet(viewsets.ModelViewSet):
         qty_pct = None
         if entry_block.get("order", {}).get("quantity_pct") is not None:
             qty_pct = entry_block["order"]["quantity_pct"]
-        elif template_name and templates.get(template_name, {}).get("quantity_pct") is not None:
+        elif (
+            template_name
+            and templates.get(template_name, {}).get("quantity_pct") is not None
+        ):
             qty_pct = templates[template_name]["quantity_pct"]
         if not qty_pct:
             return
         for portfolio in portfolios:
-            equity = portfolio.equity or portfolio.cash_balance or portfolio.starting_balance
-            single_cap = (
-                portfolio.max_single_position_pct
-                and equity * (portfolio.max_single_position_pct / Decimal("100"))
+            equity = (
+                portfolio.equity or portfolio.cash_balance or portfolio.starting_balance
             )
-            gross_cap = (
-                portfolio.max_gross_exposure_pct
-                and equity * (portfolio.max_gross_exposure_pct / Decimal("100"))
+            single_cap = portfolio.max_single_position_pct and equity * (
+                portfolio.max_single_position_pct / Decimal("100")
+            )
+            gross_cap = portfolio.max_gross_exposure_pct and equity * (
+                portfolio.max_gross_exposure_pct / Decimal("100")
             )
             if not single_cap and not gross_cap:
                 continue
             notional_per = Decimal(str(qty_pct)) / Decimal("100") * equity
             if single_cap and notional_per > single_cap:
                 raise PermissionDenied("Cap breach: single-position limit.")
-            current_gross = (
-                portfolio.positions.aggregate(total=Sum("market_value")).get("total") or Decimal("0")
-            )
+            current_gross = portfolio.positions.aggregate(
+                total=Sum("market_value")
+            ).get("total") or Decimal("0")
             projected_gross = current_gross + (notional_per * len(symbols or [1]))
             if gross_cap and projected_gross > gross_cap:
                 raise PermissionDenied("Cap breach: gross exposure limit.")
@@ -358,7 +396,9 @@ class StrategyViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def dry_run(self, request):
-        strategy = Strategy(user=request.user, config=request.data.get("config", {}), name="dry-run")
+        strategy = Strategy(
+            user=request.user, config=request.data.get("config", {}), name="dry-run"
+        )
         runner = StrategyRunner()
         matches = runner.dry_run(strategy)
         return Response({"matches": matches})
@@ -389,12 +429,18 @@ class StrategyViewSet(viewsets.ModelViewSet):
         queued_via = "inline"
         try:
             execute_strategy_task.apply_async(
-                args=[strategy.id, [p.id for p in portfolios], data.get("overrides") or {}],
+                args=[
+                    strategy.id,
+                    [p.id for p in portfolios],
+                    data.get("overrides") or {},
+                ],
                 queue="strategy",
             )
             queued_via = "celery"
         except AttributeError:
-            execute_strategy_task(strategy.id, [p.id for p in portfolios], data.get("overrides") or {})
+            execute_strategy_task(
+                strategy.id, [p.id for p in portfolios], data.get("overrides") or {}
+            )
         payload = {
             "status": "queued",
             "strategy_id": strategy.id,
@@ -537,18 +583,12 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
         position = self.get_object()
         if position.portfolio.user != request.user:
             raise PermissionDenied("Not your position.")
-        trades = (
-            PaperTrade.objects.filter(
-                portfolio=position.portfolio, symbol=position.symbol
-            )
-            .order_by("-created_at")[:100]
-        )
-        orders = (
-            PaperOrder.objects.filter(
-                portfolio=position.portfolio, symbol=position.symbol
-            )
-            .order_by("-created_at")[:50]
-        )
+        trades = PaperTrade.objects.filter(
+            portfolio=position.portfolio, symbol=position.symbol
+        ).order_by("-created_at")[:100]
+        orders = PaperOrder.objects.filter(
+            portfolio=position.portfolio, symbol=position.symbol
+        ).order_by("-created_at")[:50]
         return Response(
             {
                 "position": PaperPositionSerializer(position).data,
@@ -611,7 +651,9 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
             portfolio.cash_balance += abs(delta_value)
             portfolio.realized_pnl += realized
         position.market_value = position.quantity * price
-        position.unrealized_pnl = position.market_value - (position.quantity * position.avg_price)
+        position.unrealized_pnl = position.market_value - (
+            position.quantity * position.avg_price
+        )
         position.save(
             update_fields=["quantity", "avg_price", "market_value", "unrealized_pnl"]
         )
@@ -723,7 +765,9 @@ class SymbolIntervalView(APIView):
                 interval=interval,
                 progress=False,
             )
-        except Exception as exc:  # pragma: no cover - network failure paths are rare in tests
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - network failure paths are rare in tests
             return Response(
                 {"detail": f"fetch_failed: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
@@ -747,7 +791,9 @@ class SymbolIntervalView(APIView):
                     "volume": _to_float(row.get("Volume")),
                 }
             )
-        last_close = next((c["close"] for c in reversed(candles) if c.get("close") is not None), None)
+        last_close = next(
+            (c["close"] for c in reversed(candles) if c.get("close") is not None), None
+        )
         return Response(
             {
                 "symbol": sym,
@@ -757,4 +803,6 @@ class SymbolIntervalView(APIView):
                 "candles": candles,
             }
         )
+
+
 from paper.engine.runner import StrategyRunner
