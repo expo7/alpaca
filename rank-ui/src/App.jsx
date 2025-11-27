@@ -22,6 +22,7 @@ import BotsPage from "./pages/BotsPage.jsx";
 import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
 import BotDetailPage from "./pages/BotDetailPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
+import useQuotes from "./hooks/useQuotes.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
 const BASE = "http://127.0.0.1:8000";
@@ -137,7 +138,6 @@ export default function App() {
   const [errors, setErrors] = useState([]);
   const [explain, setExplain] = useState(null);
   const [chartSym, setChartSym] = useState(null);
-  const [yfCount, setYfCount] = useState(null);
   // [NOTE-QUICK-ALERT-STATE]
   const [quickAlertSym, setQuickAlertSym] = useState(null);
   const [quickAlertFinal, setQuickAlertFinal] = useState(null);
@@ -147,6 +147,8 @@ export default function App() {
 
   const [errMsg, setErrMsg] = useState("");
 
+  const liveQuotes = useQuotes(rows.map((r) => r.symbol));
+
   // [NOTE-PERSIST]
   useEffect(() => {
     localStorage.setItem("tickers", tickers);
@@ -154,27 +156,6 @@ export default function App() {
     localStorage.setItem("fundWeight", String(fundWeight));
     localStorage.setItem("taWeights", JSON.stringify(ta));
   }, [tickers, techWeight, fundWeight, ta]);
-
-  useEffect(() => {
-    if (!token || !import.meta.env.DEV) return undefined;
-    let active = true;
-
-    async function fetchYFinanceCount() {
-      try {
-        const res = await apiFetch("/api/metrics/yfinance/", { token });
-        if (active) setYfCount(res.count);
-      } catch {
-        if (active) setYfCount(null);
-      }
-    }
-
-    fetchYFinanceCount();
-    const intervalId = setInterval(fetchYFinanceCount, 10000);
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }, [token]);
 
 
   // [NOTE-BODY FOR RANK]
@@ -455,8 +436,6 @@ export default function App() {
         onLogout={logout}
         active={page}
         onNavigate={setPage}
-        yfCount={yfCount}
-        showYfCounter={import.meta.env.DEV}
       />
 
       <main className="app-main">
@@ -676,6 +655,7 @@ export default function App() {
                 <thead className="text-slate-400">
                   <tr className="text-left">
                     <Th>Symbol</Th>
+                    <Th>Live</Th>
                     <Th>Spark</Th>
                     <Th>Tech</Th>
                     <Th>Fund</Th>
@@ -697,6 +677,11 @@ export default function App() {
                         className="border-t border-slate-800"
                       >
                         <Td className="font-semibold">{r.symbol}</Td>
+                        <Td className="text-emerald-200">
+                          {liveQuotes[r.symbol]
+                            ? `$${Number(liveQuotes[r.symbol]).toFixed(2)}`
+                            : "—"}
+                        </Td>
                         <Td>
                           <Sparkline data={sparkMap[r.symbol]} />
                         </Td>

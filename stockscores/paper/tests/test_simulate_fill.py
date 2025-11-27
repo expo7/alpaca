@@ -123,3 +123,46 @@ class SimulateOrderFillTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.status, "filled")
+
+    def test_day_order_expires_if_not_filled_next_day(self):
+        # No fill in bars and check next day -> canceled for DAY
+        submitted = timezone.now() - timedelta(days=1, hours=1)
+        idx = pd.date_range(end=submitted + timedelta(hours=1), periods=2, freq="1min", tz="UTC")
+        data = {"Open": [500, 500], "High": [500, 500], "Low": [500, 500], "Close": [500, 500], "Volume": [100, 100]}
+        provider = StubProvider(pd.DataFrame(data, index=idx))
+        order = PaperOrder.objects.create(
+          portfolio=self.portfolio,
+          symbol="MSFT",
+          side="buy",
+          order_type="limit",
+          quantity=Decimal("1"),
+          limit_price=Decimal("200"),
+          status="new",
+          tif="day",
+        )
+        order.created_at = submitted
+        order.save(update_fields=["created_at"])
+        updated = simulate_order_fill(order, check_time=submitted + timedelta(days=1, hours=2), data_provider=provider)
+        updated.refresh_from_db()
+        self.assertEqual(updated.status, "canceled")
+
+    def test_gtc_order_remains_pending_across_days(self):
+        submitted = timezone.now() - timedelta(days=1, hours=1)
+        idx = pd.date_range(end=submitted + timedelta(hours=1), periods=2, freq="1min", tz="UTC")
+        data = {"Open": [500, 500], "High": [500, 500], "Low": [500, 500], "Close": [500, 500], "Volume": [100, 100]}
+        provider = StubProvider(pd.DataFrame(data, index=idx))
+        order = PaperOrder.objects.create(
+          portfolio=self.portfolio,
+          symbol="MSFT",
+          side="buy",
+          order_type="limit",
+          quantity=Decimal("1"),
+          limit_price=Decimal("200"),
+          status="new",
+          tif="gtc",
+        )
+        order.created_at = submitted
+        order.save(update_fields=["created_at"])
+        updated = simulate_order_fill(order, check_time=submitted + timedelta(days=1, hours=2), data_provider=provider)
+        updated.refresh_from_db()
+        self.assertNotEqual(updated.status, "canceled")

@@ -432,15 +432,15 @@ export default function Positions() {
               <th className="px-3 py-2 text-left">Instrument</th>
               <th className="px-3 py-2 text-left">Portfolio</th>
               <th className="px-3 py-2 text-left">Qty</th>
+              <th className="px-3 py-2 text-left">Live</th>
               <th className="px-3 py-2 text-left">Avg Price</th>
               <th className="px-3 py-2 text-left">Market Value</th>
               <th className="px-3 py-2 text-left">Unrealized</th>
               <th className="px-3 py-2 text-left">Caps</th>
               <th className="px-3 py-2 text-left">Actions</th>
               <th className="px-3 py-2 text-left">Audit</th>
-              <th className="px-3 py-2 text-left">Audit</th>
-        </tr>
-      </thead>
+            </tr>
+          </thead>
       <tbody>
         {positions.map((pos) => {
               const caps = capsByPortfolio[pos.portfolio] || {};
@@ -455,6 +455,11 @@ export default function Positions() {
               const capTitle = `Single: ${caps.maxSingle || "—"}%, Gross: ${
                 caps.maxGross || "—"
               }%`;
+              const live = liveQuotes[pos.symbol] ?? pos.live_price ?? null;
+              const avg = Number(pos.avg_price || 0);
+              const qtyNum = Number(pos.quantity || 0);
+              const unrealizedLocal =
+                live !== null ? (Number(live) - avg) * qtyNum : Number(pos.unrealized_pnl || 0);
               return (
                 <tr key={pos.id} className="border-t border-slate-800 text-xs">
                   <td className="px-3 py-2 font-semibold">{pos.symbol}</td>
@@ -466,12 +471,15 @@ export default function Positions() {
                     {pos.portfolio_name || pos.portfolio}
                   </td>
                   <td className="px-3 py-2">{Number(pos.quantity).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-emerald-200">
+                    {liveQuotes[pos.symbol] ? `$${Number(liveQuotes[pos.symbol]).toFixed(2)}` : "—"}
+                  </td>
                   <td className="px-3 py-2">${Number(pos.avg_price).toFixed(2)}</td>
                   <td className="px-3 py-2">
                     ${Number(pos.market_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td className="px-3 py-2">
-                    ${Number(pos.unrealized_pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    ${Number(unrealizedLocal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                 <td className="px-3 py-2" title={capTitle}>
                   <div className="flex gap-1 flex-wrap">
@@ -532,7 +540,7 @@ export default function Positions() {
           })}
             {!positions.length && !loading && (
               <tr>
-                <td className="px-3 py-4 text-center text-slate-500" colSpan={10}>
+                <td className="px-3 py-4 text-center text-slate-500" colSpan={11}>
                   No positions yet.
                 </td>
               </tr>

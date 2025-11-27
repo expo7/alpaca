@@ -243,12 +243,19 @@ export default function Orders() {
   }, [auditState, auditPinned]);
 
   async function handleSimulate(orderId) {
+    // Debug logging to help trace button behavior
+    // eslint-disable-next-line no-console
+    console.log("[orders] check fill clicked", { orderId, hasToken: !!token });
     if (!token) return;
     setSimulatingId(orderId);
     try {
       const updated = await simulateOrderFill(orderId, token);
+      // eslint-disable-next-line no-console
+      console.log("[orders] check fill response", updated);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[orders] check fill error", err);
       setToastState({ msg: err.message || "Simulation failed", tone: "warn" });
     } finally {
       setSimulatingId(null);
@@ -572,8 +579,10 @@ export default function Orders() {
         {isEditable && !isEditing && (
           <button
             type="button"
-            onClick={() => startEditing(order)}
-            onClickCapture={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditing(order);
+            }}
             className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
           >
             Edit
@@ -583,17 +592,21 @@ export default function Orders() {
           <>
             <button
               type="button"
-              onClick={() => submitEdit(order)}
+              onClick={(e) => {
+                e.stopPropagation();
+                submitEdit(order);
+              }}
               disabled={savingOrderId === order.id}
-              onClickCapture={(e) => e.stopPropagation()}
               className={`${BTN_PRIMARY} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
             >
               {savingOrderId === order.id ? "Saving..." : "Save"}
             </button>
             <button
               type="button"
-              onClick={() => cancelInlineEdit(order.id)}
-              onClickCapture={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                cancelInlineEdit(order.id);
+              }}
               className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
             >
               Cancel
@@ -603,9 +616,11 @@ export default function Orders() {
         {canSimulate && (
           <button
             type="button"
-            onClick={() => handleSimulate(order.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSimulate(order.id);
+            }}
             disabled={simulatingId === order.id}
-            onClickCapture={(e) => e.stopPropagation()}
             className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
           >
             {simulatingId === order.id ? "Checking…" : "Check fill"}
@@ -613,25 +628,31 @@ export default function Orders() {
         )}
         <button
           type="button"
-          onClick={() => cancelOrder(order.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            cancelOrder(order.id);
+          }}
           disabled={cancelingOrderId === order.id}
-          onClickCapture={(e) => e.stopPropagation()}
           className={`${BTN_DANGER} px-2 py-1 rounded-lg text-xs disabled:opacity-60`}
         >
           {cancelingOrderId === order.id ? "Canceling..." : "Cancel"}
         </button>
         <button
           type="button"
-          onClick={() => setOverrideModal(order)}
-          onClickCapture={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOverrideModal(order);
+          }}
           className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
         >
           Overrides
         </button>
         <button
           type="button"
-          onClick={() => loadAudit(order)}
-          onClickCapture={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            loadAudit(order);
+          }}
           className={`${BTN_GHOST} px-2 py-1 rounded-lg text-xs`}
         >
           {auditLoading && auditState?.order?.id === order.id ? "Loading…" : "Audit"}
@@ -712,13 +733,18 @@ export default function Orders() {
       )}
 
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-auto">
+        <div className="px-3 pt-3 text-xs text-slate-400">
+          Caps = exposure cap hints, Prices = limit/stop values, Chain = bracket/linked order chain_id, Role = parent/child role.
+        </div>
         <table className="w-full text-sm">
           <thead className="text-slate-400">
             <tr>
               <th className="px-3 py-2 text-left">Symbol</th>
               <th className="px-3 py-2 text-left">Instrument</th>
               <th className="px-3 py-2 text-left">Type</th>
+              <th className="px-3 py-2 text-left">TIF</th>
               <th className="px-3 py-2 text-left">Qty/Notional</th>
+              <th className="px-3 py-2 text-left">Live</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Caps</th>
               <th className="px-3 py-2 text-left">Prices</th>
@@ -731,7 +757,7 @@ export default function Orders() {
           <tbody>
             {!orders.length && (
               <tr>
-                <td colSpan={9} className="px-3 py-4 text-center text-slate-500">
+                <td colSpan={13} className="px-3 py-4 text-center text-slate-500">
                   {loading ? "Loading..." : "No orders yet."}
                 </td>
               </tr>
@@ -761,30 +787,42 @@ export default function Orders() {
                 >
                   <td className="px-3 py-2 font-semibold">{order.symbol}</td>
                   <td className="px-3 py-2 text-xs text-slate-400">
-                    {instrumentMeta[order.symbol]?.exchange || "—"}{" "}
-                    {instrumentMeta[order.symbol]?.asset_class
-                      ? `· ${instrumentMeta[order.symbol]?.asset_class}`
-                      : ""}
+                    {(instrumentMeta[order.symbol]?.exchange || instrumentMeta[order.symbol]?.asset_class) ? (
+                      <>
+                        {instrumentMeta[order.symbol]?.exchange || ""}
+                        {instrumentMeta[order.symbol]?.exchange && instrumentMeta[order.symbol]?.asset_class ? " · " : ""}
+                        {instrumentMeta[order.symbol]?.asset_class || ""}
+                      </>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {order.order_type.replace(/_/g, " ")}
                   </td>
                   <td className="px-3 py-2 text-xs">
+                    {order.tif?.toUpperCase?.() === "DAY"
+                      ? "End of Day"
+                      : order.tif?.toUpperCase?.() === "GTC"
+                      ? "Good 'Til Canceled"
+                      : order.tif || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
                     <div className="space-y-1">
                       <div className="flex items-baseline gap-2">
                         <span className="font-semibold text-sm">
-                          {order.quantity ?? "—"}
+                          {Number(order.quantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
                         <span className="text-[11px] text-slate-400">Qty</span>
-                      </div>
-                      <div className="text-[11px] text-emerald-200">
-                        Live: {formattedLive ? `$${formattedLive}` : "—"}
                       </div>
                       <div className="text-[11px] text-slate-300">
                         Est. notional:{" "}
                         {formattedNotional ? `$${formattedNotional}` : "—"}
                       </div>
                     </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-emerald-200">
+                    {formattedLive ? `Live: $${formattedLive}` : "Live: —"}
                   </td>
                   <td className="px-3 py-2">
                     <span className="px-2 py-1 rounded-xl bg-slate-800 text-xs inline-flex gap-1 items-center">
@@ -844,11 +882,25 @@ export default function Orders() {
                 <td className="px-3 py-2">{chainBadge(order)}</td>
                 <td className="px-3 py-2">{roleBadge(order)}</td>
                 <td className="px-3 py-2 text-xs text-slate-400 space-y-1">
-                  {(order.notes?.events || []).slice(-2).map((evt, idx) => (
-                    <div key={`${order.id}-evt-${idx}`}>
-                      [{evt.event}] {evt.child || evt.count || ""}
-                    </div>
-                  ))}
+                  {(order.notes?.events || []).slice(-2).map((evt, idx) => {
+                    const isFill = (evt.event || "").toLowerCase() === "fill";
+                    return (
+                      <div key={`${order.id}-evt-${idx}`} className="flex items-center gap-2">
+                        {evt.event && (
+                          <span
+                            className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold ${
+                              isFill
+                                ? "bg-emerald-900/40 border border-emerald-700 text-emerald-200"
+                                : "bg-slate-800 border border-slate-700 text-slate-200"
+                            }`}
+                          >
+                            {evt.event}
+                          </span>
+                        )}
+                        <span className="text-slate-400">{evt.child || evt.count || ""}</span>
+                      </div>
+                    );
+                  })}
                   {(order.audit_events || []).some((e) => e.event === "liquidity_queue") && (
                     <div className="text-amber-300">
                       Queued for next bar{" "}
@@ -994,6 +1046,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
     side: "buy",
     order_type: "market",
     quantity: "",
+    tif: "day",
     limit_price: "",
     take_profit: "",
     stop_loss: "",
@@ -1230,7 +1283,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
         symbol: form.symbol.trim().toUpperCase(),
         side: form.side,
         order_type: form.order_type,
-        tif: "day",
+        tif: form.tif,
         quantity: Number(form.quantity),
         extended_hours: true,
       };
@@ -1286,7 +1339,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
           order_type: "limit",
           limit_price: Number(form.take_profit),
           quantity: Number(form.quantity),
-          tif: "day",
+          tif: form.tif,
           chain_id: chainId,
           child_role: "tp",
           ...overrides,
@@ -1301,7 +1354,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
           order_type: "stop",
           stop_price: Number(form.stop_loss),
           quantity: Number(form.quantity),
-          tif: "day",
+          tif: form.tif,
           chain_id: chainId,
           child_role: "sl",
           ...overrides,
@@ -1478,7 +1531,7 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
           </div>
         </div>
       </div>
-      <div className="grid md:grid-cols-4 gap-3 text-xs">
+      <div className="grid md:grid-cols-5 gap-3 text-xs">
         <select
           value={form.order_type}
           onChange={(e) => updateField("order_type", e.target.value)}
@@ -1486,6 +1539,14 @@ function BracketForm({ token, portfolios, watchlists, screenHelpers, onSuccess, 
         >
           <option value="market">Market</option>
           <option value="limit">Limit</option>
+        </select>
+        <select
+          value={form.tif}
+          onChange={(e) => updateField("tif", e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5"
+        >
+          <option value="day">End of Day (DAY)</option>
+          <option value="gtc">Good 'Til Canceled (GTC)</option>
         </select>
         {form.order_type === "limit" && (
           <input

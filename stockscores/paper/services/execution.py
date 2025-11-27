@@ -1159,8 +1159,12 @@ def simulate_order_fill(
             interval="1m",
         )
     except Exception:
-        return order
+        bars = None
     if bars is None or len(bars) == 0:
+        # No data; still evaluate TIF expiry for DAY orders.
+        if order.tif == "day" and check_time.date() > submitted_at.date():
+            order.status = "canceled"
+            order.save(update_fields=["status"])
         return order
 
     engine = ExecutionEngine(data_provider=data_provider)
@@ -1197,4 +1201,8 @@ def simulate_order_fill(
                 engine._override_now = prev_override
             return PaperOrder.objects.select_related("portfolio").get(id=order.id)
 
+    # No fill found; honor simple DAY expiry.
+    if order.tif == "day" and check_time.date() > submitted_at.date():
+        order.status = "canceled"
+        order.save(update_fields=["status"])
     return order

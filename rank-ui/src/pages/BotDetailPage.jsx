@@ -84,12 +84,19 @@ export default function BotDetailPage({ botId, onBack }) {
   }
 
   async function handleCheckFill(orderId) {
+    // Debug logging to observe button wiring
+    // eslint-disable-next-line no-console
+    console.log("[bot-detail] check fill clicked", { orderId, hasToken: !!token });
     if (!token) return;
     setSimulatingId(orderId);
     try {
       const updated = await simulateOrderFill(orderId, token);
+      // eslint-disable-next-line no-console
+      console.log("[bot-detail] check fill response", updated);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[bot-detail] check fill error", err);
       setError(err.message || "Check fill failed");
     } finally {
       setSimulatingId(null);

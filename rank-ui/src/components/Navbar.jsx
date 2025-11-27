@@ -25,8 +25,6 @@ export default function Navbar({
   active,
   onNavigate,
   onLogout,
-  yfCount = null,
-  showYfCounter = false,
 }) {
   return (
     <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">
@@ -65,16 +63,6 @@ export default function Navbar({
 
         {/* Right: user + logout */}
         <div className="flex items-center gap-3 text-xs">
-          {showYfCounter && (
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900/80 text-slate-200">
-              <span className="text-[11px] uppercase tracking-wide text-slate-400">
-                yfinance hits
-              </span>
-              <span className="text-sm font-semibold text-indigo-300">
-                {yfCount ?? "-"}
-              </span>
-            </div>
-          )}
           {user && (
             <div className="hidden sm:flex flex-col items-end leading-tight">
               <span className="text-slate-200 font-medium">

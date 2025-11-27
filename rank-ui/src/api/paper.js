@@ -23,9 +23,17 @@ async function apiFetch(path, token, options = {}) {
 }
 
 export async function simulateOrderFill(orderId, token) {
-  return apiFetch(`/api/paper/orders/${orderId}/simulate_fill/`, token, {
+  // eslint-disable-next-line no-console
+  console.log("[api] simulateOrderFill ->", orderId);
+  const res = await apiFetch(`/api/paper/orders/${orderId}/simulate_fill/`, token, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // keep cookies/session auth working in dev/prod when ports differ
+    credentials: "include",
   });
+  // eslint-disable-next-line no-console
+  console.log("[api] simulateOrderFill <-", res);
+  return res;
 }
 
 export async function fetchBotOrders(botId, token) {

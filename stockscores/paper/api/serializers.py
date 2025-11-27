@@ -108,6 +108,7 @@ class PaperPositionSerializer(serializers.ModelSerializer):
 
 
 class PaperOrderSerializer(serializers.ModelSerializer):
+    time_in_force = serializers.CharField(source="tif", required=False, allow_blank=True, allow_null=True)
     slippage_mode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     slippage_bps = serializers.DecimalField(
         max_digits=8, decimal_places=4, required=False, allow_null=True
@@ -156,6 +157,7 @@ class PaperOrderSerializer(serializers.ModelSerializer):
             "side",
             "order_type",
             "tif",
+            "time_in_force",
             "quantity",
             "notional",
             "limit_price",
