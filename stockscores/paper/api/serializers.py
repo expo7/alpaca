@@ -106,6 +106,17 @@ class PaperPositionSerializer(serializers.ModelSerializer):
             gross = obj.quantity * Decimal(str(price))
         return gross > equity * (cap / Decimal("100"))
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        live = self.get_live_price(instance)
+        qty = instance.quantity or Decimal("0")
+        avg = instance.avg_price or Decimal("0")
+        if live is not None:
+            live_val = qty * Decimal(str(live))
+            data["market_value"] = str(live_val)
+            data["unrealized_pnl"] = str(live_val - qty * avg)
+        return data
+
 
 class PaperOrderSerializer(serializers.ModelSerializer):
     time_in_force = serializers.CharField(source="tif", required=False, allow_blank=True, allow_null=True)

@@ -21,6 +21,7 @@ export default function Performance() {
   const [metrics, setMetrics] = useState(null);
   const [snapshots, setSnapshots] = useState([]);
   const [movements, setMovements] = useState([]);
+  const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cashMsg, setCashMsg] = useState("");
@@ -54,6 +55,7 @@ export default function Performance() {
           { token }
         );
         setMetrics(perf);
+        setPositions(perf.positions || []);
         const snaps = await apiFetch(
           `/api/paper/portfolios/${selectedId}/performance/snapshots/?limit=45`,
           { token }
@@ -196,6 +198,50 @@ export default function Performance() {
               : "—"
           }
         />
+      </div>
+
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Open positions</div>
+          <div className="text-[11px] text-slate-400">
+            {positions.length ? `${positions.length} positions` : "No positions"}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-slate-400 border-b border-slate-800">
+              <tr className="text-left">
+                <th className="py-2 pr-2">Symbol</th>
+                <th className="py-2 pr-2">Qty</th>
+                <th className="py-2 pr-2">Avg price</th>
+                <th className="py-2 pr-2">Market value</th>
+                <th className="py-2 pr-2">Unrealized</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((pos) => (
+                <tr key={pos.id} className="border-t border-slate-900">
+                  <td className="py-2 pr-2 font-semibold">{pos.symbol}</td>
+                  <td className="py-2 pr-2">{Number(pos.quantity || 0).toLocaleString()}</td>
+                  <td className="py-2 pr-2">${Number(pos.avg_price || 0).toFixed(2)}</td>
+                  <td className="py-2 pr-2">${Number(pos.market_value || 0).toLocaleString()}</td>
+                  <td className="py-2 pr-2">
+                    <span className={Number(pos.unrealized_pnl || 0) >= 0 ? "text-emerald-200" : "text-rose-200"}>
+                      ${Number(pos.unrealized_pnl || 0).toFixed(2)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {!positions.length && (
+                <tr>
+                  <td colSpan={5} className="py-2 text-center text-slate-500">
+                    No open positions.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-3">

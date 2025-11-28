@@ -170,16 +170,61 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
         start_equity = portfolio.starting_balance or Decimal("0")
         if start_equity <= 0:
             start_equity = Decimal("1")
-        equity = latest_snapshot.equity if latest_snapshot else portfolio.equity
-        cash = latest_snapshot.cash if latest_snapshot else portfolio.cash_balance
-        realized = (
-            latest_snapshot.realized_pnl if latest_snapshot else portfolio.realized_pnl
+        cash = portfolio.cash_balance
+        realized = portfolio.realized_pnl
+
+        # Fetch live quotes for positions to compute up-to-date market values
+        positions = list(portfolio.positions.all())
+        quotes = {}
+        provider = None
+        try:
+            provider = get_market_data_provider()
+        except Exception:
+            provider = None
+        if provider:
+            for pos in positions:
+                try:
+                    q = provider.get_quote(pos.symbol)
+                    quotes[pos.symbol.upper()] = Decimal(str(q.price))
+                except Exception:
+                    continue
+
+        positions = list(portfolio.positions.all())
+        positions_value = Decimal("0")
+        positions_unrealized = sum(
+            (
+                (
+                    (quotes.get(pos.symbol.upper(), None) * (pos.quantity or Decimal("0")))
+                    - (pos.quantity or Decimal("0")) * (pos.avg_price or Decimal("0"))
+                )
+                if pos.quantity is not None and pos.avg_price is not None and pos.symbol and pos.symbol.upper() in quotes
+                else (
+                    pos.unrealized_pnl
+                    if pos.unrealized_pnl is not None
+                    else (Decimal(pos.market_value or 0) - (pos.quantity or Decimal("0")) * (pos.avg_price or Decimal("0")))
+                )
+            )
+            for pos in positions
         )
-        unrealized = (
-            latest_snapshot.unrealized_pnl
-            if latest_snapshot
-            else portfolio.unrealized_pnl
-        )
+
+        for pos in positions:
+            price = quotes.get(pos.symbol.upper())
+            if price is not None and pos.quantity is not None:
+                positions_value += price * Decimal(pos.quantity)
+            else:
+                positions_value += pos.market_value or Decimal("0")
+
+        equity = cash + positions_value
+        unrealized = positions_unrealized
+        # Fallback to snapshot values only if we truly have nothing else
+        if equity == 0 and latest_snapshot:
+            equity = latest_snapshot.equity
+        if unrealized is None and latest_snapshot:
+            unrealized = latest_snapshot.unrealized_pnl
+        equity = equity.quantize(Decimal("0.01"))
+        unrealized = unrealized.quantize(Decimal("0.01"))
+        cash = cash.quantize(Decimal("0.01"))
+        realized = realized.quantize(Decimal("0.01"))
         total_return_pct = float(
             ((equity - start_equity) / start_equity) * Decimal("100")
         )
@@ -196,6 +241,7 @@ class PortfolioViewSet(OwnedQuerySetMixin, viewsets.ModelViewSet):
             "realized_pnl": str(realized),
             "unrealized_pnl": str(unrealized),
             "days_active": days_active,
+            "positions": PaperPositionSerializer(positions, many=True, context={"quotes": quotes}).data,
         }
         if latest_snapshot:
             payload["latest_snapshot"] = PerformanceSnapshotSerializer(
@@ -481,11 +527,15 @@ class PositionViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = LimitOffsetPagination
 
     def get_queryset(self):
-        return (
+        qs = (
             PaperPosition.objects.filter(portfolio__user=self.request.user)
             .select_related("portfolio", "instrument")
             .order_by("symbol")
         )
+        portfolio_id = self.request.query_params.get("portfolio")
+        if portfolio_id:
+            qs = qs.filter(portfolio_id=portfolio_id)
+        return qs
 
     def _get_quote_decimal(self, symbol: str) -> Decimal:
         quote = get_market_data_provider().get_quote(symbol)
