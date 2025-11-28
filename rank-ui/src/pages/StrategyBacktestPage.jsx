@@ -105,6 +105,13 @@ export default function StrategyBacktestPage({ onNavigate }) {
     saving: false,
     error: "",
   });
+  const [singleBotModal, setSingleBotModal] = useState({
+    open: false,
+    name: "",
+    mode: "paper",
+    saving: false,
+    error: "",
+  });
   const [sortField, setSortField] = useState("sharpe_ratio");
   const [sortDir, setSortDir] = useState("desc");
   const [minTrades, setMinTrades] = useState(0);
@@ -390,16 +397,14 @@ export default function StrategyBacktestPage({ onNavigate }) {
     return updated;
   }
 
-  async function promoteRunToBot(run) {
-    const parsedStrategy = parseStrategy();
-    if (!parsedStrategy) return;
+  function buildBotPayload(mode) {
     const symbols = (botConfig.symbols || "")
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const botPayload = {
+    return {
       symbols,
-      mode: promoteModal.mode,
+      mode,
       benchmark: botConfig.benchmark || "SPY",
       capital: Number(botConfig.starting_equity) || 0,
       rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
@@ -409,6 +414,12 @@ export default function StrategyBacktestPage({ onNavigate }) {
       commission_pct: botConfig.commission_pct ? Number(botConfig.commission_pct) : undefined,
       slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
     };
+  }
+
+  async function promoteRunToBot(run) {
+    const parsedStrategy = parseStrategy();
+    if (!parsedStrategy) return;
+    const botPayload = buildBotPayload(promoteModal.mode);
 
     const strategyWithParams = applyParamsToStrategy(parsedStrategy, run.params || {});
 
@@ -427,6 +438,36 @@ export default function StrategyBacktestPage({ onNavigate }) {
       if (onNavigate) onNavigate("bots");
     } catch (err) {
       setPromoteModal((m) => ({
+        ...m,
+        saving: false,
+        error: err.message || "Failed to create bot",
+      }));
+    }
+  }
+
+  async function createBotFromResult() {
+    const parsedStrategy = parseStrategy();
+    if (!parsedStrategy) return;
+    const botPayload = buildBotPayload(singleBotModal.mode);
+    if (!botPayload.symbols.length) {
+      setSingleBotModal((m) => ({ ...m, error: "Add at least one symbol." }));
+      return;
+    }
+    setSingleBotModal((m) => ({ ...m, saving: true, error: "" }));
+    try {
+      await createBot(
+        {
+          name: singleBotModal.name || "Bot from backtest",
+          mode: singleBotModal.mode,
+          strategy: parsedStrategy,
+          bot: botPayload,
+        },
+        token
+      );
+      setSingleBotModal({ open: false, name: "", mode: "paper", saving: false, error: "" });
+      if (onNavigate) onNavigate("bots");
+    } catch (err) {
+      setSingleBotModal((m) => ({
         ...m,
         saving: false,
         error: err.message || "Failed to create bot",
@@ -660,7 +701,31 @@ export default function StrategyBacktestPage({ onNavigate }) {
             )}
           </div>
 
-          {result && <StatsTable stats={result.stats || {}} />}
+          {result && (
+            <div className="space-y-2">
+              <StatsTable stats={result.stats || {}} />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="btn-primary text-xs"
+                  onClick={() =>
+                    setSingleBotModal({
+                      open: true,
+                      name: "",
+                      mode: "paper",
+                      saving: false,
+                      error: "",
+                    })
+                  }
+                >
+                  Create bot from this backtest
+                </button>
+                <div className="text-[11px] text-slate-400">
+                  Uses current strategy JSON and Bot Config settings.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1050,6 +1115,70 @@ export default function StrategyBacktestPage({ onNavigate }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {singleBotModal.open && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 w-full max-w-lg space-y-3">
+            <div className="text-lg font-semibold">Create Bot from backtest</div>
+            <div className="text-xs text-slate-400">
+              Uses the current strategy JSON and Bot Config values.
+            </div>
+            <label className="block text-sm">
+              <span className="text-xs text-slate-400">Bot name</span>
+              <input
+                value={singleBotModal.name}
+                onChange={(e) =>
+                  setSingleBotModal((m) => ({ ...m, name: e.target.value }))
+                }
+                className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-sm"
+                placeholder="Bot name"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs text-slate-400">Mode</span>
+              <select
+                value={singleBotModal.mode}
+                onChange={(e) =>
+                  setSingleBotModal((m) => ({ ...m, mode: e.target.value }))
+                }
+                className="mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-sm"
+              >
+                <option value="paper">paper</option>
+                <option value="backtest">backtest</option>
+                <option value="live">live</option>
+              </select>
+            </label>
+            {singleBotModal.error && (
+              <div className="text-xs text-rose-300">{singleBotModal.error}</div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setSingleBotModal({
+                    open: false,
+                    name: "",
+                    mode: "paper",
+                    saving: false,
+                    error: "",
+                  })
+                }
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={singleBotModal.saving}
+                onClick={createBotFromResult}
+                className="btn-primary disabled:opacity-50"
+              >
+                {singleBotModal.saving ? "Creating..." : "Create Bot"}
+              </button>
+            </div>
           </div>
         </div>
       )}

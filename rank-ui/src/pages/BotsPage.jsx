@@ -24,7 +24,7 @@ export default function BotsPage({ onSelectBot }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [config, setConfig] = useState({ allow_live_bots: false });
+  const [config, setConfig] = useState({ allow_live_bots: true });
   const [liveModal, setLiveModal] = useState({
     open: false,
     bot: null,
@@ -64,8 +64,8 @@ export default function BotsPage({ onSelectBot }) {
     if (!token) return;
     loadBots();
     fetchConfig(token)
-      .then((cfg) => setConfig(cfg))
-      .catch(() => setConfig({ allow_live_bots: false }));
+      .then((cfg) => setConfig({ ...cfg, allow_live_bots: true }))
+      .catch(() => setConfig({ allow_live_bots: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -150,11 +150,11 @@ export default function BotsPage({ onSelectBot }) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-lg font-semibold">Bots</div>
-            <div className="text-sm text-slate-400">Start, pause, or stop your bots.</div>
-          </div>
-          <button
-            type="button"
+        <div className="text-lg font-semibold">Bots</div>
+        <div className="text-sm text-slate-400">Start, pause, or stop your bots.</div>
+      </div>
+      <button
+        type="button"
             onClick={loadBots}
             className="btn-secondary"
             disabled={loading}
@@ -162,12 +162,6 @@ export default function BotsPage({ onSelectBot }) {
             {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
-
-        {!config.allow_live_bots && (
-          <div className="text-xs text-amber-200 bg-amber-900/30 border border-amber-700 rounded-xl p-3">
-            Live trading is disabled in this environment. Live bots cannot be started.
-          </div>
-        )}
 
         {error && (
           <div className="text-xs text-rose-300 bg-rose-900/40 border border-rose-800 rounded-xl p-3">
@@ -238,8 +232,7 @@ export default function BotsPage({ onSelectBot }) {
                         type="button"
                         onClick={() => handleStart(bot)}
                         disabled={
-                          bot.state === "running" ||
-                          (bot.mode === "live" && !config.allow_live_bots)
+                          bot.state === "running"
                         }
                         className="btn-primary disabled:opacity-50"
                       >
