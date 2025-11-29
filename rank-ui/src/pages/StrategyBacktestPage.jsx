@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import {
   CartesianGrid,
   Legend,
   Line,
+  ComposedChart,
+  Scatter,
+  ReferenceLine,
+  Bar,
   LineChart,
   ResponsiveContainer,
   Tooltip,
@@ -18,6 +22,8 @@ import {
 } from "../api/backtests.js";
 import { createBot } from "../api/bots.js";
 import { STRATEGY_TEMPLATES } from "../strategies/templates.js";
+
+const BASE = "http://127.0.0.1:8000";
 
 const DEFAULT_TEMPLATE = STRATEGY_TEMPLATES[0];
 
@@ -77,11 +83,12 @@ export default function StrategyBacktestPage({ onNavigate }) {
   const [templateErr, setTemplateErr] = useState("");
 
   const [botConfig, setBotConfig] = useState({
-    symbols: "AAPL,MSFT,SPY",
-    start_date: formatDate(-120),
+    symbols: "AAPL",
+    start_date: formatDate(-365),
     end_date: formatDate(0),
     starting_equity: 10000,
     rebalance_days: 5,
+    disableRebalance: true,
     benchmark: "SPY",
     commission_per_trade: "",
     commission_pct: "",
@@ -89,6 +96,11 @@ export default function StrategyBacktestPage({ onNavigate }) {
   });
 
   const [result, setResult] = useState(null);
+  const formatTsDate = useCallback((v) => {
+    if (!Number.isFinite(v)) return "-";
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? "-" : d.toISOString().slice(0, 10);
+  }, []);
 
   // Batch state
   const [paramGridRows, setParamGridRows] = useState([{ name: "", values: "" }]);
@@ -115,6 +127,45 @@ export default function StrategyBacktestPage({ onNavigate }) {
   const [sortField, setSortField] = useState("sharpe_ratio");
   const [sortDir, setSortDir] = useState("desc");
   const [minTrades, setMinTrades] = useState(0);
+  const [chartSymbol, setChartSymbol] = useState("AAPL");
+  const [priceData, setPriceData] = useState([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState("");
+  const strategyIndicators = useMemo(() => {
+    const flags = { sma: false, rsi: false, macd: false, rsi_entry: null, rsi_exit: null };
+    try {
+      const parsed = JSON.parse(strategyText || "{}");
+      const params = parsed.parameters || {};
+      const markIndicator = (name) => {
+        const key = (name || "").toLowerCase();
+        if (key.includes("sma")) flags.sma = true;
+        if (key === "rsi") flags.rsi = true;
+        if (key === "macd") flags.macd = true;
+      };
+      const walk = (node) => {
+        if (!node) return;
+        if (Array.isArray(node)) {
+          node.forEach(walk);
+          return;
+        }
+        if (typeof node === "object") {
+          if (node.indicator) markIndicator(node.indicator);
+          if (node.left) markIndicator(node.left);
+          Object.values(node).forEach(walk);
+        }
+      };
+      walk(parsed.entry_tree);
+      walk(parsed.exit_tree);
+      Object.keys(params).forEach(markIndicator);
+      const entry = params.rsi_entry_level?.default ?? params.rsi_entry_level ?? null;
+      const exit = params.rsi_exit_level?.default ?? params.rsi_exit_level ?? null;
+      flags.rsi_entry = entry != null ? Number(entry) : null;
+      flags.rsi_exit = exit != null ? Number(exit) : null;
+    } catch {
+      // ignore parse errors
+    }
+    return flags;
+  }, [strategyText]);
   const sortedRuns = useMemo(() => {
     const completed = (batchRuns || []).filter(
       (r) =>
@@ -269,7 +320,18 @@ export default function StrategyBacktestPage({ onNavigate }) {
           mode: "backtest",
           benchmark: botConfig.benchmark || "SPY",
           capital: Number(botConfig.starting_equity) || 0,
-          rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
+          rebalance_days:
+            botConfig.disableRebalance === true
+              ? undefined
+              : botConfig.rebalance_days
+              ? Number(botConfig.rebalance_days)
+              : undefined,
+          top_n:
+            botConfig.disableRebalance === true
+              ? undefined
+              : botConfig.top_n
+              ? Number(botConfig.top_n)
+              : undefined,
           commission_per_trade: botConfig.commission_per_trade
             ? Number(botConfig.commission_per_trade)
             : undefined,
@@ -299,6 +361,8 @@ export default function StrategyBacktestPage({ onNavigate }) {
     if (!spec) return;
     setSelectedTemplate(tpl.id);
     setSelectedTemplateId(tpl.id);
+    const defaultSym = (botConfig.symbols || "").split(",").map((s) => s.trim()).filter(Boolean)[0];
+    if (defaultSym) setChartSymbol(defaultSym.toUpperCase());
     setStrategyText(pretty(spec));
     setStrategyErrors([]);
     setValidationMsg("");
@@ -343,7 +407,18 @@ export default function StrategyBacktestPage({ onNavigate }) {
             mode: "backtest",
             benchmark: botConfig.benchmark || "SPY",
             capital: Number(botConfig.starting_equity) || 0,
-            rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
+            rebalance_days:
+              botConfig.disableRebalance === true
+                ? undefined
+                : botConfig.rebalance_days
+                ? Number(botConfig.rebalance_days)
+                : undefined,
+            top_n:
+              botConfig.disableRebalance === true
+                ? undefined
+                : botConfig.top_n
+                ? Number(botConfig.top_n)
+                : undefined,
             commission_per_trade: botConfig.commission_per_trade
               ? Number(botConfig.commission_per_trade)
               : undefined,
@@ -368,6 +443,251 @@ export default function StrategyBacktestPage({ onNavigate }) {
       setBatchError(err.message || "Batch request failed");
     }
   }
+
+  useEffect(() => {
+    const first = (botConfig.symbols || "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean)[0];
+    if (first && !chartSymbol) {
+      setChartSymbol(first);
+    }
+  }, [botConfig.symbols, chartSymbol]);
+
+  const trades = useMemo(() => result?.trades || [], [result]);
+  const priceDomain = useMemo(() => {
+    if (!priceData.length) return null;
+    const values = [];
+    priceData.forEach((row) => {
+      ["close", "close_in_position", "close_out_position", "sma_fast", "sma_slow"].forEach((key) => {
+        const v = Number(row[key]);
+        if (Number.isFinite(v)) values.push(v);
+      });
+    });
+    if (!values.length) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    const padding = (max - min) * 0.1 || Math.max(Math.abs(min) * 0.1, 1);
+    return {
+      min: min - padding,
+      max: max + padding,
+    };
+  }, [priceData]);
+
+  const markerDebug = useMemo(() => {
+    const rows = priceData
+      .filter((d) => d.buy_marker != null || d.sell_marker != null)
+      .map((d) => ({
+        date: d.date,
+        buy: d.buy_marker != null ? Number(d.buy_marker) : null,
+        sell: d.sell_marker != null ? Number(d.sell_marker) : null,
+      }));
+    return rows.sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
+  }, [priceData]);
+
+  const buyPoints = useMemo(
+    () =>
+      priceData
+        .filter((d) => d.buy_marker != null)
+        .map((d) => ({
+          date: d.date,
+          ts: d.date ? new Date(d.date).getTime() : null,
+          price: Number(d.buy_marker),
+        }))
+        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
+        .sort((a, b) => a.ts - b.ts),
+    [priceData]
+  );
+  const sellPoints = useMemo(
+    () =>
+      priceData
+        .filter((d) => d.sell_marker != null)
+        .map((d) => ({
+          date: d.date,
+          ts: d.date ? new Date(d.date).getTime() : null,
+          price: Number(d.sell_marker),
+        }))
+        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
+        .sort((a, b) => a.ts - b.ts),
+    [priceData]
+  );
+  const priceLinePoints = useMemo(
+    () =>
+      priceData
+        .map((d) => ({
+          ts: d.date ? new Date(d.date).getTime() : null,
+          price: Number(d.close),
+        }))
+        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
+        .sort((a, b) => a.ts - b.ts),
+    [priceData]
+  );
+
+  const loadChartData = useCallback(
+    async (symbol) => {
+      if (!token || !symbol) return;
+      setChartLoading(true);
+      setChartError("");
+      try {
+        const params = new URLSearchParams();
+        params.set("interval", "1d");
+        if (botConfig.start_date) params.set("start", botConfig.start_date);
+        if (botConfig.end_date) params.set("end", botConfig.end_date);
+        const res = await fetch(
+          `${BASE}/api/paper/symbols/${encodeURIComponent(symbol)}/interval/?${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to load price data");
+        const candles = Array.isArray(data.candles) ? data.candles : [];
+        const mapped = candles
+          .map((c) => {
+            if (Array.isArray(c)) {
+              const [t, o, h, l, cl] = c;
+              return {
+                date: new Date(t).toISOString().slice(0, 10),
+                open: Number(o),
+                high: Number(h),
+                low: Number(l),
+                close: Number(cl),
+              };
+            }
+            return {
+              date: (c.t || c.time || c.timestamp || "").slice(0, 10),
+              open: c.open != null ? Number(c.open) : c.o != null ? Number(c.o) : null,
+              high: c.high != null ? Number(c.high) : c.h != null ? Number(c.h) : null,
+              low: c.low != null ? Number(c.low) : c.l != null ? Number(c.l) : null,
+              close: c.close != null ? Number(c.close) : c.c != null ? Number(c.c) : null,
+            };
+          })
+          .filter((d) => d.date && Number.isFinite(d.close));
+        // compute indicators based on common params
+        const fastLen = strategyIndicators.sma ? Number(botConfig.fast_length || 20) || 20 : null;
+        const slowLen = strategyIndicators.sma ? Number(botConfig.slow_length || 50) || 50 : null;
+        const rsiLen = strategyIndicators.rsi ? Number(botConfig.rsi_period || 14) || 14 : null;
+        const macdFast = 12;
+        const macdSlow = 26;
+        const macdSignal = 9;
+
+        // helpers
+        const ema = (arr, period) => {
+          if (!arr.length || period <= 0) return [];
+          const k = 2 / (period + 1);
+          const out = [];
+          let prev = arr[0];
+          out.push(prev);
+          for (let i = 1; i < arr.length; i += 1) {
+            prev = arr[i] * k + prev * (1 - k);
+            out.push(prev);
+          }
+          return out;
+        };
+
+        const closes = mapped.map((r) => Number(r.close || 0));
+        const macdArr = [];
+        const macdSignalArr = [];
+        if (closes.length) {
+          const emaFast = ema(closes, macdFast);
+          const emaSlow = ema(closes, macdSlow);
+          for (let i = 0; i < closes.length; i += 1) {
+            macdArr[i] = emaFast[i] - emaSlow[i];
+          }
+          const signal = ema(macdArr, macdSignal);
+          for (let i = 0; i < macdArr.length; i += 1) {
+            macdSignalArr[i] = signal[i];
+          }
+        }
+
+        const withInd = mapped.map((row, idx, arr) => {
+          const sliceFast = arr.slice(Math.max(0, idx - (fastLen - 1)), idx + 1);
+          const sliceSlow = arr.slice(Math.max(0, idx - (slowLen - 1)), idx + 1);
+          const smaFast =
+            fastLen && sliceFast.length >= fastLen
+              ? sliceFast.reduce((sum, r) => sum + Number(r.close || 0), 0) / sliceFast.length
+              : null;
+          const smaSlow =
+            slowLen && sliceSlow.length >= slowLen
+              ? sliceSlow.reduce((sum, r) => sum + Number(r.close || 0), 0) / sliceSlow.length
+              : null;
+
+          let rsi = null;
+          if (rsiLen && idx + 1 >= rsiLen) {
+            const window = closes.slice(Math.max(0, idx - (rsiLen - 1)), idx + 1);
+            const gains = [];
+            const losses = [];
+            for (let i = 1; i < window.length; i += 1) {
+              const diff = window[i] - window[i - 1];
+              if (diff >= 0) gains.push(diff);
+              else losses.push(Math.abs(diff));
+            }
+            const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : 0;
+            const avgLoss = losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : 0;
+            if (avgLoss !== 0) {
+              const rs = avgGain / avgLoss;
+              rsi = 100 - 100 / (1 + rs);
+            } else if (avgGain !== 0) {
+              rsi = 100;
+            }
+          }
+
+          return {
+            ...row,
+            sma_fast: smaFast != null ? Number(smaFast.toFixed(2)) : null,
+            sma_slow: smaSlow != null ? Number(smaSlow.toFixed(2)) : null,
+            rsi: rsi != null ? Number(rsi.toFixed(2)) : null,
+            macd: strategyIndicators.macd && macdArr[idx] != null ? Number(macdArr[idx].toFixed(2)) : null,
+            macd_signal:
+              strategyIndicators.macd && macdSignalArr[idx] != null ? Number(macdSignalArr[idx].toFixed(2)) : null,
+          };
+        });
+
+        // map trades into markers and holding periods
+        const intervals = trades
+          .map((t) => {
+            const entry = (t.entry_time || t.timestamp || t.time || "").slice(0, 10);
+            const exit = (t.exit_time || "").slice(0, 10) || null;
+            if (!entry) return null;
+            return { entry, exit };
+          })
+          .filter(Boolean);
+
+        const withMarkers = withInd.map((row) => {
+          const d = row.date;
+          const isBuy = intervals.some((i) => i.entry === d);
+          const isSell = intervals.some((i) => i.exit === d);
+          const inPosition = intervals.some((i) => {
+            if (!i.entry) return false;
+            if (i.exit) return d >= i.entry && d <= i.exit;
+            return d >= i.entry;
+          });
+          return {
+            ...row,
+            buy_marker: isBuy ? row.close : null,
+            sell_marker: isSell ? row.close : null,
+            in_position: inPosition,
+          };
+        });
+        const withSegments = withMarkers.map((row) => ({
+          ...row,
+          close_in_position: row.in_position ? row.close : null,
+          close_out_position: row.in_position ? null : row.close,
+        }));
+
+        setPriceData(withSegments);
+      } catch (err) {
+        setChartError(err.message || "Failed to load chart");
+        setPriceData([]);
+      } finally {
+        setChartLoading(false);
+      }
+    },
+    [token, botConfig.start_date, botConfig.end_date, strategyIndicators.sma, strategyIndicators.rsi, strategyIndicators.macd, trades]
+  );
+
+  // Chart data now loads only when the user clicks "Load chart" to avoid extra fetches during typing.
 
   async function handleBatchRefresh() {
     if (!batchId) {
@@ -402,12 +722,24 @@ export default function StrategyBacktestPage({ onNavigate }) {
       .split(",")
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
+    const topN =
+      botConfig.disableRebalance === true
+        ? undefined
+        : botConfig.top_n
+        ? Number(botConfig.top_n)
+        : undefined;
     return {
       symbols,
       mode,
       benchmark: botConfig.benchmark || "SPY",
       capital: Number(botConfig.starting_equity) || 0,
-      rebalance_days: botConfig.rebalance_days ? Number(botConfig.rebalance_days) : undefined,
+      rebalance_days:
+        botConfig.disableRebalance === true
+          ? undefined
+          : botConfig.rebalance_days
+          ? Number(botConfig.rebalance_days)
+          : undefined,
+      top_n: topN,
       commission_per_trade: botConfig.commission_per_trade
         ? Number(botConfig.commission_per_trade)
         : undefined,
@@ -475,15 +807,13 @@ export default function StrategyBacktestPage({ onNavigate }) {
     }
   }
 
-  const chartData = useMemo(() => {
+  const equityCurveData = useMemo(() => {
     const eq = result?.equity_curve || [];
     return eq.map((pt) => ({
       date: (pt.date || pt.time || "").slice(0, 10),
-      value: pt.value || pt.equity || pt.amount,
+      value: Number(pt.value ?? pt.equity ?? pt.amount ?? 0),
     }));
   }, [result]);
-
-  const trades = result?.trades || [];
 
   return (
     <div className="space-y-4">
@@ -678,6 +1008,15 @@ export default function StrategyBacktestPage({ onNavigate }) {
                 />
               </label>
 
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={botConfig.disableRebalance}
+                  onChange={(e) => updateBotConfig("disableRebalance", e.target.checked)}
+                />
+                <span>Disable rebalancing (default on)</span>
+              </label>
+
               <label className="block">
                 <span className="text-xs text-slate-400">Mode</span>
                 <input
@@ -734,10 +1073,10 @@ export default function StrategyBacktestPage({ onNavigate }) {
           <div className="text-sm font-semibold mb-2">Equity curve</div>
           <div className="w-full h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={equityCurveData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} domain={["auto", "auto"]} allowDataOverflow={false} />
                 <Tooltip />
                 <Legend />
                 <Line
@@ -753,6 +1092,218 @@ export default function StrategyBacktestPage({ onNavigate }) {
           </div>
         </div>
       )}
+
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Price, orders & indicators</div>
+          <div className="flex items-center gap-2 text-xs">
+            {((botConfig.symbols || "").split(",").map((s) => s.trim()).filter(Boolean).length > 1) && (
+              <>
+                <span className="text-slate-400">Symbol</span>
+                <select
+                  value={chartSymbol}
+                  onChange={(e) => setChartSymbol(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs"
+                >
+                  {(botConfig.symbols || "")
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .map((sym) => (
+                      <option key={sym} value={sym.toUpperCase()}>
+                        {sym.toUpperCase()}
+                      </option>
+                    ))}
+                </select>
+              </>
+            )}
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-xs"
+              onClick={() => loadChartData(chartSymbol)}
+              disabled={!chartSymbol || chartLoading}
+            >
+              {chartLoading ? "Loading…" : "Load chart"}
+            </button>
+          </div>
+        </div>
+        {chartError && (
+          <div className="text-xs text-rose-300">{chartError}</div>
+        )}
+        {chartLoading && <div className="text-xs text-slate-400">Loading chart…</div>}
+        {!chartLoading && (
+          <div className="w-full h-80">
+            {priceData.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={priceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis
+                    tick={{ fontSize: 10 }}
+                    domain={["auto", "auto"]}
+                    allowDecimals
+                  />
+                <Tooltip
+                  formatter={(val, name) => [
+                    typeof val === "number" ? val.toFixed(2) : val,
+                    name,
+                  ]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="close"
+                  name="Close"
+                  stroke="#a78bfa"
+                  dot={false}
+                  connectNulls={false}
+                  strokeWidth={2}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-xs text-slate-500">No price data yet.</div>
+          )}
+          </div>
+        )}
+        {!chartLoading && markerDebug.length > 0 && (
+          <div className="mt-3 text-[11px] text-slate-300 space-y-1">
+            <div className="font-semibold">Order marker coordinates (x=date, y=price)</div>
+            <div className="space-y-1">
+              {markerDebug.map((m) => (
+                <div
+                  key={m.date}
+                  className="flex justify-between bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
+                >
+                  <span className="text-slate-400">{m.date}</span>
+                  <span className="flex gap-2">
+                    <span className={m.buy != null ? "text-emerald-300" : "text-slate-500"}>
+                      B:{m.buy != null ? m.buy.toFixed(2) : "-"}
+                    </span>
+                    <span className={m.sell != null ? "text-rose-300" : "text-slate-500"}>
+                      S:{m.sell != null ? m.sell.toFixed(2) : "-"}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!chartLoading && (buyPoints.length > 0 || sellPoints.length > 0) && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
+          <div className="text-sm font-semibold">Entry / exit markers (separate panel)</div>
+          <div className="w-full h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={priceLinePoints.length ? priceLinePoints : [{ ts: 0, price: 0 }]}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  dataKey="ts"
+                  tick={{ fontSize: 10 }}
+                  domain={["auto", "auto"]}
+                  tickFormatter={formatTsDate}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="price"
+                  tick={{ fontSize: 10 }}
+                  domain={[140, 280]}
+                />
+                <Tooltip
+                  formatter={(val, name) => [
+                    typeof val === "number" ? val.toFixed(2) : val,
+                    name,
+                  ]}
+                  labelFormatter={formatTsDate}
+                />
+                <Line type="monotone" dataKey="price" name="Close" stroke="#a78bfa" dot={false} strokeWidth={1.8} />
+                {buyPoints.length > 0 && (
+                  <Scatter
+                    name="Buy"
+                    data={buyPoints.filter((m) => m.ts != null)}
+                    fill="#22c55e"
+                    shape="triangle"
+                  />
+                )}
+                {sellPoints.length > 0 && (
+                  <Scatter
+                    name="Sell"
+                    data={sellPoints.filter((m) => m.ts != null)}
+                    fill="#f87171"
+                    shape="triangleDown"
+                  />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Indicator panel */}
+      {!chartLoading &&
+        priceData.length > 0 &&
+        (priceData.some((d) => d.rsi != null) || priceData.some((d) => d.macd != null)) && (
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
+            <div className="text-sm font-semibold">Indicators</div>
+            <div className="w-full h-60">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={priceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
+                  <Tooltip
+                    formatter={(val, name) => [
+                      typeof val === "number" ? val.toFixed(2) : val,
+                      name,
+                    ]}
+                  />
+                  {strategyIndicators.rsi && priceData.some((d) => d.rsi != null) && (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="rsi"
+                        name="RSI"
+                        stroke="#38bdf8"
+                        dot={false}
+                        strokeDasharray="2 2"
+                      />
+                      {strategyIndicators.rsi_entry != null && (
+                        <ReferenceLine
+                          y={strategyIndicators.rsi_entry}
+                          stroke="#22c55e"
+                          strokeDasharray="3 3"
+                          label={{ value: "RSI Buy", position: "insideLeft", fill: "#22c55e", fontSize: 10 }}
+                        />
+                      )}
+                      {strategyIndicators.rsi_exit != null && (
+                        <ReferenceLine
+                          y={strategyIndicators.rsi_exit}
+                          stroke="#f97316"
+                          strokeDasharray="3 3"
+                          label={{ value: "RSI Sell", position: "insideLeft", fill: "#f97316", fontSize: 10 }}
+                        />
+                      )}
+                    </>
+                  )}
+                  {strategyIndicators.macd && priceData.some((d) => d.macd != null) && (
+                    <Line type="monotone" dataKey="macd" name="MACD" stroke="#e879f9" dot={false} />
+                  )}
+                  {strategyIndicators.macd && priceData.some((d) => d.macd_signal != null) && (
+                    <Line
+                      type="monotone"
+                      dataKey="macd_signal"
+                      name="MACD Signal"
+                      stroke="#fbbf24"
+                      dot={false}
+                      strokeDasharray="5 2"
+                    />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
       {/* Batch backtest / optimizer */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -1081,8 +1632,11 @@ export default function StrategyBacktestPage({ onNavigate }) {
                   <th className="py-2 pr-2">Entry</th>
                   <th className="py-2 pr-2">Exit</th>
                   <th className="py-2 pr-2">Price</th>
+                  <th className="py-2 pr-2">PnL $</th>
                   <th className="py-2 pr-2">PnL %</th>
-                  <th className="py-2 pr-2">Timestamp</th>
+                  <th className="py-2 pr-2">Days held</th>
+                  <th className="py-2 pr-2">Entry time</th>
+                  <th className="py-2 pr-2">Exit time</th>
                 </tr>
               </thead>
               <tbody>
@@ -1095,21 +1649,44 @@ export default function StrategyBacktestPage({ onNavigate }) {
                       {t.symbol || "-"}
                     </td>
                     <td className="py-1.5 pr-2">{t.action || t.side || "-"}</td>
-                    <td className="py-1.5 pr-2">{t.qty ?? t.quantity ?? "-"}</td>
                     <td className="py-1.5 pr-2">
-                      {t.entry_price ?? t.price ?? "-"}
+                      {t.qty != null
+                        ? Number(t.qty).toFixed(2)
+                        : t.quantity != null
+                        ? Number(t.quantity).toFixed(2)
+                        : "-"}
                     </td>
                     <td className="py-1.5 pr-2">
-                      {t.exit_price ?? "-"}
+                      {t.entry_price != null
+                        ? Number(t.entry_price).toFixed(2)
+                        : t.price != null
+                        ? Number(t.price).toFixed(2)
+                        : "-"}
                     </td>
                     <td className="py-1.5 pr-2">
-                      {typeof t.price === "number" ? t.price : t.fill_price ?? "-"}
+                      {t.exit_price != null ? Number(t.exit_price).toFixed(2) : "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {typeof t.price === "number"
+                        ? Number(t.price).toFixed(2)
+                        : t.fill_price != null
+                        ? Number(t.fill_price).toFixed(2)
+                        : "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {t.pnl != null ? Number(t.pnl).toFixed(2) : "-"}
                     </td>
                     <td className="py-1.5 pr-2">
                       {t.pnl_pct != null ? `${Number(t.pnl_pct).toFixed(2)}%` : "-"}
                     </td>
                     <td className="py-1.5 pr-2">
-                      {t.timestamp || t.time || "-"}
+                      {t.days_held != null ? Number(t.days_held).toFixed(2) : "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {t.entry_time || t.entry_ts || t.open_time || t.timestamp || t.time || "-"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {t.exit_time || t.exit_ts || t.close_time || "-"}
                     </td>
                   </tr>
                 ))}
