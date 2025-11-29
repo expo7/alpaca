@@ -7,7 +7,6 @@ import {
   ComposedChart,
   Scatter,
   ReferenceLine,
-  Bar,
   LineChart,
   ResponsiveContainer,
   Tooltip,
@@ -22,6 +21,12 @@ import {
 } from "../api/backtests.js";
 import { createBot } from "../api/bots.js";
 import { STRATEGY_TEMPLATES } from "../strategies/templates.js";
+import BacktestChart from "../components/backtest/BacktestChart.jsx";
+import BacktestStatsPanel from "../components/backtest/BacktestStatsPanel.jsx";
+import BacktestOrdersTable from "../components/backtest/BacktestOrdersTable.jsx";
+import BacktestControls from "../components/backtest/BacktestControls.jsx";
+import normalizeCandles from "../components/backtest/utils/normalizeCandles.js";
+import normalizeOrders from "../components/backtest/utils/normalizeOrders.js";
 
 const BASE = "http://127.0.0.1:8000";
 
@@ -35,33 +40,6 @@ function formatDate(offsetDays = 0) {
 
 function pretty(obj) {
   return JSON.stringify(obj, null, 2);
-}
-
-function StatsTable({ stats }) {
-  const rows = [
-    { k: "Start equity", v: stats?.start_equity },
-    { k: "End equity", v: stats?.end_equity },
-    { k: "Total return", v: stats?.return_pct },
-    { k: "Max drawdown %", v: stats?.max_drawdown_pct },
-    { k: "Trades", v: stats?.num_trades },
-    { k: "Win rate %", v: stats?.win_rate_pct },
-  ];
-
-  return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-      <div className="text-sm font-semibold mb-3">Stats</div>
-      <div className="divide-y divide-slate-800 text-sm">
-        {rows.map((row) => (
-          <div key={row.k} className="flex items-center justify-between py-1.5">
-            <span className="text-slate-400">{row.k}</span>
-            <span className="text-slate-100">
-              {typeof row.v === "number" ? row.v : row.v ?? "-"}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export default function StrategyBacktestPage({ onNavigate }) {
@@ -206,39 +184,39 @@ export default function StrategyBacktestPage({ onNavigate }) {
     let active = true;
 
     async function loadTemplates() {
-    try {
-      setTemplateErr("");
-      const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      let data = [];
       try {
-        if (res.json) {
-          data = await res.json();
-        } else {
+        setTemplateErr("");
+        const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        let data = [];
+        try {
+          if (res.json) {
+            data = await res.json();
+          } else {
+            const txt = await res.text();
+            data = txt ? JSON.parse(txt) : [];
+          }
+        } catch {
           const txt = await res.text();
           data = txt ? JSON.parse(txt) : [];
         }
-      } catch {
-        const txt = await res.text();
-        data = txt ? JSON.parse(txt) : [];
-      }
-      if (!active) return;
-      const merged = [...STRATEGY_TEMPLATES];
-      (Array.isArray(data) ? data : []).forEach((tpl) => {
-        if (!merged.some((t) => t.id === tpl.id)) {
-          merged.push({ ...tpl, spec: tpl.strategy_spec || tpl.spec });
+        if (!active) return;
+        const merged = [...STRATEGY_TEMPLATES];
+        (Array.isArray(data) ? data : []).forEach((tpl) => {
+          if (!merged.some((t) => t.id === tpl.id)) {
+            merged.push({ ...tpl, spec: tpl.strategy_spec || tpl.spec });
+          }
+        });
+        setTemplates(merged);
+        if (!selectedTemplateId && merged.length) {
+          setSelectedTemplateId(merged[0].id);
+          setSelectedTemplate(merged[0].id);
+          setStrategyText(pretty(merged[0].spec));
         }
-      });
-      setTemplates(merged);
-      if (!selectedTemplateId && merged.length) {
-        setSelectedTemplateId(merged[0].id);
-        setSelectedTemplate(merged[0].id);
-        setStrategyText(pretty(merged[0].spec));
+      } catch (err) {
+        if (active) setTemplateErr(err.message || "Failed to load templates");
       }
-    } catch (err) {
-      if (active) setTemplateErr(err.message || "Failed to load templates");
-    }
     }
 
     loadTemplates();
@@ -324,14 +302,14 @@ export default function StrategyBacktestPage({ onNavigate }) {
             botConfig.disableRebalance === true
               ? undefined
               : botConfig.rebalance_days
-              ? Number(botConfig.rebalance_days)
-              : undefined,
+                ? Number(botConfig.rebalance_days)
+                : undefined,
           top_n:
             botConfig.disableRebalance === true
               ? undefined
               : botConfig.top_n
-              ? Number(botConfig.top_n)
-              : undefined,
+                ? Number(botConfig.top_n)
+                : undefined,
           commission_per_trade: botConfig.commission_per_trade
             ? Number(botConfig.commission_per_trade)
             : undefined,
@@ -400,42 +378,42 @@ export default function StrategyBacktestPage({ onNavigate }) {
     const grid = paramGridToObject();
     setBatchError("");
     try {
-        const payload = {
-          strategy: parsed,
-          bot: {
-            symbols,
-            mode: "backtest",
-            benchmark: botConfig.benchmark || "SPY",
-            capital: Number(botConfig.starting_equity) || 0,
-            rebalance_days:
-              botConfig.disableRebalance === true
-                ? undefined
-                : botConfig.rebalance_days
+      const payload = {
+        strategy: parsed,
+        bot: {
+          symbols,
+          mode: "backtest",
+          benchmark: botConfig.benchmark || "SPY",
+          capital: Number(botConfig.starting_equity) || 0,
+          rebalance_days:
+            botConfig.disableRebalance === true
+              ? undefined
+              : botConfig.rebalance_days
                 ? Number(botConfig.rebalance_days)
                 : undefined,
-            top_n:
-              botConfig.disableRebalance === true
-                ? undefined
-                : botConfig.top_n
+          top_n:
+            botConfig.disableRebalance === true
+              ? undefined
+              : botConfig.top_n
                 ? Number(botConfig.top_n)
                 : undefined,
-            commission_per_trade: botConfig.commission_per_trade
-              ? Number(botConfig.commission_per_trade)
-              : undefined,
-            commission_pct: botConfig.commission_pct
-              ? Number(botConfig.commission_pct)
-              : undefined,
-            slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
-          },
-          param_grid: grid,
-          start_date: botConfig.start_date,
-          end_date: botConfig.end_date,
-          label: batchLabel,
-        };
-        const res = await createBatchBacktest(payload, token);
-        setBatchId(String(res.batch_id));
-        setBatchStatus(res.status);
-        setBatchRuns([]);
+          commission_per_trade: botConfig.commission_per_trade
+            ? Number(botConfig.commission_per_trade)
+            : undefined,
+          commission_pct: botConfig.commission_pct
+            ? Number(botConfig.commission_pct)
+            : undefined,
+          slippage_bps: botConfig.slippage_bps ? Number(botConfig.slippage_bps) : undefined,
+        },
+        param_grid: grid,
+        start_date: botConfig.start_date,
+        end_date: botConfig.end_date,
+        label: batchLabel,
+      };
+      const res = await createBatchBacktest(payload, token);
+      setBatchId(String(res.batch_id));
+      setBatchStatus(res.status);
+      setBatchRuns([]);
     } catch (err) {
       if (err.payload?.errors) {
         setStrategyErrors(err.payload.errors);
@@ -452,28 +430,13 @@ export default function StrategyBacktestPage({ onNavigate }) {
     if (first && !chartSymbol) {
       setChartSymbol(first);
     }
+
+
   }, [botConfig.symbols, chartSymbol]);
 
   const trades = useMemo(() => result?.trades || [], [result]);
-  const priceDomain = useMemo(() => {
-    if (!priceData.length) return null;
-    const values = [];
-    priceData.forEach((row) => {
-      ["close", "close_in_position", "close_out_position", "sma_fast", "sma_slow"].forEach((key) => {
-        const v = Number(row[key]);
-        if (Number.isFinite(v)) values.push(v);
-      });
-    });
-    if (!values.length) return null;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-    const padding = (max - min) * 0.1 || Math.max(Math.abs(min) * 0.1, 1);
-    return {
-      min: min - padding,
-      max: max + padding,
-    };
-  }, [priceData]);
+  const normalizedCandles = useMemo(() => normalizeCandles(priceData), [priceData]);
+  const normalizedOrders = useMemo(() => normalizeOrders(trades), [trades]);
 
   const markerDebug = useMemo(() => {
     const rows = priceData
@@ -726,8 +689,8 @@ export default function StrategyBacktestPage({ onNavigate }) {
       botConfig.disableRebalance === true
         ? undefined
         : botConfig.top_n
-        ? Number(botConfig.top_n)
-        : undefined;
+          ? Number(botConfig.top_n)
+          : undefined;
     return {
       symbols,
       mode,
@@ -737,8 +700,8 @@ export default function StrategyBacktestPage({ onNavigate }) {
         botConfig.disableRebalance === true
           ? undefined
           : botConfig.rebalance_days
-          ? Number(botConfig.rebalance_days)
-          : undefined,
+            ? Number(botConfig.rebalance_days)
+            : undefined,
       top_n: topN,
       commission_per_trade: botConfig.commission_per_trade
         ? Number(botConfig.commission_per_trade)
@@ -839,234 +802,34 @@ export default function StrategyBacktestPage({ onNavigate }) {
         </div>
       </div>
 
-      <div className="sbp-grid two-col">
-        <div className="space-y-3">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Templates</div>
-              {templateErr && (
-                <span className="text-[11px] text-rose-300">{templateErr}</span>
-              )}
-            </div>
-            {templates.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => applyTemplate(tpl)}
-                className={`w-full text-left px-3 py-2 rounded-xl border transition ${
-                  selectedTemplate === tpl.id
-                    ? "border-amber-400/70 bg-amber-400/10 text-amber-100"
-                    : "border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-200"
-                }`}
-              >
-                <div className="font-semibold text-sm">{tpl.name}</div>
-                <div className="text-[11px] text-slate-400">{tpl.description}</div>
-              </button>
-            ))}
-            {!templates.length && !templateErr && (
-              <div className="text-xs text-slate-500">Loading templates...</div>
-            )}
-          </div>
 
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="text-sm font-semibold">StrategySpec JSON</div>
-                <div className="text-[11px] text-slate-400">
-                  This is the strategy JSON spec. Edit freely or start from a template above.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleValidate}
-                disabled={isValidating}
-                className="btn-primary disabled:opacity-60"
-              >
-                {isValidating ? "Validating..." : "Validate Strategy"}
-              </button>
-            </div>
 
-            <textarea
-              value={strategyText}
-              onChange={(e) => {
-                setStrategyText(e.target.value);
-                setSelectedTemplateId("custom");
-                setSelectedTemplate("custom");
-              }}
-              rows={18}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-100 focus:border-amber-500 focus:outline-none"
-            />
-
-            {parseError && (
-              <div className="mt-2 text-xs text-rose-300">
-                JSON parse error: {parseError}
-              </div>
-            )}
-            {validationMsg && (
-              <div className="mt-2 text-xs text-emerald-300">{validationMsg}</div>
-            )}
-            {strategyErrors.length > 0 && (
-              <div className="mt-2 text-xs text-amber-200 space-y-1">
-                {strategyErrors.map((err, idx) => (
-                  <div key={`${err.field}-${idx}`}>
-                    {err.field}: {err.message}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="text-sm font-semibold">Bot config (backtest)</div>
-            <div className="space-y-2 text-sm">
-              <label className="block">
-                <span className="text-xs text-slate-400">Symbols (comma-separated)</span>
-                <input
-                  value={botConfig.symbols}
-                  onChange={(e) => updateBotConfig("symbols", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                  placeholder="AAPL, MSFT, SPY"
-                />
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block">
-                  <span className="text-xs text-slate-400">Start date</span>
-                  <input
-                    type="date"
-                    value={botConfig.start_date}
-                    onChange={(e) => updateBotConfig("start_date", e.target.value)}
-                    className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-slate-400">End date</span>
-                  <input
-                    type="date"
-                    value={botConfig.end_date}
-                    onChange={(e) => updateBotConfig("end_date", e.target.value)}
-                    className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                  />
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Rebalance days</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={botConfig.rebalance_days}
-                  onChange={(e) => updateBotConfig("rebalance_days", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                  placeholder="5"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Starting equity</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={botConfig.starting_equity}
-                  onChange={(e) => updateBotConfig("starting_equity", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Commission per trade</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={botConfig.commission_per_trade}
-                  onChange={(e) => updateBotConfig("commission_per_trade", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Commission pct</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={botConfig.commission_pct}
-                  onChange={(e) => updateBotConfig("commission_pct", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Slippage (bps)</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={botConfig.slippage_bps}
-                  onChange={(e) => updateBotConfig("slippage_bps", e.target.value)}
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </label>
-
-              <label className="flex items-center gap-2 text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={botConfig.disableRebalance}
-                  onChange={(e) => updateBotConfig("disableRebalance", e.target.checked)}
-                />
-                <span>Disable rebalancing (default on)</span>
-              </label>
-
-              <label className="block">
-                <span className="text-xs text-slate-400">Mode</span>
-                <input
-                  value="backtest"
-                  readOnly
-                  className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm text-slate-400"
-                />
-              </label>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleRun}
-              disabled={isRunning}
-              className="w-full btn-primary disabled:opacity-60 text-sm font-semibold text-center"
-            >
-              {isRunning ? "Running…" : "Run Backtest"}
-            </button>
-            {backtestError && (
-              <div className="text-xs text-rose-300">{backtestError}</div>
-            )}
-          </div>
-
-          {result && (
-            <div className="space-y-2">
-              <StatsTable stats={result.stats || {}} />
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="btn-primary text-xs"
-                  onClick={() =>
-                    setSingleBotModal({
-                      open: true,
-                      name: "",
-                      mode: "paper",
-                      saving: false,
-                      error: "",
-                    })
-                  }
-                >
-                  Create bot from this backtest
-                </button>
-                <div className="text-[11px] text-slate-400">
-                  Uses current strategy JSON and Bot Config settings.
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <BacktestControls
+        botConfig={botConfig}
+        onUpdateConfig={updateBotConfig}
+        strategyText={strategyText}
+        onStrategyTextChange={(val) => {
+          setStrategyText(val);
+          setSelectedTemplateId("custom");
+          setSelectedTemplate("custom");
+        }}
+        templates={templates}
+        selectedTemplateId={selectedTemplateId}
+        onSelectTemplate={(tplId) => applyTemplate(templates.find((tpl) => tpl.id === tplId))}
+        templateErr={templateErr}
+        validationMsg={validationMsg}
+        parseError={parseError}
+        strategyErrors={strategyErrors}
+        onValidate={handleValidate}
+        onRun={handleRun}
+        isValidating={isValidating}
+        isRunning={isRunning}
+        backtestError={backtestError}
+        chartSymbol={chartSymbol}
+        onChangeChartSymbol={(sym) => setChartSymbol(sym ? sym.toUpperCase() : "")}
+        onLoadChart={loadChartData}
+        chartLoading={chartLoading}
+      />
 
       {result?.equity_curve && result.equity_curve.length > 0 && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
@@ -1131,40 +894,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
           <div className="text-xs text-rose-300">{chartError}</div>
         )}
         {chartLoading && <div className="text-xs text-slate-400">Loading chart…</div>}
-        {!chartLoading && (
-          <div className="w-full h-80">
-            {priceData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={priceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                  <YAxis
-                    tick={{ fontSize: 10 }}
-                    domain={["auto", "auto"]}
-                    allowDecimals
-                  />
-                <Tooltip
-                  formatter={(val, name) => [
-                    typeof val === "number" ? val.toFixed(2) : val,
-                    name,
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="close"
-                  name="Close"
-                  stroke="#a78bfa"
-                  dot={false}
-                  connectNulls={false}
-                  strokeWidth={2}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-xs text-slate-500">No price data yet.</div>
-          )}
-          </div>
-        )}
+        {!chartLoading && <BacktestChart candles={normalizedCandles} orders={normalizedOrders} />}
         {!chartLoading && markerDebug.length > 0 && (
           <div className="mt-3 text-[11px] text-slate-300 space-y-1">
             <div className="font-semibold">Order marker coordinates (x=date, y=price)</div>
@@ -1491,44 +1221,44 @@ export default function StrategyBacktestPage({ onNavigate }) {
                           </span>
                         )}
                       </td>
-                    <td className="py-1.5 pr-2 whitespace-pre">
-                      {JSON.stringify(run.params || {})}
-                    </td>
-                    <td className="py-1.5 pr-2">{run.status}</td>
-                    <td className="py-1.5 pr-2">
-                      {run.stats?.return_pct != null
-                        ? run.stats.return_pct
-                        : run.stats?.total_return}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {run.stats?.max_drawdown_pct != null
-                        ? run.stats.max_drawdown_pct
-                        : run.stats?.max_drawdown}
-                    </td>
-                    <td className="py-1.5 pr-2">{run.stats?.sharpe_ratio}</td>
-                    <td className="py-1.5 pr-2 text-rose-300">{run.error || "-"}</td>
-                    <td className="py-1.5 pr-2 text-right">
-                      {run.status === "completed" && run.stats ? (
-                        <button
-                          type="button"
-                          className="btn-secondary text-xs"
-                          onClick={() =>
-                            setPromoteModal({
-                              open: true,
-                              run,
-                              name: "",
-                              mode: "paper",
-                              saving: false,
-                              error: "",
-                            })
-                          }
-                        >
-                          Create Bot
-                        </button>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
+                      <td className="py-1.5 pr-2 whitespace-pre">
+                        {JSON.stringify(run.params || {})}
+                      </td>
+                      <td className="py-1.5 pr-2">{run.status}</td>
+                      <td className="py-1.5 pr-2">
+                        {run.stats?.return_pct != null
+                          ? run.stats.return_pct
+                          : run.stats?.total_return}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {run.stats?.max_drawdown_pct != null
+                          ? run.stats.max_drawdown_pct
+                          : run.stats?.max_drawdown}
+                      </td>
+                      <td className="py-1.5 pr-2">{run.stats?.sharpe_ratio}</td>
+                      <td className="py-1.5 pr-2 text-rose-300">{run.error || "-"}</td>
+                      <td className="py-1.5 pr-2 text-right">
+                        {run.status === "completed" && run.stats ? (
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs"
+                            onClick={() =>
+                              setPromoteModal({
+                                open: true,
+                                run,
+                                name: "",
+                                mode: "paper",
+                                saving: false,
+                                error: "",
+                              })
+                            }
+                          >
+                            Create Bot
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -1619,82 +1349,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
         </div>
       )}
 
-      {trades.length > 0 && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-          <div className="text-sm font-semibold mb-3">Trades</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="text-slate-400 border-b border-slate-800">
-                <tr className="text-left">
-                  <th className="py-2 pr-2">Symbol</th>
-                  <th className="py-2 pr-2">Action</th>
-                  <th className="py-2 pr-2">Qty</th>
-                  <th className="py-2 pr-2">Entry</th>
-                  <th className="py-2 pr-2">Exit</th>
-                  <th className="py-2 pr-2">Price</th>
-                  <th className="py-2 pr-2">PnL $</th>
-                  <th className="py-2 pr-2">PnL %</th>
-                  <th className="py-2 pr-2">Days held</th>
-                  <th className="py-2 pr-2">Entry time</th>
-                  <th className="py-2 pr-2">Exit time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((t, idx) => (
-                  <tr
-                    key={`${t.symbol || "trade"}-${idx}`}
-                    className="border-t border-slate-900 hover:bg-slate-900/50"
-                  >
-                    <td className="py-1.5 pr-2 font-semibold">
-                      {t.symbol || "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">{t.action || t.side || "-"}</td>
-                    <td className="py-1.5 pr-2">
-                      {t.qty != null
-                        ? Number(t.qty).toFixed(2)
-                        : t.quantity != null
-                        ? Number(t.quantity).toFixed(2)
-                        : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.entry_price != null
-                        ? Number(t.entry_price).toFixed(2)
-                        : t.price != null
-                        ? Number(t.price).toFixed(2)
-                        : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.exit_price != null ? Number(t.exit_price).toFixed(2) : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {typeof t.price === "number"
-                        ? Number(t.price).toFixed(2)
-                        : t.fill_price != null
-                        ? Number(t.fill_price).toFixed(2)
-                        : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.pnl != null ? Number(t.pnl).toFixed(2) : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.pnl_pct != null ? `${Number(t.pnl_pct).toFixed(2)}%` : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.days_held != null ? Number(t.days_held).toFixed(2) : "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.entry_time || t.entry_ts || t.open_time || t.timestamp || t.time || "-"}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {t.exit_time || t.exit_ts || t.close_time || "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {trades.length > 0 && <BacktestOrdersTable orders={trades} />}
 
       {singleBotModal.open && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
