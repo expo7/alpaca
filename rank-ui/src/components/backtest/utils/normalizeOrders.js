@@ -1,10 +1,25 @@
-export function normalizeOrders(rawTrades = []) {
+export function normalizeOrders(rawTrades = [], candles = []) {
   const rows = [];
+  // helper to find nearest candle by date/ts
+  const nearestBar = (tsVal) => {
+    if (tsVal == null || !candles.length) return undefined;
+    let best = undefined;
+    let bestDiff = Infinity;
+    candles.forEach((c) => {
+      const diff = Math.abs((c.ts ?? 0) - tsVal);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = c.barIndex;
+      }
+    });
+    return best;
+  };
+
   (rawTrades || []).forEach((t, idx) => {
-    const entryDate = (t.entry_time || t.timestamp || t.time || "").slice(0, 19);
-    const exitDate = (t.exit_time || "").slice(0, 19);
-    const entryTs = entryDate ? new Date(entryDate).getTime() : null;
-    const exitTs = exitDate ? new Date(exitDate).getTime() : null;
+    const entryDateStr = (t.entry_time || t.timestamp || t.time || "").slice(0, 10);
+    const exitDateStr = (t.exit_time || "").slice(0, 10);
+    const entryTs = entryDateStr ? new Date(entryDateStr).getTime() : null;
+    const exitTs = exitDateStr ? new Date(exitDateStr).getTime() : null;
 
     if (entryTs != null) {
       rows.push({
@@ -12,6 +27,8 @@ export function normalizeOrders(rawTrades = []) {
         symbol: t.symbol || "",
         side: "buy",
         ts: entryTs,
+        date: entryDateStr,
+        barIndex: nearestBar(entryTs),
         price:
           t.entry_price != null
             ? Number(t.entry_price)
@@ -30,6 +47,8 @@ export function normalizeOrders(rawTrades = []) {
         symbol: t.symbol || "",
         side: "sell",
         ts: exitTs,
+        date: exitDateStr,
+        barIndex: nearestBar(exitTs),
         price: t.exit_price != null ? Number(t.exit_price) : null,
         qty: t.qty ?? t.quantity ?? null,
       });

@@ -5,7 +5,9 @@ export function normalizeCandles(raw = []) {
       const ts = date ? new Date(date).getTime() : idx;
       return {
         date: typeof date === "string" ? date.slice(0, 10) : date,
+        timestamp: typeof date === "string" ? date : String(date),
         ts,
+        barIndex: idx,
         open: Number(c.open ?? c.o ?? c.Open ?? 0),
         high: Number(c.high ?? c.h ?? c.High ?? 0),
         low: Number(c.low ?? c.l ?? c.Low ?? 0),

@@ -1,10 +1,12 @@
 export function mergeOrdersIntoCandles(candles = [], orders = []) {
   if (!candles.length) return [];
-  const byTs = new Map();
-  candles.forEach((c) => byTs.set(c.ts, { ...c }));
+  const byIndex = new Map();
+  candles.forEach((c) => {
+    byIndex.set(c.barIndex, { ...c, buyPrice: null, sellPrice: null });
+  });
 
   orders.forEach((o) => {
-    const bucket = byTs.get(o.ts);
+    const bucket = byIndex.get(o.barIndex);
     if (!bucket) return;
     if (o.side === "buy") {
       bucket.buyPrice = o.price;
@@ -13,7 +15,7 @@ export function mergeOrdersIntoCandles(candles = [], orders = []) {
     }
   });
 
-  return Array.from(byTs.values()).sort((a, b) => a.ts - b.ts);
+  return Array.from(byIndex.values()).sort((a, b) => a.barIndex - b.barIndex);
 }
 
 export default mergeOrdersIntoCandles;

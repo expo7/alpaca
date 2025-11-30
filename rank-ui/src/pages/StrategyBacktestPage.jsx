@@ -1,24 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  ComposedChart,
-  Scatter,
-  ReferenceLine,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  validateStrategy,
-  runBacktest,
-  createBatchBacktest,
-  getBatchBacktest,
-} from "../api/backtests.js";
+import { validateStrategy, runBacktest, createBatchBacktest, getBatchBacktest } from "../api/backtests.js";
 import { createBot } from "../api/bots.js";
 import { STRATEGY_TEMPLATES } from "../strategies/templates.js";
 import BacktestChart from "../components/backtest/BacktestChart.jsx";
@@ -27,6 +9,7 @@ import BacktestOrdersTable from "../components/backtest/BacktestOrdersTable.jsx"
 import BacktestControls from "../components/backtest/BacktestControls.jsx";
 import normalizeCandles from "../components/backtest/utils/normalizeCandles.js";
 import normalizeOrders from "../components/backtest/utils/normalizeOrders.js";
+import mergeOrdersIntoCandles from "../components/backtest/utils/mergeOrdersIntoCandles.js";
 
 const BASE = "http://127.0.0.1:8000";
 
@@ -41,7 +24,6 @@ function formatDate(offsetDays = 0) {
 function pretty(obj) {
   return JSON.stringify(obj, null, 2);
 }
-
 export default function StrategyBacktestPage({ onNavigate }) {
   const { token } = useAuth();
 
@@ -74,11 +56,6 @@ export default function StrategyBacktestPage({ onNavigate }) {
   });
 
   const [result, setResult] = useState(null);
-  const formatTsDate = useCallback((v) => {
-    if (!Number.isFinite(v)) return "-";
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? "-" : d.toISOString().slice(0, 10);
-  }, []);
 
   // Batch state
   const [paramGridRows, setParamGridRows] = useState([{ name: "", values: "" }]);
@@ -436,56 +413,120 @@ export default function StrategyBacktestPage({ onNavigate }) {
 
   const trades = useMemo(() => result?.trades || [], [result]);
   const normalizedCandles = useMemo(() => normalizeCandles(priceData), [priceData]);
-  const normalizedOrders = useMemo(() => normalizeOrders(trades), [trades]);
+  const normalizedOrders = useMemo(() => normalizeOrders(trades, normalizedCandles), [trades, normalizedCandles]);
 
-  const markerDebug = useMemo(() => {
-    const rows = priceData
-      .filter((d) => d.buy_marker != null || d.sell_marker != null)
-      .map((d) => ({
-        date: d.date,
-        buy: d.buy_marker != null ? Number(d.buy_marker) : null,
-        sell: d.sell_marker != null ? Number(d.sell_marker) : null,
+  // Helper: lightweight console diagnostics for chart data shape
+  const logChartData = useCallback((label, data) => {
+    if (!Array.isArray(data)) {
+      console.log(`[ChartData] ${label}: not an array`, data);
+      return;
+    }
+    const sample = data.slice(0, 3);
+    const keys = sample[0] ? Object.keys(sample[0]) : [];
+    console.log(`[ChartData] ${label}: length=${data.length}, keys=${keys.join(",")}`);
+    sample.forEach((row, idx) => {
+      const typed = Object.fromEntries(Object.entries(row || {}).map(([k, v]) => [k, typeof v]));
+      console.log(`[ChartData] ${label} sample[${idx}]`, row, typed);
+    });
+  }, []);
+  const priceChartDataFull = useMemo(() => {
+    const symbol = (chartSymbol || "").toUpperCase();
+    const base = normalizedCandles
+      .filter((c) => {
+        if (!symbol) return true;
+        return (c.symbol || "").toUpperCase() === symbol || !c.symbol;
+      })
+      .map((c) => ({
+        ...c,
+        barIndex: c.barIndex,
+        timestamp: c.timestamp || c.date,
+        sma20: c.sma_fast,
+        sma50: c.sma_slow,
+        macdSignal: c.macd_signal,
       }));
-    return rows.sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
-  }, [priceData]);
+    const filteredOrders = normalizedOrders.filter((o) => {
+      if (!symbol) return true;
+      const osym = (o.symbol || "").toUpperCase();
+      return !osym || osym === symbol;
+    });
+    return mergeOrdersIntoCandles(base, filteredOrders);
+  }, [chartSymbol, normalizedCandles, normalizedOrders]);
 
-  const buyPoints = useMemo(
+  const rsiBuyLevel =
+    strategyIndicators.rsi_entry != null ? Number(strategyIndicators.rsi_entry) : undefined;
+  const rsiSellLevel =
+    strategyIndicators.rsi_exit != null ? Number(strategyIndicators.rsi_exit) : undefined;
+
+  const equityDataFull = useMemo(() => {
+    const eq = result?.equity_curve || [];
+    return eq
+      .map((pt, idx) => {
+        const tsVal = pt.date || pt.time || null;
+        const tsNum = tsVal ? new Date(tsVal).getTime() : idx;
+        return {
+          timestamp: tsVal ? String(tsVal).slice(0, 10) : String(idx),
+          ts: tsNum,
+          barIndex: idx,
+          equity: Number(pt.value ?? pt.equity ?? pt.amount ?? 0),
+        };
+      })
+      .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.equity));
+  }, [result]);
+
+  const { alignedPriceData, alignedEquityData } = useMemo(() => {
+    const priceBarIndexes = priceChartDataFull.map((p) => p.barIndex);
+    const equityBarIndexes = equityDataFull.map((e) => e.barIndex);
+
+    const priceStart = priceBarIndexes.length ? Math.min(...priceBarIndexes) : null;
+    const priceEnd = priceBarIndexes.length ? Math.max(...priceBarIndexes) : null;
+
+    const rsiBarIndexes = priceChartDataFull
+      .filter((p) => typeof p.rsi === "number" && !Number.isNaN(p.rsi))
+      .map((p) => p.barIndex);
+    const rsiStart = rsiBarIndexes.length ? Math.min(...rsiBarIndexes) : null;
+
+    const equityStart = equityBarIndexes.length ? Math.min(...equityBarIndexes) : null;
+    const equityEnd = equityBarIndexes.length ? Math.max(...equityBarIndexes) : null;
+
+    const starts = [priceStart, rsiStart, equityStart].filter((v) => v != null);
+    const globalStart = starts.length ? Math.max(...starts) : null;
+
+    const ends = [priceEnd, equityEnd].filter((v) => v != null);
+    const globalEnd = ends.length ? Math.min(...ends) : null;
+
+    if (globalStart == null || globalEnd == null || globalStart >= globalEnd) {
+      console.log("[ChartData] alignment skipped", { priceStart, rsiStart, equityStart, priceEnd, equityEnd });
+      return { alignedPriceData: priceChartDataFull, alignedEquityData: equityDataFull };
+    }
+
+    console.log("[ChartData] alignment range", { globalStart, globalEnd, priceStart, rsiStart, equityStart, priceEnd, equityEnd });
+
+    return {
+      alignedPriceData: priceChartDataFull.filter(
+        (p) => p.barIndex >= globalStart && p.barIndex <= globalEnd
+      ),
+      alignedEquityData: equityDataFull.filter(
+        (e) => e.barIndex >= globalStart && e.barIndex <= globalEnd
+      ),
+    };
+  }, [priceChartDataFull, equityDataFull]);
+
+  const chartSymbols = useMemo(
     () =>
-      priceData
-        .filter((d) => d.buy_marker != null)
-        .map((d) => ({
-          date: d.date,
-          ts: d.date ? new Date(d.date).getTime() : null,
-          price: Number(d.buy_marker),
-        }))
-        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
-        .sort((a, b) => a.ts - b.ts),
-    [priceData]
+      (botConfig.symbols || "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean),
+    [botConfig.symbols]
   );
-  const sellPoints = useMemo(
-    () =>
-      priceData
-        .filter((d) => d.sell_marker != null)
-        .map((d) => ({
-          date: d.date,
-          ts: d.date ? new Date(d.date).getTime() : null,
-          price: Number(d.sell_marker),
-        }))
-        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
-        .sort((a, b) => a.ts - b.ts),
-    [priceData]
-  );
-  const priceLinePoints = useMemo(
-    () =>
-      priceData
-        .map((d) => ({
-          ts: d.date ? new Date(d.date).getTime() : null,
-          price: Number(d.close),
-        }))
-        .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.price))
-        .sort((a, b) => a.ts - b.ts),
-    [priceData]
-  );
+
+  useEffect(() => {
+    logChartData("priceChartDataFull", priceChartDataFull);
+    logChartData("equityDataFull", equityDataFull);
+    logChartData("alignedPriceData", alignedPriceData);
+    logChartData("alignedEquityData", alignedEquityData);
+  }, [priceChartDataFull, equityDataFull, alignedPriceData, alignedEquityData, logChartData]);
+
 
   const loadChartData = useCallback(
     async (symbol) => {
@@ -831,209 +872,40 @@ export default function StrategyBacktestPage({ onNavigate }) {
         chartLoading={chartLoading}
       />
 
-      {result?.equity_curve && result.equity_curve.length > 0 && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-          <div className="text-sm font-semibold mb-2">Equity curve</div>
-          <div className="w-full h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={equityCurveData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} domain={["auto", "auto"]} allowDataOverflow={false} />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  name="Equity"
-                  strokeWidth={2}
-                  stroke="#a78bfa"
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Price, orders & indicators</div>
+          <div className="text-sm font-semibold">Chart: {chartSymbol || "Select symbol"}</div>
           <div className="flex items-center gap-2 text-xs">
-            {((botConfig.symbols || "").split(",").map((s) => s.trim()).filter(Boolean).length > 1) && (
-              <>
-                <span className="text-slate-400">Symbol</span>
-                <select
-                  value={chartSymbol}
-                  onChange={(e) => setChartSymbol(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs"
-                >
-                  {(botConfig.symbols || "")
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                    .map((sym) => (
-                      <option key={sym} value={sym.toUpperCase()}>
-                        {sym.toUpperCase()}
-                      </option>
-                    ))}
-                </select>
-              </>
-            )}
+            <select
+              value={chartSymbol}
+              onChange={(e) => setChartSymbol(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs"
+            >
+              {chartSymbols.length === 0 && <option value="">No symbols</option>}
+              {chartSymbols.map((sym) => (
+                <option key={sym} value={sym}>
+                  {sym}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
-              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-xs"
               onClick={() => loadChartData(chartSymbol)}
               disabled={!chartSymbol || chartLoading}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-xs disabled:opacity-60"
             >
               {chartLoading ? "Loading…" : "Load chart"}
             </button>
           </div>
         </div>
-        {chartError && (
-          <div className="text-xs text-rose-300">{chartError}</div>
-        )}
-        {chartLoading && <div className="text-xs text-slate-400">Loading chart…</div>}
-        {!chartLoading && <BacktestChart candles={normalizedCandles} orders={normalizedOrders} />}
-        {!chartLoading && markerDebug.length > 0 && (
-          <div className="mt-3 text-[11px] text-slate-300 space-y-1">
-            <div className="font-semibold">Order marker coordinates (x=date, y=price)</div>
-            <div className="space-y-1">
-              {markerDebug.map((m) => (
-                <div
-                  key={m.date}
-                  className="flex justify-between bg-slate-950 border border-slate-800 rounded-lg px-2 py-1"
-                >
-                  <span className="text-slate-400">{m.date}</span>
-                  <span className="flex gap-2">
-                    <span className={m.buy != null ? "text-emerald-300" : "text-slate-500"}>
-                      B:{m.buy != null ? m.buy.toFixed(2) : "-"}
-                    </span>
-                    <span className={m.sell != null ? "text-rose-300" : "text-slate-500"}>
-                      S:{m.sell != null ? m.sell.toFixed(2) : "-"}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+
+        <BacktestChart
+          priceData={alignedPriceData}
+          equityData={alignedEquityData}
+          rsiBuyLevel={rsiBuyLevel}
+          rsiSellLevel={rsiSellLevel}
+        />
       </div>
-
-      {!chartLoading && (buyPoints.length > 0 || sellPoints.length > 0) && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
-          <div className="text-sm font-semibold">Entry / exit markers (separate panel)</div>
-          <div className="w-full h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={priceLinePoints.length ? priceLinePoints : [{ ts: 0, price: 0 }]}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  dataKey="ts"
-                  tick={{ fontSize: 10 }}
-                  domain={["auto", "auto"]}
-                  tickFormatter={formatTsDate}
-                />
-                <YAxis
-                  type="number"
-                  dataKey="price"
-                  tick={{ fontSize: 10 }}
-                  domain={[140, 280]}
-                />
-                <Tooltip
-                  formatter={(val, name) => [
-                    typeof val === "number" ? val.toFixed(2) : val,
-                    name,
-                  ]}
-                  labelFormatter={formatTsDate}
-                />
-                <Line type="monotone" dataKey="price" name="Close" stroke="#a78bfa" dot={false} strokeWidth={1.8} />
-                {buyPoints.length > 0 && (
-                  <Scatter
-                    name="Buy"
-                    data={buyPoints.filter((m) => m.ts != null)}
-                    fill="#22c55e"
-                    shape="triangle"
-                  />
-                )}
-                {sellPoints.length > 0 && (
-                  <Scatter
-                    name="Sell"
-                    data={sellPoints.filter((m) => m.ts != null)}
-                    fill="#f87171"
-                    shape="triangleDown"
-                  />
-                )}
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {/* Indicator panel */}
-      {!chartLoading &&
-        priceData.length > 0 &&
-        (priceData.some((d) => d.rsi != null) || priceData.some((d) => d.macd != null)) && (
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
-            <div className="text-sm font-semibold">Indicators</div>
-            <div className="w-full h-60">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={priceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
-                  <Tooltip
-                    formatter={(val, name) => [
-                      typeof val === "number" ? val.toFixed(2) : val,
-                      name,
-                    ]}
-                  />
-                  {strategyIndicators.rsi && priceData.some((d) => d.rsi != null) && (
-                    <>
-                      <Line
-                        type="monotone"
-                        dataKey="rsi"
-                        name="RSI"
-                        stroke="#38bdf8"
-                        dot={false}
-                        strokeDasharray="2 2"
-                      />
-                      {strategyIndicators.rsi_entry != null && (
-                        <ReferenceLine
-                          y={strategyIndicators.rsi_entry}
-                          stroke="#22c55e"
-                          strokeDasharray="3 3"
-                          label={{ value: "RSI Buy", position: "insideLeft", fill: "#22c55e", fontSize: 10 }}
-                        />
-                      )}
-                      {strategyIndicators.rsi_exit != null && (
-                        <ReferenceLine
-                          y={strategyIndicators.rsi_exit}
-                          stroke="#f97316"
-                          strokeDasharray="3 3"
-                          label={{ value: "RSI Sell", position: "insideLeft", fill: "#f97316", fontSize: 10 }}
-                        />
-                      )}
-                    </>
-                  )}
-                  {strategyIndicators.macd && priceData.some((d) => d.macd != null) && (
-                    <Line type="monotone" dataKey="macd" name="MACD" stroke="#e879f9" dot={false} />
-                  )}
-                  {strategyIndicators.macd && priceData.some((d) => d.macd_signal != null) && (
-                    <Line
-                      type="monotone"
-                      dataKey="macd_signal"
-                      name="MACD Signal"
-                      stroke="#fbbf24"
-                      dot={false}
-                      strokeDasharray="5 2"
-                    />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
 
       {/* Batch backtest / optimizer */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
