@@ -47,6 +47,13 @@ async function apiFetch(path, token, options = {}) {
   return data;
 }
 
-export async function getMacroDashboard(token) {
-  return apiFetch("/api/macro/dashboard/", token, { method: "GET" });
+export async function getMacroDashboard(token, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiFetch(`/api/macro/dashboard/${suffix}`, token, { method: "GET" });
 }

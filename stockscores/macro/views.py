@@ -6,6 +6,11 @@ from rest_framework.views import APIView
 
 from .data_fetchers import fetch_macro_dataset
 from .narrative import build_narrative, build_playbook
+from .options_engine import (
+    build_trade_context,
+    generate_option_suggestions,
+    rank_option_suggestions,
+)
 from .regimes import compute_confidence_score, compute_regime_scores, determine_regime_label
 from .signals import build_signal_table
 
@@ -21,6 +26,16 @@ class MacroDashboardView(APIView):
         confidence = compute_confidence_score(scores)
         narrative = build_narrative(scores, regime_label)
         playbook = build_playbook(regime_label)
+
+        trade_context = build_trade_context(
+            regime=regime_label,
+            confidence=confidence,
+            risk_tolerance=request.query_params.get("risk_tolerance", "moderate"),
+            position_context=request.query_params.get("position_context", "flat"),
+            iv_context=request.query_params.get("iv_context", "normal"),
+        )
+        option_candidates = generate_option_suggestions(trade_context)
+        option_suggestions = rank_option_suggestions(option_candidates, trade_context)
 
         as_of_candidates = []
         for item in dataset.values():
@@ -51,5 +66,9 @@ class MacroDashboardView(APIView):
                 ],
                 "narrative": narrative,
                 "playbook": playbook,
+                "options_engine": {
+                    "trade_context": trade_context,
+                    "suggestions": option_suggestions,
+                },
             }
         )

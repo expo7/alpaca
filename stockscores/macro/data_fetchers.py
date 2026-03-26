@@ -27,7 +27,7 @@ TRACKED_ASSETS: List[TrackedAsset] = [
     TrackedAsset("USDJPY", "USD/JPY", ["JPY=X"]),
     TrackedAsset("EURUSD", "EUR/USD", ["EURUSD=X"]),
     TrackedAsset("CRUDE", "WTI Crude", ["CL=F"]),
-    TrackedAsset("GOLD", "Gold", ["GC=F"]),
+    TrackedAsset("GOLD", "Gold", ["GLD", "GC=F"]),
     TrackedAsset("COPPER", "Copper", ["HG=F"]),
     TrackedAsset("SPY", "SPDR S&P 500 ETF", ["SPY"]),
     TrackedAsset("QQQ", "Invesco QQQ", ["QQQ"]),

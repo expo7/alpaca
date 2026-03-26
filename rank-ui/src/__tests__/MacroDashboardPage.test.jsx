@@ -47,6 +47,30 @@ describe("MacroDashboardPage", () => {
                                 unfavorable_assets: ["DXY"],
                                 notes: "Stay pro-cyclical.",
                             },
+                            options_engine: {
+                                trade_context: {
+                                    regime: "Risk-On Expansion",
+                                    confidence: 72,
+                                    risk_tolerance: "moderate",
+                                    position_context: "flat",
+                                    iv_context: "normal",
+                                },
+                                suggestions: [
+                                    {
+                                        strategy: "call_spread",
+                                        label: "Bull Call Spread",
+                                        priority: 78,
+                                        reason: "Express upside bias with capped cost and bounded risk.",
+                                        setup: {
+                                            dte: "30-60",
+                                            delta_target: "0.30-0.40 long call",
+                                            bias: "bullish",
+                                        },
+                                        fits_when: ["risk_on", "uptrend"],
+                                        avoid_when: ["strong_bear_trend"],
+                                    },
+                                ],
+                            },
                         })
                     );
                 }
@@ -63,6 +87,8 @@ describe("MacroDashboardPage", () => {
         await waitFor(() => expect(screen.getByText("Risk-On Expansion")).toBeInTheDocument());
         expect(screen.getByText("Growth Score")).toBeInTheDocument();
         expect(screen.getByText("Cross-Asset Signals")).toBeInTheDocument();
+        expect(screen.getByText("Options Engine")).toBeInTheDocument();
+        expect(screen.getByText("Bull Call Spread")).toBeInTheDocument();
         expect(screen.getByText("SPY")).toBeInTheDocument();
     });
 });

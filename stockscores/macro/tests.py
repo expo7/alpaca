@@ -5,6 +5,11 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from .data_fetchers import _extract_close_series
+from .options_engine import (
+    build_trade_context,
+    generate_option_suggestions,
+    rank_option_suggestions,
+)
 from .regimes import compute_confidence_score, compute_regime_scores, determine_regime_label
 
 
@@ -185,7 +190,9 @@ class MacroDashboardEndpointShapeTests(TestCase):
             }
         ]
 
-        res = self.client.get("/api/macro/dashboard/")
+        res = self.client.get(
+            "/api/macro/dashboard/?risk_tolerance=aggressive&position_context=flat&iv_context=high"
+        )
         body = res.json()
 
         self.assertEqual(res.status_code, 200)
@@ -196,5 +203,43 @@ class MacroDashboardEndpointShapeTests(TestCase):
         self.assertIn("signals", body)
         self.assertIn("narrative", body)
         self.assertIn("playbook", body)
+        self.assertIn("options_engine", body)
         self.assertIsInstance(body["signals"], list)
         self.assertIsInstance(body["scores"], dict)
+        self.assertIsInstance(body["options_engine"]["suggestions"], list)
+        self.assertEqual(body["options_engine"]["trade_context"]["risk_tolerance"], "aggressive")
+        self.assertEqual(body["options_engine"]["trade_context"]["position_context"], "flat")
+        self.assertEqual(body["options_engine"]["trade_context"]["iv_context"], "high")
+
+
+class MacroOptionsEngineTests(SimpleTestCase):
+    def test_tightening_risk_off_includes_bearish_and_cover_overlay(self):
+        ctx = build_trade_context(
+            regime="Tightening Risk-Off",
+            confidence=72,
+            risk_tolerance="moderate",
+            position_context="long_shares",
+            iv_context="high",
+        )
+
+        ranked = rank_option_suggestions(generate_option_suggestions(ctx), ctx)
+        strategies = {row["strategy"] for row in ranked}
+
+        self.assertIn("put_spread", strategies)
+        self.assertIn("call_credit_spread", strategies)
+        self.assertIn("covered_call", strategies)
+
+    def test_risk_on_expansion_includes_upside_structures(self):
+        ctx = build_trade_context(
+            regime="Risk-On Expansion",
+            confidence=68,
+            risk_tolerance="aggressive",
+            position_context="flat",
+            iv_context="low",
+        )
+
+        ranked = rank_option_suggestions(generate_option_suggestions(ctx), ctx)
+        strategies = {row["strategy"] for row in ranked}
+
+        self.assertIn("call_spread", strategies)
+        self.assertIn("cash_secured_put", strategies)

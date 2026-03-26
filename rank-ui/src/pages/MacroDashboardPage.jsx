@@ -6,12 +6,16 @@ import ScoreCard from "../components/macro/ScoreCard.jsx";
 import SignalTable from "../components/macro/SignalTable.jsx";
 import NarrativePanel from "../components/macro/NarrativePanel.jsx";
 import PlaybookPanel from "../components/macro/PlaybookPanel.jsx";
+import OptionsEnginePanel from "../components/macro/OptionsEnginePanel.jsx";
 
 export default function MacroDashboardPage() {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [data, setData] = useState(null);
+    const [riskTolerance, setRiskTolerance] = useState("moderate");
+    const [positionContext, setPositionContext] = useState("flat");
+    const [ivContext, setIvContext] = useState("normal");
 
     useEffect(() => {
         if (!token) return;
@@ -21,7 +25,11 @@ export default function MacroDashboardPage() {
             setLoading(true);
             setError("");
             try {
-                const payload = await getMacroDashboard(token);
+                const payload = await getMacroDashboard(token, {
+                    risk_tolerance: riskTolerance,
+                    position_context: positionContext,
+                    iv_context: ivContext,
+                });
                 if (!cancelled) setData(payload);
             } catch (err) {
                 if (!cancelled) setError(err.message || "Failed to load macro dashboard");
@@ -33,7 +41,7 @@ export default function MacroDashboardPage() {
         return () => {
             cancelled = true;
         };
-    }, [token]);
+    }, [token, riskTolerance, positionContext, ivContext]);
 
     if (!token) {
         return (
@@ -56,6 +64,7 @@ export default function MacroDashboardPage() {
     }
 
     const scores = data?.scores || {};
+    const optionSuggestions = data?.options_engine?.suggestions || [];
 
     return (
         <div className="p-4 lg:p-6 space-y-4">
@@ -84,6 +93,16 @@ export default function MacroDashboardPage() {
                 <NarrativePanel narrative={data?.narrative} />
                 <PlaybookPanel playbook={data?.playbook || {}} />
             </section>
+
+            <OptionsEnginePanel
+                riskTolerance={riskTolerance}
+                positionContext={positionContext}
+                ivContext={ivContext}
+                onRiskToleranceChange={setRiskTolerance}
+                onPositionContextChange={setPositionContext}
+                onIvContextChange={setIvContext}
+                suggestions={optionSuggestions}
+            />
 
             <section className="bg-slate-900/30 border border-slate-800 rounded-xl px-4 py-3">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
