@@ -21,6 +21,7 @@ import StrategyBacktestPage from "./pages/StrategyBacktestPage.jsx";
 import BotsPage from "./pages/BotsPage.jsx";
 import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
 import BotDetailPage from "./pages/BotDetailPage.jsx";
+import MacroDashboardPage from "./pages/MacroDashboardPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
 import useQuotes from "./hooks/useQuotes.js";
 
@@ -77,9 +78,8 @@ function IndicatorCell({
       <span>{formattedValue}</span>
       {showDelta && (
         <span
-          className={`text-xs ${
-            delta > 0 ? "text-emerald-400" : "text-rose-400"
-          }`}
+          className={`text-xs ${delta > 0 ? "text-emerald-400" : "text-rose-400"
+            }`}
         >
           {delta > 0 ? "+" : ""}
           {delta.toFixed(deltaPrecision)}
@@ -786,6 +786,8 @@ export default function App() {
         )}
 
         {page === "alerts" && <Alerts />}
+
+        {page === "macro" && <MacroDashboardPage />}
 
         {page === "strategy-backtest" && <StrategyBacktestPage onNavigate={setPage} />}
 

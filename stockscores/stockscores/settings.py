@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "ranker",
     "corsheaders",
     "paper.apps.PaperConfig",
+    "macro.apps.MacroConfig",
 ]
 
 MIDDLEWARE = [

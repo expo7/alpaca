@@ -9,6 +9,7 @@ from paper.api.api_urls import router as paper_router
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("ranker.urls")),
+    path("api/", include("macro.urls")),
     path("api/", include(paper_api_urls.urlpatterns)),
     path("api/", include(paper_router.urls)),
     # JWT

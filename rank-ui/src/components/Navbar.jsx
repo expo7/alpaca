@@ -7,6 +7,7 @@ import Logo from "./Logo.jsx";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "macro", label: "Macro" },
   { id: "watchlists", label: "Watchlists" },
   { id: "alerts", label: "Alerts" },
   { id: "orders", label: "Orders" },
@@ -50,10 +51,9 @@ export default function Navbar({
               type="button"
               onClick={() => onNavigate(tab.id)}
               className={`px-3 py-1.5 rounded-full border text-xs transition
-                ${
-                  active === tab.id
-                    ? "bg-indigo-600/90 border-indigo-500 text-white shadow-sm"
-                    : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
+                ${active === tab.id
+                  ? "bg-indigo-600/90 border-indigo-500 text-white shadow-sm"
+                  : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
                 }`}
             >
               {tab.label}
@@ -90,11 +90,10 @@ export default function Navbar({
             key={tab.id}
             type="button"
             onClick={() => onNavigate(tab.id)}
-            className={`px-3 py-1.5 rounded-full border whitespace-nowrap ${
-              active === tab.id
+            className={`px-3 py-1.5 rounded-full border whitespace-nowrap ${active === tab.id
                 ? "bg-indigo-600/90 border-indigo-500 text-white"
                 : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
+              }`}
           >
             {tab.label}
           </button>
