@@ -18,11 +18,18 @@ def _avg(values: List[Optional[float]]) -> float:
 
 def _metric(signals: Dict[str, dict], key: str, field: str) -> Optional[float]:
     item = signals.get(key) or {}
-    return item.get(field)
+    value = item.get(field)
+    return float(value) if value is not None else None
 
 
 def compute_regime_scores(signal_table: List[dict]) -> Dict[str, float]:
-    by_key = {row.get("key"): row for row in signal_table}
+    """Compute bounded regime scores from normalized cross-asset signals.
+
+    Inputs are intentionally simple price-derived metrics for interpretability.
+    """
+    by_key: Dict[str, dict] = {
+        str(row["key"]): row for row in signal_table if row.get("key") is not None
+    }
 
     growth_raw = _avg(
         [
@@ -53,19 +60,14 @@ def compute_regime_scores(signal_table: List[dict]) -> Dict[str, float]:
         ]
     )
 
-    hyg20 = _metric(by_key, "HYG", "ret_20d")
-    lqd20 = _metric(by_key, "LQD", "ret_20d")
-    high_yield_spread_proxy = None
-    if hyg20 is not None and lqd20 is not None:
-        high_yield_spread_proxy = hyg20 - lqd20
-
     risk_raw = _avg(
         [
             _metric(by_key, "SPY", "ret_20d"),
             _metric(by_key, "QQQ", "ret_20d"),
             _metric(by_key, "IWM", "ret_20d"),
             _metric(by_key, "EEM", "ret_20d"),
-            high_yield_spread_proxy,
+            _metric(by_key, "HYG", "ret_20d"),
+            _metric(by_key, "LQD", "ret_20d"),
             _metric(by_key, "USDJPY", "ret_20d"),
         ]
     )
@@ -81,18 +83,19 @@ def compute_regime_scores(signal_table: List[dict]) -> Dict[str, float]:
 
 
 def determine_regime_label(scores: Dict[str, float]) -> str:
+    """Map score combinations to one explicit human-readable regime label."""
     growth = scores.get("growth", 0.0)
     inflation = scores.get("inflation", 0.0)
     liquidity = scores.get("liquidity", 0.0)
     risk = scores.get("risk_appetite", 0.0)
 
-    if risk >= 20 and growth >= 20 and inflation < 25 and liquidity >= 0:
-        return "Risk-On Expansion"
-    if growth >= 10 and inflation >= 20:
-        return "Inflationary Expansion"
     if liquidity <= -15 and risk <= -10:
         return "Tightening Risk-Off"
-    if inflation <= -10 and risk <= 5:
+    if risk >= 20 and growth >= 20 and inflation < 25 and liquidity >= 0:
+        return "Risk-On Expansion"
+    if growth >= 10 and inflation >= 20 and risk >= 0:
+        return "Inflationary Expansion"
+    if inflation <= -10 and (risk <= 5 or growth <= 0):
         return "Disinflation / Defensive"
     return "Mixed / Transition"
 

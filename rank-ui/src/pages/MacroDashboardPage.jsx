@@ -84,6 +84,17 @@ export default function MacroDashboardPage() {
                 <NarrativePanel narrative={data?.narrative} />
                 <PlaybookPanel playbook={data?.playbook || {}} />
             </section>
+
+            <section className="bg-slate-900/30 border border-slate-800 rounded-xl px-4 py-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    How to read this dashboard
+                </h2>
+                <ul className="mt-2 space-y-1 text-xs text-slate-400 leading-relaxed">
+                    <li>Scores are proxy-based cross-asset signals, designed to summarize broad macro tone.</li>
+                    <li>Confidence reflects internal signal consistency, not a forecast probability.</li>
+                    <li>Regime labels are intentionally coarse and may compress transition periods.</li>
+                </ul>
+            </section>
         </div>
     );
 }

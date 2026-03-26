@@ -1,5 +1,22 @@
 const BASE = "http://127.0.0.1:8000";
 
+function looksLikeHtml(text = "") {
+  const normalized = String(text || "").trim().toLowerCase();
+  return normalized.startsWith("<!doctype html") || normalized.startsWith("<html");
+}
+
+function buildErrorMessage(res, data, text) {
+  if (looksLikeHtml(text)) {
+    return `Server error (${res.status}). Please try again.`;
+  }
+  return (
+    data.detail ||
+    data.error ||
+    data.message ||
+    `Request failed with status ${res.status}`
+  );
+}
+
 async function apiFetch(path, token, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -13,14 +30,20 @@ async function apiFetch(path, token, options = {}) {
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    data = { raw: text };
+    data = {};
   }
 
   if (!res.ok) {
-    const err = new Error(data.detail || data.error || data.message || data.raw || "Request failed");
+    const err = new Error(buildErrorMessage(res, data, text));
     err.payload = data;
+    err.status = res.status;
     throw err;
   }
+
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Unexpected server response format.");
+  }
+
   return data;
 }
 

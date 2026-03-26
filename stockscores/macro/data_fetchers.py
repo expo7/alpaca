@@ -42,11 +42,46 @@ def _extract_close_series(df: pd.DataFrame) -> pd.Series:
     if df is None or df.empty:
         return pd.Series(dtype=float)
 
-    for col in ("Adj Close", "Close"):
-        if col in df.columns:
-            series = pd.to_numeric(df[col], errors="coerce").dropna()
+    for target in ("Adj Close", "Close"):
+        for col in _candidate_columns(df, target):
+            series = _to_numeric_series(df[col]).dropna()
             if not series.empty:
                 return series
+
+    # Final fallback for unusual provider payloads with a single column.
+    if len(df.columns) == 1:
+        series = _to_numeric_series(df.iloc[:, 0]).dropna()
+        if not series.empty:
+            return series
+
+    return pd.Series(dtype=float)
+
+
+def _candidate_columns(df: pd.DataFrame, target: str) -> List[object]:
+    """Return concrete column labels matching target across flat/MultiIndex schemas."""
+    cols: List[object] = []
+    if isinstance(df.columns, pd.MultiIndex):
+        for col in df.columns:
+            if isinstance(col, tuple) and col and col[0] == target:
+                cols.append(col)
+    else:
+        if target in df.columns:
+            cols.append(target)
+    return cols
+
+
+def _to_numeric_series(value: object) -> pd.Series:
+    """Safely coerce a 1-D numeric Series without allowing 2-D objects."""
+    if isinstance(value, pd.Series):
+        return pd.to_numeric(value, errors="coerce")
+
+    # yfinance can produce 2-D frames for grouped columns; consume column-by-column.
+    if isinstance(value, pd.DataFrame):
+        for col in value.columns:
+            series = pd.to_numeric(value[col], errors="coerce")
+            if isinstance(series, pd.Series) and not series.dropna().empty:
+                return series
+        return pd.Series(dtype=float)
 
     return pd.Series(dtype=float)
 
