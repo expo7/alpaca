@@ -24,7 +24,6 @@ const tabs = [
 
 const V1_TABS = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "alerts", label: "Alerts" },
 ];
 
 export default function Navbar({
@@ -52,9 +51,9 @@ export default function Navbar({
           </div>
         </div>
 
-        {/* Center: nav tabs */}
+        {/* Center: nav tabs — hidden in V1 (single page) */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          {visibleTabs.map((tab) => (
+          {!v1Mode && visibleTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

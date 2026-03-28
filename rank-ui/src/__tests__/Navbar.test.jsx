@@ -17,12 +17,13 @@ describe("Navbar", () => {
 
     const dashboards = screen.getAllByRole("button", { name: /^Dashboard$/i });
     expect(dashboards.length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Alerts/i }).length).toBeGreaterThan(0);
+    // Alerts is hidden in V1
+    expect(screen.queryByRole("button", { name: /Alerts/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Orders/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Leaderboards/i })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getAllByRole("button", { name: /Alerts/i })[0]);
-    expect(onNavigate).toHaveBeenCalledWith("alerts");
+    await userEvent.click(dashboards[0]);
+    expect(onNavigate).toHaveBeenCalledWith("dashboard");
   });
 });

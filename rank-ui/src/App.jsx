@@ -64,9 +64,17 @@ const SCREEN_CHOICES = [
   "undervalued_large_caps",
 ];
 
+const CHART_STUDIES = [
+  "RSI@tv-basicstudies",
+  "MACD@tv-basicstudies",
+  "OBV@tv-basicstudies",
+];
+
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard", "alerts"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard"]);
 const MIN_LOADING_MS = 300;
+const DEBUG_CHART = false;
+const CHART_DEBUG_LIMIT = 24;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -180,6 +188,7 @@ export default function App() {
   const [errors, setErrors] = useState([]);
   const [explain, setExplain] = useState(null);
   const [chartSym, setChartSym] = useState(null);
+  const [chartDebugEvents, setChartDebugEvents] = useState([]);
   // [NOTE-QUICK-ALERT-STATE]
   const [quickAlertSym, setQuickAlertSym] = useState(null);
   const [quickAlertFinal, setQuickAlertFinal] = useState(null);
@@ -191,6 +200,23 @@ export default function App() {
   const [explainingSymbol, setExplainingSymbol] = useState(null);
 
   const [errMsg, setErrMsg] = useState("");
+
+  const pushChartDebug = useCallback((message, meta = {}) => {
+    if (!DEBUG_CHART) return;
+    const event = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      at: new Date().toISOString(),
+      message,
+      meta,
+    };
+    setChartDebugEvents((prev) => [event, ...prev].slice(0, CHART_DEBUG_LIMIT));
+    const hasMeta = meta && Object.keys(meta).length > 0;
+    if (hasMeta) {
+      console.log(`[chart-debug] ${message}`, meta);
+      return;
+    }
+    console.log(`[chart-debug] ${message}`);
+  }, []);
 
   const liveQuotes = useQuotes(rows.map((r) => r.symbol));
 
@@ -438,7 +464,6 @@ export default function App() {
       setWatchlistInput("");
       setWatchlistFeedback(`${symbol} saved to your watchlist.`);
       await fetchWatchlistsForSave();
-      await fetchRecentAlerts();
     } catch {
       setWatchlistSectionErr("Something went wrong. Retry.");
     } finally {
@@ -460,7 +485,6 @@ export default function App() {
       });
       setWatchlistFeedback("Ticker removed.");
       await fetchWatchlistsForSave();
-      await fetchRecentAlerts();
     } catch {
       setWatchlistSectionErr("Something went wrong. Retry.");
     } finally {
@@ -481,9 +505,8 @@ export default function App() {
   useEffect(() => {
     if (token) {
       fetchWatchlistsForSave();
-      fetchRecentAlerts();
     }
-  }, [token, fetchWatchlistsForSave, fetchRecentAlerts]);
+  }, [token, fetchWatchlistsForSave]);
 
   useEffect(() => {
     if (isBlockedPage(page)) {
@@ -589,6 +612,47 @@ export default function App() {
     setQuickAlertTriggerOnce(true);
     setQuickAlertErr("");
   }
+
+  function openChart(symbol, buttonLabel = "Chart") {
+    const resolved = String(symbol || "").trim().toUpperCase();
+    pushChartDebug(`Chart button clicked: ${buttonLabel}`, {
+      button: buttonLabel,
+      rawSymbol: symbol || null,
+      handlerFired: true,
+    });
+    if (!resolved) {
+      pushChartDebug("Chart action blocked: missing ticker", {
+        button: buttonLabel,
+        rawSymbol: symbol || null,
+        blocked: true,
+      });
+      return;
+    }
+    pushChartDebug(`Chart fetch started for ${resolved} / range=D`, {
+      symbol: resolved,
+      range: "D",
+      asyncStarted: true,
+    });
+    setChartSym(resolved);
+  }
+
+  function closeChart(reason = "manual") {
+    if (chartSym) {
+      pushChartDebug(`Chart drawer closed (${reason})`, {
+        symbol: chartSym,
+        reason,
+      });
+    }
+    setChartSym(null);
+  }
+
+  useEffect(() => {
+    if (!chartSym || !DEBUG_CHART) return;
+    pushChartDebug(`Chart drawer rendered for ${chartSym}`, {
+      symbol: chartSym,
+      rendered: true,
+    });
+  }, [chartSym, pushChartDebug]);
 
   // [NOTE-ACTIONS] Explain
   async function openExplain(symbol) {
@@ -723,14 +787,8 @@ export default function App() {
                       the basket.
                     </li>
                     <li>
-                      Use <span className="font-semibold">Chart</span> and{" "}
-                      <span className="font-semibold">Explain</span> on
-                      interesting names.
-                    </li>
-                    <li>
-                      Save a watchlist or set{" "}
-                      <span className="font-semibold">Alerts</span> so you get an
-                      email when ratings move.
+                      Save tickers you like to
+                      your <span className="font-semibold">Watchlist</span> below.
                     </li>
                   </ol>
                 </div>
@@ -937,7 +995,6 @@ export default function App() {
                       <Th>Momo</Th>
                       <Th>Vol</Th>
                       <Th>MeanRev</Th>
-                      <Th></Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -998,39 +1055,7 @@ export default function App() {
                               delta={deltas.meanreversion_raw}
                             />
                           </Td>
-                          <Td className="text-right">
-                            <div className="inline-flex gap-2">
-                              <button
-                                onClick={() => openExplain(r.symbol)}
-                                disabled={explainingSymbol === r.symbol}
-                                className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                              >
-                                {explainingSymbol === r.symbol ? "Loading..." : "Why"}
-                              </button>
-                              <button
-                                onClick={() => setChartSym(r.symbol)}
-                                className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                                title="Open chart"
-                              >
-                                Chart
-                              </button>
-                              <button
-                                onClick={() =>
-                                  openQuickAlert(r.symbol, r.final_score)
-                                }
-                                className="px-3 py-1 rounded-lg border border-emerald-700 text-emerald-200 hover:bg-emerald-950 text-xs"
-                              >
-                                Set alert
-                              </button>
-                              <button
-                                onClick={() => addTickerToWatchlist(r.symbol)}
-                                disabled={watchlistAddingSymbol === r.symbol}
-                                className="px-3 py-1 rounded-lg border border-indigo-700 text-indigo-200 hover:bg-indigo-950 text-xs disabled:opacity-60"
-                              >
-                                {watchlistAddingSymbol === r.symbol ? "Loading..." : "Add to Watchlist"}
-                              </button>
-                            </div>
-                          </Td>
+
                         </tr>
                       );
                     })}
@@ -1038,7 +1063,7 @@ export default function App() {
                       <tr>
                         <td
                           className="py-6 text-center text-slate-500"
-                          colSpan={10}
+                          colSpan={9}
                         >
                           No data yet. Click "Update ratings".
                         </td>
@@ -1049,11 +1074,39 @@ export default function App() {
               )}
             </section>
 
+            {DEBUG_CHART && (
+              <section className="bg-amber-950/30 border border-amber-700/60 rounded-2xl p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-amber-100">Chart Debug (Temporary)</h3>
+                  <button
+                    type="button"
+                    onClick={() => setChartDebugEvents([])}
+                    className="text-xs px-2 py-1 rounded border border-amber-600 text-amber-200 hover:bg-amber-900/40"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto space-y-1 text-xs">
+                  {!chartDebugEvents.length && (
+                    <div className="text-amber-200/80">No chart interactions yet.</div>
+                  )}
+                  {chartDebugEvents.map((evt) => (
+                    <div key={evt.id} className="text-amber-100/95">
+                      <span className="font-mono text-[11px] text-amber-300 mr-2">
+                        {new Date(evt.at).toLocaleTimeString()}
+                      </span>
+                      <span>{evt.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <h3 className="text-base font-semibold">My Watchlist</h3>
-                  <p className="text-xs text-slate-400">Save tickers here to track them and see alerts in one place.</p>
+                  <p className="text-xs text-slate-400">Save tickers here to track their latest ratings in one place.</p>
                 </div>
               </div>
 
@@ -1100,7 +1153,7 @@ export default function App() {
                     <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border border-slate-800 rounded-xl px-3 py-2 text-sm">
                       <div>
                         <div className="font-semibold text-slate-100">{item.symbol}</div>
-                        <div className="text-xs text-slate-400">{item.name || "Company name unavailable"}</div>
+                        {item.name && <div className="text-xs text-slate-400">{item.name}</div>}
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-slate-300">Rating: {item.rating}</div>
@@ -1117,56 +1170,7 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <div className="text-xs text-slate-400">Save tickers here to track them and see alerts in one place.</div>
-              )}
-            </section>
-
-            <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div>
-                  <h3 className="text-base font-semibold">Recent Alerts</h3>
-                  <p className="text-xs text-slate-400">Newest updates from watchlist, market direction, and ranking changes.</p>
-                </div>
-                <button
-                  onClick={() => navigateToPage("alerts")}
-                  className="px-3 py-1.5 rounded-lg border border-slate-700 text-xs hover:bg-slate-800"
-                >
-                  View all
-                </button>
-              </div>
-
-              {recentAlertsErr && (
-                <div className="mb-2 text-xs text-rose-300 flex items-center gap-2">
-                  <span>{recentAlertsErr}</span>
-                  <button
-                    onClick={fetchRecentAlerts}
-                    className="px-2 py-1 rounded-md border border-rose-700 hover:bg-rose-900/20"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {recentAlertsLoading ? (
-                <div className="space-y-2" aria-live="polite">
-                  {[0, 1, 2].map((idx) => (
-                    <div key={`recent-alert-skeleton-${idx}`} className="h-10 rounded-lg bg-slate-800/60 animate-pulse" />
-                  ))}
-                </div>
-              ) : dashboardAlertRows.length ? (
-                <div className="space-y-2 text-sm">
-                  {dashboardAlertRows.map((alert) => (
-                    <div key={alert.id} className="border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-slate-100">{alert.text}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">{formatRelativeTime(alert.timestamp)}</div>
-                      </div>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-300">{alert.tag}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-slate-400">No recent alerts yet.</div>
+                <div className="text-xs text-slate-400">No tickers saved yet. Add one above.</div>
               )}
             </section>
 
@@ -1179,7 +1183,7 @@ export default function App() {
         {/* ==============================
           OTHER PAGES
          ============================== */}
-        {page === "alerts" && <Alerts />}
+        {!V1_MODE && page === "alerts" && <Alerts />}
 
         {!V1_MODE && page === "watchlists" && (
           <Watchlists
@@ -1330,171 +1334,11 @@ export default function App() {
         </div>
       )}
 
-      {/* QUICK ALERT MODAL */}
-      {quickAlertSym && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-40"
-          onClick={() => setQuickAlertSym(null)}
-        >
-          <div
-            className="w-full max-w-sm bg-slate-950 border border-slate-800 rounded-2xl p-4 m-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold">
-                Create alert for {quickAlertSym}
-              </h2>
-              <button
-                onClick={() => setQuickAlertSym(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
+      {/* QUICK ALERT MODAL — hidden in V1 */}
 
-            <div className="space-y-3 text-sm">
-              {quickAlertFinal != null && (
-                <div className="text-xs text-slate-400">
-                  Current overall rating:{" "}
-                  <span className="text-slate-100 font-semibold">
-                    {Number(quickAlertFinal).toFixed(2)}
-                  </span>
-                </div>
-              )}
+      {/* EXPLAIN DRAWER — hidden in V1 */}
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  Alert when overall rating is at or above
-                </label>
-                <input
-                  type="number"
-                  value={quickAlertMinFinal}
-                  onChange={(e) => setQuickAlertMinFinal(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </div>
-
-              <label className="inline-flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={quickAlertTriggerOnce}
-                  onChange={() =>
-                    setQuickAlertTriggerOnce((v) => !v)
-                  }
-                />
-                Trigger once (disable after first hit)
-              </label>
-
-              {quickAlertErr && (
-                <div className="text-xs text-rose-300">
-                  {quickAlertErr}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setQuickAlertSym(null)}
-                  className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-900 text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={createQuickAlert}
-                  disabled={quickAlertSaving}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs"
-                >
-                  {quickAlertSaving ? "Loading..." : "Save alert"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EXPLAIN DRAWER */}
-      {explain && (
-        <div
-          className="fixed inset-0 bg-black/40 flex justify-end"
-          onClick={() => setExplain(null)}
-        >
-          <div
-            className="w-full max-w-2xl h-full bg-slate-950 border-l border-slate-800 p-6 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Explain: {explain.symbol}</h2>
-              <button
-                onClick={() => setExplain(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <Card title="Tech Strength" value={number(explain.tech_score)} />
-              <Card
-                title="Fund Strength"
-                value={number(explain.fundamental_score)}
-              />
-              <Card title="Overall Rating" value={number(explain.final_score)} />
-            </div>
-
-            <Section title="Technical">
-              <JSONBlock data={explain.components?.technical} />
-            </Section>
-            <Section title="Fundamental">
-              <JSONBlock data={explain.components?.fundamental} />
-            </Section>
-            <Section title="Weights">
-              <JSONBlock data={explain.components?.weights} />
-            </Section>
-          </div>
-        </div>
-      )}
-
-      {/* CHART DRAWER */}
-      {chartSym && (
-        <div
-          className="fixed inset-0 bg-black/40 flex justify-end"
-          onClick={() => setChartSym(null)}
-        >
-          <div
-            className="w-full max-w-4xl h-full bg-slate-950 border-l border-slate-800 p-4 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold">Chart: {chartSym}</h2>
-              <button
-                onClick={() => setChartSym(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="rounded-xl overflow-hidden border border-slate-800 h-[78vh]">
-              <TradingViewChart
-                symbol={chartSym}
-                exchangePrefix=""
-                interval="D"
-                studies={[
-                  "RSI@tv-basicstudies",
-                  "MACD@tv-basicstudies",
-                  "OBV@tv-basicstudies",
-                ]}
-                autosize={false}
-                height={720}
-              />
-            </div>
-
-            <div className="mt-3 text-slate-400 text-sm">
-              Tip: use the chart toolbar to add EMAs/Bollinger Bands and change
-              intervals.
-            </div>
-          </div>
-        </div>
-      )}
+      {/* CHART DRAWER — hidden in V1 */}
     </div>
   );
 

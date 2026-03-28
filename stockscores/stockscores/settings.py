@@ -189,6 +189,10 @@ PAPER_MARKET_DATA_MODE = os.getenv("PAPER_MARKET_DATA_MODE", "live")  # live or 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_BEAT_SCHEDULE = {
+    # V1 NOTE: alert email tasks are not scheduled here.
+    # ranker/management/commands/check_alerts.py and daily_autoscan.py
+    # exist as standalone management commands only and are not invoked
+    # by any beat job. No action needed to disable them for V1.
     "paper-algo-slices": {
         "task": "paper.tasks.run_algo_slices",
         "schedule": 60.0,
