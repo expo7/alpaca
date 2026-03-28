@@ -1,5 +1,5 @@
 // src/components/AlertHistoryPanel.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx"; // <-- use the shared auth context
 
 const BASE = "http://127.0.0.1:8000"; // same as App.jsx
@@ -18,12 +18,19 @@ async function waitForMinimum(startedAt) {
 
 export default function AlertHistoryPanel() {
     const { token } = useAuth(); // <-- same token Alerts page uses
+    const isMountedRef = useRef(true);
 
     const [events, setEvents] = useState([]);
     const [symbolFilter, setSymbolFilter] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [initialized, setInitialized] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     async function fetchHistory(params = {}) {
         if (!token) {
@@ -87,6 +94,7 @@ export default function AlertHistoryPanel() {
             setError("Something went wrong. Retry.");
         } finally {
             await waitForMinimum(startedAt);
+            if (!isMountedRef.current) return;
             setLoading(false);
         }
     }

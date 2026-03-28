@@ -3,7 +3,7 @@
 // Simple CRUD UI for alerts + history + inline "Test now" status
 // ==============================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
 
@@ -40,6 +40,7 @@ async function apiFetch(path, token, options = {}) {
 
 export default function Alerts() {
   const { token } = useAuth();
+  const isMountedRef = useRef(true);
 
   const [alerts, setAlerts] = useState([]);
   const [watchlists, setWatchlists] = useState([]);
@@ -60,6 +61,12 @@ export default function Alerts() {
 
   // [TEST-UI-STATE] per-alert test info: { [id]: { loading, error, last: {...} } }
   const [testInfo, setTestInfo] = useState({});
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // ------- "Test alert now" -------
 
@@ -109,6 +116,7 @@ export default function Alerts() {
       }));
     } finally {
       await waitForMinimum(startedAt);
+      if (!isMountedRef.current) return;
     }
   }
 
@@ -125,6 +133,7 @@ export default function Alerts() {
       setErr(e.message || String(e));
     } finally {
       await waitForMinimum(startedAt);
+      if (!isMountedRef.current) return;
       setLoadingAlerts(false);
     }
   }
@@ -183,6 +192,7 @@ export default function Alerts() {
       setErr(e.message || String(e));
     } finally {
       await waitForMinimum(startedAt);
+      if (!isMountedRef.current) return;
       setCreatingAlert(false);
     }
   }
@@ -200,6 +210,7 @@ export default function Alerts() {
       setErr(e.message || String(e));
     } finally {
       await waitForMinimum(startedAt);
+      if (!isMountedRef.current) return;
       setDeletingId(null);
     }
   }
@@ -219,6 +230,7 @@ export default function Alerts() {
       setErr(e.message || String(e));
     } finally {
       await waitForMinimum(startedAt);
+      if (!isMountedRef.current) return;
       setTogglingId(null);
     }
   }

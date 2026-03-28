@@ -85,7 +85,7 @@ export default function Login() {
         <div className="mb-4 text-center">
           <div className="inline-flex items-center gap-3">
             <div className="h-9 w-9 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-900/30">
-              <span className="text-sm font-bold">SR</span>
+              <span className="text-sm font-bold">Q</span>
             </div>
             <div className="flex flex-col text-left">
               <span className="text-sm font-semibold tracking-wide">{APP_NAME}</span>
@@ -105,8 +105,8 @@ export default function Login() {
               type="button"
               onClick={() => switchMode("login")}
               className={`px-3 py-1 rounded-full border ${!isSignup
-                  ? "bg-indigo-600 border-indigo-500"
-                  : "border-slate-700 text-slate-400"
+                ? "bg-indigo-600 border-indigo-500"
+                : "border-slate-700 text-slate-400"
                 }`}
             >
               Sign in
@@ -115,8 +115,8 @@ export default function Login() {
               type="button"
               onClick={() => switchMode("signup")}
               className={`px-3 py-1 rounded-full border ${isSignup
-                  ? "bg-indigo-600 border-indigo-500"
-                  : "border-slate-700 text-slate-400"
+                ? "bg-indigo-600 border-indigo-500"
+                : "border-slate-700 text-slate-400"
                 }`}
             >
               Create account

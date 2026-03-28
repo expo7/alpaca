@@ -10,7 +10,7 @@ const mockResponse = (data, ok = true, status = 200) => ({
 });
 
 describe("MacroDashboardPage", () => {
-    test("loads and renders market direction, strengths, and recommendations", async () => {
+    test("loads and renders market direction, interpreted themes, and recommendations", async () => {
         localStorage.setItem("access", "token");
 
         vi.stubGlobal(
@@ -85,7 +85,10 @@ describe("MacroDashboardPage", () => {
         );
 
         await waitFor(() => expect(screen.getByText("Risk-On Expansion")).toBeInTheDocument());
-        expect(screen.getByText("Growth Strength")).toBeInTheDocument();
+        expect(screen.getByText("Today's Recommendation")).toBeInTheDocument();
+        expect(screen.getByText("Favorable conditions - consider increasing exposure")).toBeInTheDocument();
+        expect(screen.getByText("Market Momentum: Strong")).toBeInTheDocument();
+        expect(screen.getByText("Inflation Pressure: Moderate")).toBeInTheDocument();
         expect(screen.getByText("Cross-Asset Recommendations")).toBeInTheDocument();
         expect(screen.getByText("Options Engine")).toBeInTheDocument();
         expect(screen.getByText("Bull Call Spread")).toBeInTheDocument();

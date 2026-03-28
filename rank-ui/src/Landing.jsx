@@ -14,7 +14,7 @@ export default function Landing() {
                 <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-xs font-bold">
-                            SR
+                            Q
                         </div>
                         <div className="flex flex-col">
                             <span className="text-sm font-semibold tracking-wide">

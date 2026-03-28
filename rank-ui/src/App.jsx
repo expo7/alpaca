@@ -141,6 +141,17 @@ export default function App() {
   const [sparkMap, setSparkMap] = useState({}); // { AAPL: [closes...] }
   const [selectedBotId, setSelectedBotId] = useState(null);
   const [watchlistOptions, setWatchlistOptions] = useState([]);
+  const [dashboardWatchlist, setDashboardWatchlist] = useState(null);
+  const [watchlistInput, setWatchlistInput] = useState("");
+  const [watchlistSectionLoading, setWatchlistSectionLoading] = useState(false);
+  const [watchlistAddingSymbol, setWatchlistAddingSymbol] = useState("");
+  const [watchlistRemovingItemId, setWatchlistRemovingItemId] = useState(null);
+  const [watchlistFeedback, setWatchlistFeedback] = useState("");
+  const [watchlistSectionErr, setWatchlistSectionErr] = useState("");
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [recentAlertsLoading, setRecentAlertsLoading] = useState(false);
+  const [recentAlertsErr, setRecentAlertsErr] = useState("");
+  const [macroSnapshot, setMacroSnapshot] = useState(null);
   const [screenCache, setScreenCache] = useState({});
   const [screenLoading, setScreenLoading] = useState(false);
   const [screenErr, setScreenErr] = useState("");
@@ -182,6 +193,85 @@ export default function App() {
   const [errMsg, setErrMsg] = useState("");
 
   const liveQuotes = useQuotes(rows.map((r) => r.symbol));
+
+  const rankedBySymbol = useMemo(() => {
+    const map = new Map();
+    rows.forEach((row) => {
+      map.set(row.symbol, row);
+    });
+    return map;
+  }, [rows]);
+
+  const watchlistRows = useMemo(() => {
+    const items = dashboardWatchlist?.items || [];
+    return items.map((item) => {
+      const symbol = item.symbol;
+      const ranked = rankedBySymbol.get(symbol);
+      const delta = ranked?.tech_score_delta;
+      let status = "Neutral";
+      if (typeof delta === "number" && delta > 0.25) status = "Improving";
+      if (typeof delta === "number" && delta < -0.25) status = "Weakening";
+
+      return {
+        id: item.id,
+        symbol,
+        name: item.name || item.company_name || ranked?.name || "",
+        rating:
+          typeof ranked?.final_score === "number"
+            ? Number(ranked.final_score).toFixed(1)
+            : "-",
+        status,
+      };
+    });
+  }, [dashboardWatchlist, rankedBySymbol]);
+
+  const dashboardAlertRows = useMemo(() => {
+    const synthetic = [];
+    if (macroSnapshot?.regime) {
+      synthetic.push({
+        id: "market-direction",
+        symbol: null,
+        tag: "Market",
+        text: `Market direction is ${macroSnapshot.regime}.`,
+        timestamp: macroSnapshot.asOf || new Date().toISOString(),
+      });
+    }
+
+    const topRanked = rows[0];
+    if (topRanked && typeof topRanked.final_score === "number") {
+      synthetic.push({
+        id: `top-ranked-${topRanked.symbol}`,
+        symbol: topRanked.symbol,
+        tag: "Ranking",
+        text: `${topRanked.symbol} moved into the top-ranked names.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const watchlistSymbols = new Set((dashboardWatchlist?.items || []).map((it) => it.symbol));
+    const apiAlerts = (recentAlerts || []).map((evt) => {
+      const symbol = evt.symbol || null;
+      const isWatchlist = symbol && watchlistSymbols.has(symbol);
+      const tag = isWatchlist ? "Watchlist" : "Alert";
+      const rating = typeof evt.final_score === "number" ? evt.final_score.toFixed(1) : null;
+      const text = symbol
+        ? `${symbol} triggered an alert${rating ? ` at rating ${rating}` : ""}.`
+        : "An alert was triggered.";
+      return {
+        id: `alert-${evt.id}`,
+        symbol,
+        tag,
+        text,
+        timestamp: evt.triggered_at,
+      };
+    });
+
+    const merged = [...synthetic, ...apiAlerts]
+      .filter((row) => row.timestamp)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return merged.slice(0, 8);
+  }, [dashboardWatchlist, macroSnapshot, recentAlerts, rows]);
 
   // [NOTE-PERSIST]
   useEffect(() => {
@@ -274,7 +364,10 @@ export default function App() {
 
   // [NOTE-WATCHLISTS-FOR-SAVE] load into modal
   const fetchWatchlistsForSave = useCallback(async () => {
+    const startedAt = Date.now();
     try {
+      setWatchlistSectionLoading(true);
+      setWatchlistSectionErr("");
       const data = await apiFetch("/api/watchlists/", { token });
       const list = Array.isArray(data) ? data : data.results || [];
       setListsForSave(list);
@@ -282,10 +375,99 @@ export default function App() {
       if (!saveListId && list.length) {
         setSaveListId(list[0].id);
       }
+      setDashboardWatchlist(list[0] || null);
     } catch {
-      // ignore
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistSectionLoading(false);
     }
   }, [token, saveListId]);
+
+  const fetchRecentAlerts = useCallback(async () => {
+    if (!token) return;
+    const startedAt = Date.now();
+    try {
+      setRecentAlertsLoading(true);
+      setRecentAlertsErr("");
+      const data = await apiFetch("/api/alert-events/", { token });
+      const events = Array.isArray(data) ? data : data.results || [];
+      const sorted = [...events].sort((a, b) => {
+        const ta = new Date(a.triggered_at || 0).getTime();
+        const tb = new Date(b.triggered_at || 0).getTime();
+        return tb - ta;
+      });
+      setRecentAlerts(sorted);
+    } catch {
+      setRecentAlertsErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setRecentAlertsLoading(false);
+    }
+  }, [token]);
+
+  async function ensureDashboardWatchlistId() {
+    if (dashboardWatchlist?.id) return dashboardWatchlist.id;
+    const created = await apiFetch(`/api/watchlists/`, {
+      token,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "My Watchlist" }),
+    });
+    await fetchWatchlistsForSave();
+    return created.id;
+  }
+
+  async function addTickerToWatchlist(rawSymbol) {
+    const symbol = String(rawSymbol || "").trim().toUpperCase();
+    if (!symbol) return;
+    const startedAt = Date.now();
+    try {
+      setWatchlistFeedback("");
+      setWatchlistSectionErr("");
+      setWatchlistAddingSymbol(symbol);
+      const watchlistId = await ensureDashboardWatchlistId();
+      await apiFetch(`/api/watchlists/${watchlistId}/items/`, {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      }).catch(() => {
+        // duplicates are fine for V1
+      });
+      setWatchlistInput("");
+      setWatchlistFeedback(`${symbol} saved to your watchlist.`);
+      await fetchWatchlistsForSave();
+      await fetchRecentAlerts();
+    } catch {
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistAddingSymbol("");
+    }
+  }
+
+  async function removeTickerFromWatchlist(itemId) {
+    if (!dashboardWatchlist?.id || !itemId) return;
+    const startedAt = Date.now();
+    try {
+      setWatchlistFeedback("");
+      setWatchlistSectionErr("");
+      setWatchlistRemovingItemId(itemId);
+      await apiFetch(`/api/watchlists/${dashboardWatchlist.id}/items/${itemId}/`, {
+        token,
+        method: "DELETE",
+      });
+      setWatchlistFeedback("Ticker removed.");
+      await fetchWatchlistsForSave();
+      await fetchRecentAlerts();
+    } catch {
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistRemovingItemId(null);
+    }
+  }
   useEffect(() => {
     localStorage.setItem("seenOnboarding", showOnboarding ? "0" : "1");
   }, [showOnboarding]);
@@ -299,8 +481,9 @@ export default function App() {
   useEffect(() => {
     if (token) {
       fetchWatchlistsForSave();
+      fetchRecentAlerts();
     }
-  }, [token, fetchWatchlistsForSave]);
+  }, [token, fetchWatchlistsForSave, fetchRecentAlerts]);
 
   useEffect(() => {
     if (isBlockedPage(page)) {
@@ -480,6 +663,20 @@ export default function App() {
     return typeof n === "number" ? n.toFixed(d) : n;
   }
 
+  function formatRelativeTime(ts) {
+    if (!ts) return "Just now";
+    const diffMs = Date.now() - new Date(ts).getTime();
+    if (Number.isNaN(diffMs)) return "Just now";
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
   // ==============================
   // [NOTE-UI] App Shell
   // ==============================
@@ -504,14 +701,16 @@ export default function App() {
          ============================== */}
         {page === "dashboard" && (
           <>
-            <MacroDashboardPage />
+            <MacroDashboardPage
+              onSnapshotChange={(snapshot) => setMacroSnapshot(snapshot)}
+            />
 
             {/* [NOTE-ONBOARDING-PANEL] */}
             {showOnboarding && (
               <div className="bg-indigo-950/40 border border-indigo-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
                 <div className="flex-1">
                   <div className="text-sm font-semibold mb-1">
-                    Welcome to Stock Ranker
+                    Welcome to Quantelle
                   </div>
                   <p className="text-xs text-slate-300 mb-2">
                     Here’s a quick path to get useful output in under a minute:
@@ -823,6 +1022,13 @@ export default function App() {
                               >
                                 Set alert
                               </button>
+                              <button
+                                onClick={() => addTickerToWatchlist(r.symbol)}
+                                disabled={watchlistAddingSymbol === r.symbol}
+                                className="px-3 py-1 rounded-lg border border-indigo-700 text-indigo-200 hover:bg-indigo-950 text-xs disabled:opacity-60"
+                              >
+                                {watchlistAddingSymbol === r.symbol ? "Loading..." : "Add to Watchlist"}
+                              </button>
                             </div>
                           </Td>
                         </tr>
@@ -840,6 +1046,127 @@ export default function App() {
                     )}
                   </tbody>
                 </table>
+              )}
+            </section>
+
+            <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-base font-semibold">My Watchlist</h3>
+                  <p className="text-xs text-slate-400">Save tickers here to track them and see alerts in one place.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-3">
+                <input
+                  value={watchlistInput}
+                  onChange={(e) => setWatchlistInput(e.target.value.toUpperCase())}
+                  placeholder="Enter ticker (e.g., AAPL)"
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm flex-1 min-w-[180px]"
+                />
+                <button
+                  onClick={() => addTickerToWatchlist(watchlistInput)}
+                  disabled={!watchlistInput.trim() || Boolean(watchlistAddingSymbol)}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm disabled:opacity-60"
+                >
+                  {watchlistAddingSymbol ? "Loading..." : "Add"}
+                </button>
+              </div>
+
+              {watchlistFeedback && (
+                <div className="mb-2 text-xs text-emerald-300">{watchlistFeedback}</div>
+              )}
+              {watchlistSectionErr && (
+                <div className="mb-2 text-xs text-rose-300 flex items-center gap-2">
+                  <span>{watchlistSectionErr}</span>
+                  <button
+                    onClick={fetchWatchlistsForSave}
+                    className="px-2 py-1 rounded-md border border-rose-700 hover:bg-rose-900/20"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {watchlistSectionLoading ? (
+                <div className="space-y-2" aria-live="polite">
+                  {[0, 1, 2].map((idx) => (
+                    <div key={`watchlist-skeleton-${idx}`} className="h-10 rounded-lg bg-slate-800/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : watchlistRows.length ? (
+                <div className="space-y-2">
+                  {watchlistRows.map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border border-slate-800 rounded-xl px-3 py-2 text-sm">
+                      <div>
+                        <div className="font-semibold text-slate-100">{item.symbol}</div>
+                        <div className="text-xs text-slate-400">{item.name || "Company name unavailable"}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-300">Rating: {item.rating}</div>
+                        <div className="text-xs text-slate-500">{item.status}</div>
+                      </div>
+                      <button
+                        onClick={() => removeTickerFromWatchlist(item.id)}
+                        disabled={watchlistRemovingItemId === item.id}
+                        className="px-3 py-1.5 rounded-lg text-xs border border-rose-900 text-rose-200 hover:bg-rose-950 disabled:opacity-60"
+                      >
+                        {watchlistRemovingItemId === item.id ? "Loading..." : "Remove"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">Save tickers here to track them and see alerts in one place.</div>
+              )}
+            </section>
+
+            <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-base font-semibold">Recent Alerts</h3>
+                  <p className="text-xs text-slate-400">Newest updates from watchlist, market direction, and ranking changes.</p>
+                </div>
+                <button
+                  onClick={() => navigateToPage("alerts")}
+                  className="px-3 py-1.5 rounded-lg border border-slate-700 text-xs hover:bg-slate-800"
+                >
+                  View all
+                </button>
+              </div>
+
+              {recentAlertsErr && (
+                <div className="mb-2 text-xs text-rose-300 flex items-center gap-2">
+                  <span>{recentAlertsErr}</span>
+                  <button
+                    onClick={fetchRecentAlerts}
+                    className="px-2 py-1 rounded-md border border-rose-700 hover:bg-rose-900/20"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {recentAlertsLoading ? (
+                <div className="space-y-2" aria-live="polite">
+                  {[0, 1, 2].map((idx) => (
+                    <div key={`recent-alert-skeleton-${idx}`} className="h-10 rounded-lg bg-slate-800/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : dashboardAlertRows.length ? (
+                <div className="space-y-2 text-sm">
+                  {dashboardAlertRows.map((alert) => (
+                    <div key={alert.id} className="border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-slate-100">{alert.text}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{formatRelativeTime(alert.timestamp)}</div>
+                      </div>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-300">{alert.tag}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">No recent alerts yet.</div>
               )}
             </section>
 

@@ -21,7 +21,34 @@ async function waitForMinimum(startedAt) {
     }
 }
 
-export default function MacroDashboardPage() {
+function buildTodaysRecommendation(regime, confidence) {
+    const regimeText = String(regime || "").toLowerCase();
+    const confidenceText = typeof confidence === "number" ? `${Math.round(confidence)}%` : "N/A";
+
+    if (regimeText.includes("risk-off")) {
+        return {
+            action: "Stay defensive and avoid new long positions",
+            reason: `Market Direction is Risk-Off with ${confidenceText} confidence.`,
+            tone: "defensive",
+        };
+    }
+
+    if (regimeText.includes("risk-on")) {
+        return {
+            action: "Favorable conditions - consider increasing exposure",
+            reason: `Market Direction is Risk-On with ${confidenceText} confidence.`,
+            tone: "favorable",
+        };
+    }
+
+    return {
+        action: "Be selective - only take high-conviction setups",
+        reason: `Market Direction is neutral with ${confidenceText} confidence.`,
+        tone: "neutral",
+    };
+}
+
+export default function MacroDashboardPage({ onSnapshotChange }) {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -58,6 +85,15 @@ export default function MacroDashboardPage() {
             cancelled = true;
         };
     }, [token, riskTolerance, positionContext, ivContext, reloadKey]);
+
+    useEffect(() => {
+        if (!data || typeof onSnapshotChange !== "function") return;
+        onSnapshotChange({
+            regime: data?.overall_regime,
+            confidence: data?.confidence,
+            asOf: data?.as_of,
+        });
+    }, [data, onSnapshotChange]);
 
     if (!token) {
         return (
@@ -105,9 +141,23 @@ export default function MacroDashboardPage() {
 
     const scores = data?.scores || {};
     const optionSuggestions = data?.options_engine?.suggestions || [];
+    const recommendation = buildTodaysRecommendation(data?.overall_regime, data?.confidence);
+
+    const recommendationToneClass =
+        recommendation.tone === "defensive"
+            ? "border-rose-700/70 bg-rose-950/35"
+            : recommendation.tone === "favorable"
+                ? "border-emerald-700/70 bg-emerald-950/30"
+                : "border-amber-700/70 bg-amber-950/30";
 
     return (
         <div className="p-4 lg:p-6 space-y-4">
+            <section className={`rounded-2xl border-2 p-5 lg:p-6 shadow-md ${recommendationToneClass}`}>
+                <div className="text-xs uppercase tracking-wide text-slate-300">Today's Recommendation</div>
+                <div className="mt-2 text-2xl lg:text-3xl font-bold text-slate-100">{recommendation.action}</div>
+                <p className="mt-3 text-sm text-slate-200">{recommendation.reason}</p>
+            </section>
+
             <RegimeCard
                 regime={data?.overall_regime}
                 confidence={data?.confidence}
@@ -132,10 +182,10 @@ export default function MacroDashboardPage() {
             )}
 
             <section className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
-                <ScoreCard title="Growth Strength" score={scores.growth ?? 0} />
-                <ScoreCard title="Inflation Pressure" score={scores.inflation ?? 0} />
-                <ScoreCard title="Liquidity Strength" score={scores.liquidity ?? 0} />
-                <ScoreCard title="Risk Appetite Strength" score={scores.risk_appetite ?? 0} />
+                <ScoreCard metric="momentum" score={scores.growth ?? 0} />
+                <ScoreCard metric="inflation" score={scores.inflation ?? 0} />
+                <ScoreCard metric="liquidity" score={scores.liquidity ?? 0} />
+                <ScoreCard metric="risk_appetite" score={scores.risk_appetite ?? 0} />
             </section>
 
             <SignalTable signals={data?.signals || []} />
@@ -162,7 +212,7 @@ export default function MacroDashboardPage() {
                 </h2>
                 <ul className="mt-2 space-y-1 text-xs text-slate-400 leading-relaxed">
                     <li>Market Direction tells you if conditions favor risk-taking or caution.</li>
-                    <li>Strength values summarize broad market pressure from -100 to +100.</li>
+                    <li>Each theme label already tells you if conditions are good, neutral, or bad.</li>
                     <li>Use Recommendations and Playbook as your next-action checklist.</li>
                 </ul>
             </section>

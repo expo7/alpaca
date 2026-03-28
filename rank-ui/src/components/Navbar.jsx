@@ -4,6 +4,7 @@
 // ==============================
 
 import Logo from "./Logo.jsx";
+import { APP_NAME } from "../brand";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
@@ -43,7 +44,7 @@ export default function Navbar({
           <Logo className="w-8 h-8" />
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-wide">
-              Stock Ranker
+              {APP_NAME}
             </span>
             <span className="text-xs text-slate-400">
               Tech + fundamentals, one rating.
