@@ -45,14 +45,14 @@ export default function Landing() {
 
                         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
                             Rank stocks by{" "}
-                            <span className="text-indigo-400">signals and fundamentals</span>{" "}
+                            <span className="text-indigo-400">recommendations and fundamentals</span>{" "}
                             in one click.
                         </h1>
 
                         <p className="text-sm sm:text-base text-slate-300 max-w-xl">
                             {APP_NAME} turns noisy charts and financials into a single,
-                            tunable score. Run baskets, save watchlists, set email alerts, and
-                            backtest simple Top-N strategies against SPY.
+                            tunable rating. Read market direction, rank opportunities, and
+                            set email alerts from one workflow.
                         </p>
 
                         <ul className="space-y-2 text-sm text-slate-300">
@@ -66,16 +66,15 @@ export default function Landing() {
                             <li className="flex gap-2">
                                 <span className="mt-1 text-emerald-400">▸</span>
                                 <span>
-                                    Save ranked baskets as watchlists and get{" "}
-                                    <strong>email alerts</strong> when scores cross your
-                                    thresholds.
+                                    Get lightweight <strong>email alerts</strong> when ranked
+                                    names cross your threshold.
                                 </span>
                             </li>
                             <li className="flex gap-2">
                                 <span className="mt-1 text-emerald-400">▸</span>
                                 <span>
-                                    Run quick Top-N backtests vs SPY to see if your settings have
-                                    any edge.
+                                    Keep a daily decision loop centered on market direction and top
+                                    ranked opportunities.
                                 </span>
                             </li>
                         </ul>

@@ -31,6 +31,7 @@ export default function OptionsEnginePanel({
     onPositionContextChange,
     onIvContextChange,
     suggestions = [],
+    disabled = false,
 }) {
     return (
         <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-4">
@@ -38,7 +39,7 @@ export default function OptionsEnginePanel({
                 <div>
                     <h2 className="text-sm font-semibold text-slate-200">Options Engine</h2>
                     <p className="text-xs text-slate-400">
-                        Rule-based structures based on macro regime, confidence, and your context.
+                        Suggested setups based on market direction and your risk settings.
                     </p>
                 </div>
 
@@ -46,7 +47,8 @@ export default function OptionsEnginePanel({
                     <select
                         value={riskTolerance}
                         onChange={(e) => onRiskToleranceChange(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs"
+                        disabled={disabled}
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs disabled:opacity-60"
                     >
                         <option value="conservative">Risk: Conservative</option>
                         <option value="moderate">Risk: Moderate</option>
@@ -56,7 +58,8 @@ export default function OptionsEnginePanel({
                     <select
                         value={positionContext}
                         onChange={(e) => onPositionContextChange(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs"
+                        disabled={disabled}
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs disabled:opacity-60"
                     >
                         <option value="flat">Position: Flat</option>
                         <option value="long_shares">Position: Long Shares</option>
@@ -65,7 +68,8 @@ export default function OptionsEnginePanel({
                     <select
                         value={ivContext}
                         onChange={(e) => onIvContextChange(e.target.value)}
-                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs"
+                        disabled={disabled}
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs disabled:opacity-60"
                     >
                         <option value="low">IV: Low</option>
                         <option value="normal">IV: Normal</option>

@@ -14,6 +14,7 @@ export default function ScoreCard({ title, score }) {
     const value = typeof score === "number" ? score : 0;
     const clamped = Math.max(-100, Math.min(100, value));
     const width = Math.abs(clamped);
+    const direction = value >= 0 ? "supports risk-taking" : "supports caution";
 
     return (
         <div className={`rounded-2xl border bg-slate-900/50 p-4 ${toneClass(value)}`}>
@@ -26,7 +27,8 @@ export default function ScoreCard({ title, score }) {
                     aria-hidden="true"
                 />
             </div>
-            <div className="mt-1 text-[11px] text-slate-500">Range: -100 to +100</div>
+            <div className="mt-1 text-[11px] text-slate-500">Higher means stronger support for this theme.</div>
+            <div className="text-[11px] text-slate-500">Current read: {direction}.</div>
         </div>
     );
 }

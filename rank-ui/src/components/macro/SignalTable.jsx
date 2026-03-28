@@ -7,7 +7,8 @@ export default function SignalTable({ signals = [] }) {
     return (
         <section className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-800">
-                <h2 className="text-sm font-semibold text-slate-200">Cross-Asset Signals</h2>
+                <h2 className="text-sm font-semibold text-slate-200">Cross-Asset Recommendations</h2>
+                <p className="mt-1 text-xs text-slate-400">Read what is moving, then follow the recommendation.</p>
             </div>
             <div className="overflow-auto">
                 <table className="w-full text-xs sm:text-sm">
@@ -20,7 +21,7 @@ export default function SignalTable({ signals = [] }) {
                             <th className="px-3 py-2 text-right">20D %</th>
                             <th className="px-3 py-2 text-right">60D %</th>
                             <th className="px-3 py-2 text-right">Dist 50DMA %</th>
-                            <th className="px-3 py-2 text-left">Signal</th>
+                            <th className="px-3 py-2 text-left">Recommendation</th>
                             <th className="px-3 py-2 text-left">Interpretation</th>
                         </tr>
                     </thead>
@@ -41,7 +42,7 @@ export default function SignalTable({ signals = [] }) {
                         {!signals.length && (
                             <tr>
                                 <td className="px-3 py-4 text-center text-slate-500" colSpan={9}>
-                                    No signals available.
+                                    No recommendations available.
                                 </td>
                             </tr>
                         )}

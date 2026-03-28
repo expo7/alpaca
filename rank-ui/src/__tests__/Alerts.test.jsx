@@ -44,7 +44,7 @@ describe("Alerts page", () => {
     });
 
     await waitFor(() => expect(screen.getAllByText(/Your alerts/i).length).toBeGreaterThan(0));
-    expect(screen.getByText(/No alerts yet/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/No alerts yet/i)).toBeInTheDocument());
   });
 
   test("renders alerts with key fields and supports test button state", async () => {
@@ -84,6 +84,6 @@ describe("Alerts page", () => {
       if (url.includes("/api/watchlists/")) return Promise.resolve(mockResponse([]));
       return Promise.resolve(mockResponse({}));
     });
-    await waitFor(() => expect(screen.getByText(/boom/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Something went wrong\. Retry\./i)).toBeInTheDocument());
   });
 });

@@ -86,6 +86,7 @@ describe("Flow: Alerts review and history drill-down", () => {
     await waitFor(() => expect(screen.getByText(/Last test/i)).toBeInTheDocument());
 
     // Drill into history panel with a filter
+    await waitFor(() => expect(screen.getByRole("button", { name: /Apply/i })).toBeEnabled());
     const filterInput = screen.getByPlaceholderText(/Filter by symbol/i);
     await userEvent.type(filterInput, "AAPL");
     await userEvent.click(screen.getByRole("button", { name: /Apply/i }));

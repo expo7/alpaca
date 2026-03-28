@@ -45,12 +45,12 @@ describe("App routing and navigation smoke tests", () => {
 
     const dashboards = await screen.findAllByText(/Dashboard/i);
     expect(dashboards.length).toBeGreaterThan(0);
-    // Strategies tab
-    await userEvent.click(screen.getAllByRole("button", { name: /Strategies/i })[0]);
-    await waitFor(() => expect(screen.getByText(/Strategy Builder/i)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Orders/i })).not.toBeInTheDocument();
 
-    // Orders tab
-    await userEvent.click(screen.getAllByRole("button", { name: /Orders/i })[0]);
-    await waitFor(() => expect(screen.getByText(/Inline-manage bracket/i)).toBeInTheDocument());
+    await userEvent.click(screen.getAllByRole("button", { name: /Alerts/i })[0]);
+    await waitFor(() =>
+      expect(screen.getByText(/Create alerts when ratings cross your threshold/i)).toBeInTheDocument()
+    );
   });
 });

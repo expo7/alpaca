@@ -64,6 +64,21 @@ const SCREEN_CHOICES = [
   "undervalued_large_caps",
 ];
 
+const V1_MODE = true;
+const V1_ALLOWED_PAGES = new Set(["dashboard", "alerts"]);
+const MIN_LOADING_MS = 300;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMinimum(startedAt, minimumMs = MIN_LOADING_MS) {
+  const elapsed = Date.now() - startedAt;
+  if (elapsed < minimumMs) {
+    await sleep(minimumMs - elapsed);
+  }
+}
+
 function IndicatorCell({
   value,
   delta,
@@ -97,6 +112,22 @@ export default function App() {
   // [NOTE-NAV-STATE]
   // -------------------
   const [page, setPage] = useState("dashboard"); // "dashboard" | "watchlists" | "alerts" | "settings"
+
+  const isBlockedPage = useCallback(
+    (nextPage) => V1_MODE && !V1_ALLOWED_PAGES.has(nextPage),
+    []
+  );
+
+  const navigateToPage = useCallback(
+    (nextPage) => {
+      if (isBlockedPage(nextPage)) {
+        setPage("dashboard");
+        return;
+      }
+      setPage(nextPage);
+    },
+    [isBlockedPage]
+  );
 
   // -------------------
   // [NOTE-STATE]
@@ -144,6 +175,9 @@ export default function App() {
   const [quickAlertMinFinal, setQuickAlertMinFinal] = useState("");
   const [quickAlertTriggerOnce, setQuickAlertTriggerOnce] = useState(true);
   const [quickAlertErr, setQuickAlertErr] = useState("");
+  const [quickAlertSaving, setQuickAlertSaving] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [explainingSymbol, setExplainingSymbol] = useState(null);
 
   const [errMsg, setErrMsg] = useState("");
 
@@ -212,6 +246,7 @@ export default function App() {
 
   // [NOTE-ACTIONS] Rank
   async function rank() {
+    const startedAt = Date.now();
     setLoading(true);
     setErrors([]);
     setErrMsg("");
@@ -232,6 +267,7 @@ export default function App() {
     } catch (e) {
       setErrMsg(String(e));
     } finally {
+      await waitForMinimum(startedAt);
       setLoading(false);
     }
   }
@@ -266,6 +302,12 @@ export default function App() {
     }
   }, [token, fetchWatchlistsForSave]);
 
+  useEffect(() => {
+    if (isBlockedPage(page)) {
+      setPage("dashboard");
+    }
+  }, [page, isBlockedPage]);
+
   // refetch sparklines when period changes
   useEffect(() => {
     if (rows.length) {
@@ -290,6 +332,7 @@ export default function App() {
   }
 
   async function handleScreenSelect(e) {
+    const startedAt = Date.now();
     const screen = e.target.value;
     if (!screen) return;
     setScreenErr("");
@@ -312,6 +355,7 @@ export default function App() {
     } catch (err) {
       setScreenErr(err.message || String(err));
     } finally {
+      await waitForMinimum(startedAt);
       setScreenLoading(false);
       e.target.value = "";
     }
@@ -319,7 +363,9 @@ export default function App() {
   // [NOTE-QUICK-ALERT-ACTION]
   async function createQuickAlert() {
     if (!quickAlertSym) return;
+    const startedAt = Date.now();
     setQuickAlertErr("");
+    setQuickAlertSaving(true);
 
     try {
       const payload = {
@@ -343,6 +389,9 @@ export default function App() {
       setQuickAlertSym(null);
     } catch (e) {
       setQuickAlertErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setQuickAlertSaving(false);
     }
   }
 
@@ -360,6 +409,8 @@ export default function App() {
 
   // [NOTE-ACTIONS] Explain
   async function openExplain(symbol) {
+    const startedAt = Date.now();
+    setExplainingSymbol(symbol);
     setErrMsg("");
     try {
       const params = new URLSearchParams({
@@ -379,11 +430,16 @@ export default function App() {
       setExplain(json);
     } catch (e) {
       setErrMsg(String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setExplainingSymbol(null);
     }
   }
 
   // [NOTE-ACTIONS] Save current tickers into a watchlist
   async function saveCurrentTickers() {
+    const startedAt = Date.now();
+    setSaveBusy(true);
     try {
       let targetId = saveListId;
 
@@ -414,6 +470,9 @@ export default function App() {
       setSaveOpen(false);
     } catch (e) {
       setErrMsg(String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setSaveBusy(false);
     }
   }
 
@@ -435,7 +494,8 @@ export default function App() {
         user={user}
         onLogout={logout}
         active={page}
-        onNavigate={setPage}
+        onNavigate={navigateToPage}
+        v1Mode={V1_MODE}
       />
 
       <main className="app-main">
@@ -444,6 +504,8 @@ export default function App() {
          ============================== */}
         {page === "dashboard" && (
           <>
+            <MacroDashboardPage />
+
             {/* [NOTE-ONBOARDING-PANEL] */}
             {showOnboarding && (
               <div className="bg-indigo-950/40 border border-indigo-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
@@ -458,7 +520,7 @@ export default function App() {
                     <li>Enter a basket of tickers you care about.</li>
                     <li>Adjust tech vs fund weights and TA sub-weights.</li>
                     <li>
-                      Click <span className="font-semibold">Rank</span> to score
+                      Click <span className="font-semibold">Rank</span> to rate
                       the basket.
                     </li>
                     <li>
@@ -469,14 +531,7 @@ export default function App() {
                     <li>
                       Save a watchlist or set{" "}
                       <span className="font-semibold">Alerts</span> so you get an
-                      email when scores move.
-                    </li>
-                    <li>
-                      Try the{" "}
-                      <span className="font-semibold">
-                        Strategy Backtest (Exp)
-                      </span>{" "}
-                      tab to validate JSON specs and run explicit backtests.
+                      email when ratings move.
                     </li>
                   </ol>
                 </div>
@@ -492,9 +547,10 @@ export default function App() {
                       setShowOnboarding(false);
                       rank();
                     }}
+                    disabled={loading}
                     className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-900"
                   >
-                    Run a first rank
+                    {loading ? "Loading..." : "Run first update"}
                   </button>
                 </div>
               </div>
@@ -505,9 +561,12 @@ export default function App() {
             {/* CTA card */}
             <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
               <div>
-                <div className="text-lg font-semibold">{APP_NAME} Dashboard</div>
+                <div className="text-lg font-semibold">Daily Market Decision Engine</div>
                 <div className="text-sm text-slate-400">
-                  Tune weights • Rank basket • Inspect components
+                  Market Direction + top opportunities in one workflow
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Start with the highest Overall Rating, then open Chart or Why.
                 </div>
               </div>
               <button
@@ -515,7 +574,7 @@ export default function App() {
                 disabled={loading}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 shadow"
               >
-                {loading ? "Ranking..." : "Rank"}
+                {loading ? "Updating ratings..." : "Update ratings"}
               </button>
             </div>
 
@@ -601,18 +660,22 @@ export default function App() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  TA sub-weights apply inside the technical score.
+                  TA sub-weights apply inside technical strength.
                 </p>
               </div>
             </section>
 
             {/* Errors */}
             {!!errMsg && (
-              <div className="bg-rose-950/50 text-rose-200 border border-rose-900 p-3 rounded-xl">
-                <div className="font-semibold">Request Error</div>
-                <pre className="text-sm whitespace-pre-wrap break-words">
-                  {errMsg}
-                </pre>
+              <div className="bg-rose-950/50 text-rose-200 border border-rose-900 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-semibold">Something went wrong. Retry.</div>
+                <button
+                  onClick={rank}
+                  disabled={loading}
+                  className="px-3 py-1.5 rounded-lg border border-rose-700 text-xs hover:bg-rose-900/30 disabled:opacity-60"
+                >
+                  {loading ? "Loading..." : "Retry"}
+                </button>
               </div>
             )}
             {!!errors.length && (
@@ -632,7 +695,7 @@ export default function App() {
             <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 overflow-auto">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold text-slate-300">
-                  Results
+                  Top opportunities
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-slate-500">Spark period:</span>
@@ -640,6 +703,7 @@ export default function App() {
                     <button
                       key={p}
                       onClick={() => setSparkPeriod(p)}
+                      disabled={loading}
                       className={`px-2 py-1 rounded-full border text-xs ${sparkPeriod === p
                         ? "bg-indigo-600 border-indigo-500 text-white"
                         : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
@@ -651,120 +715,132 @@ export default function App() {
                 </div>
               </div>
 
-              <table className="w-full text-sm">
-                <thead className="text-slate-400">
-                  <tr className="text-left">
-                    <Th>Symbol</Th>
-                    <Th>Live</Th>
-                    <Th>Spark</Th>
-                    <Th>Tech</Th>
-                    <Th>Fund</Th>
-                    <Th>Final</Th>
-                    <Th>Trend</Th>
-                    <Th>Momo</Th>
-                    <Th>Vol</Th>
-                    <Th>MeanRev</Th>
-                    <Th></Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
-                    const t = r.components?.technical || {};
-                    const deltas = r.technical_deltas || {};
-                    return (
-                      <tr
-                        key={r.symbol}
-                        className="border-t border-slate-800"
-                      >
-                        <Td className="font-semibold">{r.symbol}</Td>
-                        <Td className="text-emerald-200">
-                          {liveQuotes[r.symbol]
-                            ? `$${Number(liveQuotes[r.symbol]).toFixed(2)}`
-                            : "—"}
-                        </Td>
-                        <Td>
-                          <Sparkline data={sparkMap[r.symbol]} />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={
-                              typeof r.tech_score === "number"
-                                ? r.tech_score
-                                : Number(r.tech_score)
-                            }
-                            delta={r.tech_score_delta}
-                            precision={1}
-                            deltaPrecision={1}
-                          />
-                        </Td>
-                        <Td>{number(r.fundamental_score)}</Td>
-                        <Td>
-                          <ScorePill value={number(r.final_score)} />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.trend_raw}
-                            delta={deltas.trend_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.momentum_raw}
-                            delta={deltas.momentum_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.volume_raw}
-                            delta={deltas.volume_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.meanreversion_raw}
-                            delta={deltas.meanreversion_raw}
-                          />
-                        </Td>
-                        <Td className="text-right">
-                          <div className="inline-flex gap-2">
-                            <button
-                              onClick={() => openExplain(r.symbol)}
-                              className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                            >
-                              Explain
-                            </button>
-                            <button
-                              onClick={() => setChartSym(r.symbol)}
-                              className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                              title="Open chart"
-                            >
-                              Chart
-                            </button>
-                            <button
-                              onClick={() =>
-                                openQuickAlert(r.symbol, r.final_score)
-                              }
-                              className="px-3 py-1 rounded-lg border border-emerald-700 text-emerald-200 hover:bg-emerald-950 text-xs"
-                            >
-                              Alert
-                            </button>
-                          </div>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                  {!rows.length && !loading && (
-                    <tr>
-                      <td
-                        className="py-6 text-center text-slate-500"
-                        colSpan={10}
-                      >
-                        No data yet. Click “Rank”.
-                      </td>
+              {loading && !rows.length ? (
+                <div className="space-y-3" aria-live="polite">
+                  {[0, 1, 2, 3, 4].map((idx) => (
+                    <div
+                      key={`ranker-skeleton-${idx}`}
+                      className="h-10 rounded-lg bg-slate-800/60 animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-slate-400">
+                    <tr className="text-left">
+                      <Th>Symbol</Th>
+                      <Th>Live</Th>
+                      <Th>Spark</Th>
+                      <Th>Tech Strength</Th>
+                      <Th>Fund Strength</Th>
+                      <Th>Overall Rating</Th>
+                      <Th>Trend</Th>
+                      <Th>Momo</Th>
+                      <Th>Vol</Th>
+                      <Th>MeanRev</Th>
+                      <Th></Th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => {
+                      const t = r.components?.technical || {};
+                      const deltas = r.technical_deltas || {};
+                      return (
+                        <tr
+                          key={r.symbol}
+                          className="border-t border-slate-800"
+                        >
+                          <Td className="font-semibold">{r.symbol}</Td>
+                          <Td className="text-emerald-200">
+                            {liveQuotes[r.symbol]
+                              ? `$${Number(liveQuotes[r.symbol]).toFixed(2)}`
+                              : "—"}
+                          </Td>
+                          <Td>
+                            <Sparkline data={sparkMap[r.symbol]} />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={
+                                typeof r.tech_score === "number"
+                                  ? r.tech_score
+                                  : Number(r.tech_score)
+                              }
+                              delta={r.tech_score_delta}
+                              precision={1}
+                              deltaPrecision={1}
+                            />
+                          </Td>
+                          <Td>{number(r.fundamental_score)}</Td>
+                          <Td>
+                            <ScorePill value={number(r.final_score)} />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.trend_raw}
+                              delta={deltas.trend_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.momentum_raw}
+                              delta={deltas.momentum_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.volume_raw}
+                              delta={deltas.volume_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.meanreversion_raw}
+                              delta={deltas.meanreversion_raw}
+                            />
+                          </Td>
+                          <Td className="text-right">
+                            <div className="inline-flex gap-2">
+                              <button
+                                onClick={() => openExplain(r.symbol)}
+                                disabled={explainingSymbol === r.symbol}
+                                className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+                              >
+                                {explainingSymbol === r.symbol ? "Loading..." : "Why"}
+                              </button>
+                              <button
+                                onClick={() => setChartSym(r.symbol)}
+                                className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+                                title="Open chart"
+                              >
+                                Chart
+                              </button>
+                              <button
+                                onClick={() =>
+                                  openQuickAlert(r.symbol, r.final_score)
+                                }
+                                className="px-3 py-1 rounded-lg border border-emerald-700 text-emerald-200 hover:bg-emerald-950 text-xs"
+                              >
+                                Set alert
+                              </button>
+                            </div>
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                    {!rows.length && !loading && (
+                      <tr>
+                        <td
+                          className="py-6 text-center text-slate-500"
+                          colSpan={10}
+                        >
+                          No data yet. Click "Update ratings".
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </section>
 
             <footer className="pt-2 text-xs text-slate-500">
@@ -776,30 +852,30 @@ export default function App() {
         {/* ==============================
           OTHER PAGES
          ============================== */}
-        {page === "watchlists" && (
+        {page === "alerts" && <Alerts />}
+
+        {!V1_MODE && page === "watchlists" && (
           <Watchlists
             onUseTickers={(symbols) => {
               setTickers(symbols.join(","));
-              setPage("dashboard");
+              navigateToPage("dashboard");
             }}
           />
         )}
 
-        {page === "alerts" && <Alerts />}
+        {!V1_MODE && page === "macro" && <MacroDashboardPage />}
 
-        {page === "macro" && <MacroDashboardPage />}
+        {!V1_MODE && page === "strategy-backtest" && <StrategyBacktestPage onNavigate={navigateToPage} />}
 
-        {page === "strategy-backtest" && <StrategyBacktestPage onNavigate={setPage} />}
+        {!V1_MODE && page === "orders" && <Orders />}
 
-        {page === "orders" && <Orders />}
+        {!V1_MODE && page === "positions" && <Positions />}
 
-        {page === "positions" && <Positions />}
+        {!V1_MODE && page === "performance" && <Performance />}
 
-        {page === "performance" && <Performance />}
+        {!V1_MODE && page === "leaderboards" && <Leaderboards />}
 
-        {page === "leaderboards" && <Leaderboards />}
-
-        {page === "bots" && (
+        {!V1_MODE && page === "bots" && (
           <BotsPage
             onSelectBot={(id) => {
               setSelectedBotId(id);
@@ -808,16 +884,16 @@ export default function App() {
           />
         )}
 
-        {page === "bot-detail" && selectedBotId && (
+        {!V1_MODE && page === "bot-detail" && selectedBotId && (
           <BotDetailPage
             botId={selectedBotId}
             onBack={() => setPage("bots")}
           />
         )}
 
-        {page === "backtest-history" && <BacktestHistoryPage />}
+        {!V1_MODE && page === "backtest-history" && <BacktestHistoryPage />}
 
-        {page === "settings" && (
+        {!V1_MODE && page === "settings" && (
           <Settings
             tickers={tickers}
             techWeight={techWeight}
@@ -830,7 +906,7 @@ export default function App() {
           />
         )}
 
-        {page === "strategies" && <StrategyBuilder />}
+        {!V1_MODE && page === "strategies" && <StrategyBuilder />}
       </main>
 
       {/* ==============================
@@ -916,9 +992,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={saveCurrentTickers}
+                  disabled={saveBusy}
                   className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500"
                 >
-                  Save
+                  {saveBusy ? "Loading..." : "Save"}
                 </button>
               </div>
             </div>
@@ -951,7 +1028,7 @@ export default function App() {
             <div className="space-y-3 text-sm">
               {quickAlertFinal != null && (
                 <div className="text-xs text-slate-400">
-                  Current final score:{" "}
+                  Current overall rating:{" "}
                   <span className="text-slate-100 font-semibold">
                     {Number(quickAlertFinal).toFixed(2)}
                   </span>
@@ -960,7 +1037,7 @@ export default function App() {
 
               <div>
                 <label className="block text-xs text-slate-400 mb-1">
-                  Alert when final score ≥
+                  Alert when overall rating is at or above
                 </label>
                 <input
                   type="number"
@@ -996,9 +1073,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={createQuickAlert}
+                  disabled={quickAlertSaving}
                   className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs"
                 >
-                  Save alert
+                  {quickAlertSaving ? "Loading..." : "Save alert"}
                 </button>
               </div>
             </div>
@@ -1027,12 +1105,12 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-3 gap-3 mb-4">
-              <Card title="Tech" value={number(explain.tech_score)} />
+              <Card title="Tech Strength" value={number(explain.tech_score)} />
               <Card
-                title="Fund"
+                title="Fund Strength"
                 value={number(explain.fundamental_score)}
               />
-              <Card title="Final" value={number(explain.final_score)} />
+              <Card title="Overall Rating" value={number(explain.final_score)} />
             </div>
 
             <Section title="Technical">

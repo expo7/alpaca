@@ -3,6 +3,18 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx"; // <-- use the shared auth context
 
 const BASE = "http://127.0.0.1:8000"; // same as App.jsx
+const MIN_LOADING_MS = 300;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMinimum(startedAt) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < MIN_LOADING_MS) {
+        await sleep(MIN_LOADING_MS - elapsed);
+    }
+}
 
 export default function AlertHistoryPanel() {
     const { token } = useAuth(); // <-- same token Alerts page uses
@@ -19,6 +31,8 @@ export default function AlertHistoryPanel() {
             setEvents([]);
             return;
         }
+
+        const startedAt = Date.now();
 
         try {
             setLoading(true);
@@ -40,14 +54,19 @@ export default function AlertHistoryPanel() {
                 },
             });
 
-            const text = await res.text(); // <-- read raw body for logging + parsing
-            console.log("alert-events response:", res.status, text);
-
+            let text = "";
             let data = null;
-            try {
-                data = text ? JSON.parse(text) : null;
-            } catch {
-                data = null;
+
+            if (typeof res.text === "function") {
+                text = await res.text();
+                try {
+                    data = text ? JSON.parse(text) : null;
+                } catch {
+                    data = null;
+                }
+            } else if (typeof res.json === "function") {
+                data = await res.json().catch(() => null);
+                text = data ? JSON.stringify(data) : "";
             }
 
             if (!res.ok) {
@@ -65,8 +84,9 @@ export default function AlertHistoryPanel() {
             setInitialized(true);
         } catch (err) {
             console.error("Failed to fetch alert history", err);
-            setError(`Failed to load alert history: ${err.message}`);
+            setError("Something went wrong. Retry.");
         } finally {
+            await waitForMinimum(startedAt);
             setLoading(false);
         }
     }
@@ -145,7 +165,7 @@ export default function AlertHistoryPanel() {
                         Alert History
                     </h2>
                     <p className="text-xs text-slate-400 mt-1">
-                        See when your alerts actually fired, with scores at the time.
+                        See what happened and why each alert fired.
                     </p>
                 </div>
 
@@ -163,24 +183,34 @@ export default function AlertHistoryPanel() {
                     />
                     <button
                         type="submit"
+                        disabled={loading}
                         className="px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white"
                     >
-                        Apply
+                        {loading ? "Loading..." : "Apply"}
                     </button>
                     <button
                         type="button"
                         onClick={resetFilter}
+                        disabled={loading}
                         className="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-200 hover:bg-slate-800"
                     >
-                        Reset
+                        {loading ? "Loading..." : "Reset"}
                     </button>
                 </form>
             </div>
 
             {/* STATUS / ERRORS */}
             {error && (
-                <div className="mb-3 text-xs text-red-400 bg-red-950/40 border border-red-800 rounded-md px-3 py-2">
-                    {error}
+                <div className="mb-3 text-xs text-red-400 bg-red-950/40 border border-red-800 rounded-md px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                    <span>{error}</span>
+                    <button
+                        type="button"
+                        onClick={() => fetchHistory(symbolFilter.trim() ? { symbol: symbolFilter.trim() } : {})}
+                        disabled={loading}
+                        className="px-2 py-1 rounded-md border border-red-700 text-[11px] hover:bg-red-900/30 disabled:opacity-60"
+                    >
+                        {loading ? "Loading..." : "Retry"}
+                    </button>
                 </div>
             )}
 
@@ -211,13 +241,13 @@ export default function AlertHistoryPanel() {
                                         Symbol
                                     </th>
                                     <th className="px-3 py-2 text-right font-medium text-slate-400">
-                                        Final
+                                        Rating
                                     </th>
                                     <th className="px-3 py-2 text-right font-medium text-slate-400">
-                                        Tech
+                                        Tech Strength
                                     </th>
                                     <th className="px-3 py-2 text-right font-medium text-slate-400">
-                                        Fund
+                                        Fund Strength
                                     </th>
                                     <th className="px-3 py-2 text-right font-medium text-slate-400">
                                         Alert ID

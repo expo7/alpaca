@@ -104,22 +104,20 @@ export default function Login() {
             <button
               type="button"
               onClick={() => switchMode("login")}
-              className={`px-3 py-1 rounded-full border ${
-                !isSignup
+              className={`px-3 py-1 rounded-full border ${!isSignup
                   ? "bg-indigo-600 border-indigo-500"
                   : "border-slate-700 text-slate-400"
-              }`}
+                }`}
             >
               Sign in
             </button>
             <button
               type="button"
               onClick={() => switchMode("signup")}
-              className={`px-3 py-1 rounded-full border ${
-                isSignup
+              className={`px-3 py-1 rounded-full border ${isSignup
                   ? "bg-indigo-600 border-indigo-500"
                   : "border-slate-700 text-slate-400"
-              }`}
+                }`}
             >
               Create account
             </button>
@@ -203,18 +201,18 @@ export default function Login() {
                   ? "Creating..."
                   : "Signing in..."
                 : isSignup
-                ? "Create account"
-                : "Sign in"}
+                  ? "Create account"
+                  : "Sign in"}
             </button>
           </form>
 
           {/* Value props — compact */}
           <ul className="mt-4 text-xs text-slate-400 space-y-1 list-disc pl-4">
-            <li>Rank any basket of tickers.</li>
-            <li>Technical + fundamental scoring.</li>
+            <li>Read market direction on the dashboard.</li>
+            <li>Technical + fundamental ratings.</li>
             <li>TradingView charting & explain panel.</li>
-            <li>Email alerts when scores move.</li>
-            <li>Simple Top-N backtests vs SPY.</li>
+            <li>Email alerts when ratings move.</li>
+            <li>One daily market decision workflow.</li>
           </ul>
         </div>
       </div>

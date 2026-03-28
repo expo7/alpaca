@@ -8,6 +8,18 @@ import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
 
 const BASE = "http://127.0.0.1:8000";
+const MIN_LOADING_MS = 300;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMinimum(startedAt) {
+  const elapsed = Date.now() - startedAt;
+  if (elapsed < MIN_LOADING_MS) {
+    await sleep(MIN_LOADING_MS - elapsed);
+  }
+}
 
 // small helper for calling the API with JWT
 async function apiFetch(path, token, options = {}) {
@@ -32,6 +44,10 @@ export default function Alerts() {
   const [alerts, setAlerts] = useState([]);
   const [watchlists, setWatchlists] = useState([]);
   const [err, setErr] = useState("");
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
+  const [creatingAlert, setCreatingAlert] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
 
   // form state
   const [alertType, setAlertType] = useState("symbol"); // "symbol" | "watchlist"
@@ -49,6 +65,7 @@ export default function Alerts() {
 
   async function testAlert(alertObj) {
     const id = alertObj.id;
+    const startedAt = Date.now();
     try {
       setErr("");
       setTestInfo((prev) => ({
@@ -90,18 +107,25 @@ export default function Alerts() {
           error: message,
         },
       }));
+    } finally {
+      await waitForMinimum(startedAt);
     }
   }
 
   // ------- load data -------
 
   async function loadAlerts() {
+    const startedAt = Date.now();
     try {
+      setLoadingAlerts(true);
       setErr("");
       const data = await apiFetch("/api/alerts/", token);
       setAlerts(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setLoadingAlerts(false);
     }
   }
 
@@ -128,7 +152,9 @@ export default function Alerts() {
   // ------- actions -------
 
   async function createAlert() {
+    const startedAt = Date.now();
     try {
+      setCreatingAlert(true);
       setErr("");
       const body = {
         alert_type: alertType,
@@ -155,11 +181,16 @@ export default function Alerts() {
       loadAlerts();
     } catch (e) {
       setErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setCreatingAlert(false);
     }
   }
 
   async function deleteAlert(id) {
+    const startedAt = Date.now();
     try {
+      setDeletingId(id);
       setErr("");
       await apiFetch(`/api/alerts/${id}/`, token, {
         method: "DELETE",
@@ -167,11 +198,16 @@ export default function Alerts() {
       setAlerts((prev) => prev.filter((a) => a.id !== id));
     } catch (e) {
       setErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setDeletingId(null);
     }
   }
 
   async function toggleActive(alert) {
+    const startedAt = Date.now();
     try {
+      setTogglingId(alert.id);
       setErr("");
       await apiFetch(`/api/alerts/${alert.id}/`, token, {
         method: "PATCH",
@@ -181,6 +217,9 @@ export default function Alerts() {
       loadAlerts();
     } catch (e) {
       setErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setTogglingId(null);
     }
   }
 
@@ -200,12 +239,8 @@ export default function Alerts() {
       <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
         <div className="text-lg font-semibold">Alerts</div>
         <p className="text-sm text-slate-400 mt-1">
-          Create alerts that fire when scores cross your thresholds.
-          The{" "}
-          <code className="bg-slate-800 px-1 rounded text-xs">
-            check_alerts
-          </code>{" "}
-          management command should be run periodically (e.g. via cron).
+          Create alerts when ratings cross your threshold.
+          Pick a threshold, then click Create alert.
         </p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -264,7 +299,7 @@ export default function Alerts() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-400">
-                  Min final
+                  Min rating
                 </label>
                 <input
                   type="number"
@@ -275,7 +310,7 @@ export default function Alerts() {
               </div>
               <div>
                 <label className="block text-xs text-slate-400">
-                  Min tech
+                  Min tech strength
                 </label>
                 <input
                   type="number"
@@ -287,7 +322,7 @@ export default function Alerts() {
               </div>
               <div>
                 <label className="block text-xs text-slate-400">
-                  Min fund
+                  Min fund strength
                 </label>
                 <input
                   type="number"
@@ -311,17 +346,26 @@ export default function Alerts() {
             <div className="pt-2">
               <button
                 onClick={createAlert}
+                disabled={creatingAlert}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm"
               >
-                Create alert
+                {creatingAlert ? "Loading..." : "Create alert"}
               </button>
             </div>
           </div>
         </div>
 
         {err && (
-          <div className="mt-3 text-rose-300 text-xs whitespace-pre-wrap break-words">
-            {err}
+          <div className="mt-3 bg-rose-950/50 text-rose-200 border border-rose-900 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs font-semibold">Something went wrong. Retry.</div>
+            <button
+              type="button"
+              onClick={loadAlerts}
+              disabled={loadingAlerts}
+              className="px-3 py-1.5 rounded-lg border border-rose-700 text-xs hover:bg-rose-900/30 disabled:opacity-60"
+            >
+              {loadingAlerts ? "Loading..." : "Retry"}
+            </button>
           </div>
         )}
       </div>
@@ -329,6 +373,16 @@ export default function Alerts() {
       {/* list alerts */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
         <div className="text-sm font-semibold mb-2">Your alerts</div>
+        {loadingAlerts && (
+          <div className="mb-3 space-y-2" aria-live="polite">
+            {[0, 1, 2].map((idx) => (
+              <div
+                key={`alerts-skeleton-${idx}`}
+                className="h-12 rounded-xl bg-slate-800/60 animate-pulse"
+              />
+            ))}
+          </div>
+        )}
         <div className="space-y-2 text-sm">
           {alerts.map((a) => {
             const t = testInfo[a.id];
@@ -359,7 +413,7 @@ export default function Alerts() {
                       </span>
                     </div>
                     <div className="text-xs text-slate-400">
-                      Tech ≥ {a.min_tech_score ?? "-"} · Fund ≥{" "}
+                      Tech strength at or above {a.min_tech_score ?? "-"} · Fund strength at or above {" "}
                       {a.min_fund_score ?? "-"}
                     </div>
                     {a.last_triggered_at && (
@@ -374,31 +428,31 @@ export default function Alerts() {
                     {/* TEST ALERT NOW BUTTON */}
                     <button
                       onClick={() => testAlert(a)}
-                      disabled={t?.loading}
-                      className={`px-3 py-1.5 rounded-lg text-xs border ${
-                        t?.loading
-                          ? "border-blue-900 text-blue-400 bg-blue-950/40 cursor-wait"
-                          : "border-blue-700 text-blue-300 hover:bg-blue-900"
-                      }`}
+                      disabled={t?.loading || deletingId === a.id || togglingId === a.id}
+                      className={`px-3 py-1.5 rounded-lg text-xs border ${t?.loading
+                        ? "border-blue-900 text-blue-400 bg-blue-950/40 cursor-wait"
+                        : "border-blue-700 text-blue-300 hover:bg-blue-900"
+                        }`}
                     >
                       {t?.loading ? "Testing…" : "Test"}
                     </button>
 
                     <button
                       onClick={() => toggleActive(a)}
-                      className={`px-3 py-1.5 rounded-lg text-xs border ${
-                        a.active
-                          ? "border-emerald-500 text-emerald-300"
-                          : "border-slate-700 text-slate-400"
-                      }`}
+                      disabled={togglingId === a.id || deletingId === a.id}
+                      className={`px-3 py-1.5 rounded-lg text-xs border ${a.active
+                        ? "border-emerald-500 text-emerald-300"
+                        : "border-slate-700 text-slate-400"
+                        }`}
                     >
-                      {a.active ? "Active" : "Paused"}
+                      {togglingId === a.id ? "Loading..." : a.active ? "Active" : "Paused"}
                     </button>
                     <button
                       onClick={() => deleteAlert(a.id)}
+                      disabled={deletingId === a.id}
                       className="px-3 py-1.5 rounded-lg text-xs border border-rose-900 text-rose-200 hover:bg-rose-950"
                     >
-                      Delete
+                      {deletingId === a.id ? "Loading..." : "Delete"}
                     </button>
                   </div>
                 </div>
@@ -421,13 +475,13 @@ export default function Alerts() {
                       <span className="text-emerald-300">
                         Would trigger now for{" "}
                         <span className="font-semibold">{symbolStr}</span>{" "}
-                        (Final {finalStr} ≥ {a.min_final_score})
+                        (Rating {finalStr} is at or above {a.min_final_score})
                       </span>
                     ) : (
                       <span className="text-amber-300">
                         Below threshold for{" "}
                         <span className="font-semibold">{symbolStr}</span>{" "}
-                        (Final {finalStr} &lt; {a.min_final_score})
+                        (Rating {finalStr} &lt; {a.min_final_score})
                       </span>
                     )}
                   </div>
@@ -436,7 +490,7 @@ export default function Alerts() {
             );
           })}
           {!alerts.length && (
-            <div className="text-slate-500 text-xs">No alerts yet.</div>
+            !loadingAlerts && <div className="text-slate-500 text-xs">No alerts yet.</div>
           )}
         </div>
       </div>

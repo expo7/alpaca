@@ -1,6 +1,6 @@
 // src/brand.js
 export const APP_NAME = "Stock Ranker";
-export const APP_TAGLINE = "Tech + fundamentals, one score.";
+export const APP_TAGLINE = "Tech + fundamentals, one rating.";
 export const BRAND = {
   primary: "indigo", // Tailwind color token root (e.g. indigo, emerald, sky)
   // You can expand later (secondary, accents, etc.)

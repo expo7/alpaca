@@ -21,12 +21,20 @@ const tabs = [
   { id: "strategies", label: "Strategies" },
 ];
 
+const V1_TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "alerts", label: "Alerts" },
+];
+
 export default function Navbar({
   user,
   active,
   onNavigate,
   onLogout,
+  v1Mode = false,
 }) {
+  const visibleTabs = v1Mode ? V1_TABS : tabs;
+
   return (
     <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
@@ -38,14 +46,14 @@ export default function Navbar({
               Stock Ranker
             </span>
             <span className="text-xs text-slate-400">
-              Tech + fundamentals, one score.
+              Tech + fundamentals, one rating.
             </span>
           </div>
         </div>
 
         {/* Center: nav tabs */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -85,14 +93,14 @@ export default function Navbar({
 
       {/* Mobile nav row */}
       <div className="md:hidden border-t border-slate-800 px-3 py-2 flex gap-2 overflow-x-auto text-xs">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => onNavigate(tab.id)}
             className={`px-3 py-1.5 rounded-full border whitespace-nowrap ${active === tab.id
-                ? "bg-indigo-600/90 border-indigo-500 text-white"
-                : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
+              ? "bg-indigo-600/90 border-indigo-500 text-white"
+              : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
               }`}
           >
             {tab.label}
