@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx"; // <-- use the shared auth context
 
-const BASE = "http://127.0.0.1:8000"; // same as App.jsx
+const BASE = ""; // same as App.jsx
 const MIN_LOADING_MS = 300;
 
 function sleep(ms) {

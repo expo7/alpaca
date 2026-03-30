@@ -11,7 +11,7 @@ import normalizeCandles from "../components/backtest/utils/normalizeCandles.js";
 import normalizeOrders from "../components/backtest/utils/normalizeOrders.js";
 import mergeOrdersIntoCandles from "../components/backtest/utils/mergeOrdersIntoCandles.js";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 const DEFAULT_TEMPLATE = STRATEGY_TEMPLATES[0];
 
@@ -163,7 +163,7 @@ export default function StrategyBacktestPage({ onNavigate }) {
     async function loadTemplates() {
       try {
         setTemplateErr("");
-        const res = await fetch("http://127.0.0.1:8000/api/strategies/templates/", {
+        const res = await fetch("/api/strategies/templates/", {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         let data = [];

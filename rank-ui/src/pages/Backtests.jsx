@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 // Safer fetch wrapper that can handle non-JSON errors
 async function apiFetch(path, token, options = {}) {

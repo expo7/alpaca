@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import { APP_NAME, APP_TAGLINE } from "./brand";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 export default function Login() {
   const { login } = useAuth();

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 const MIN_LOADING_MS = 300;
 
 function sleep(ms) {

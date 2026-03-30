@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 const AuthCtx = createContext(null);
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("access") || "");

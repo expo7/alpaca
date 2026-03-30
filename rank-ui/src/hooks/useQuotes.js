@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 // Shared hook to fetch live quotes for a list of symbols with a debounce/poll.
 export default function useQuotes(symbols = [], { pollMs = 20000, debounceMs = 400 } = {}) {

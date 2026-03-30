@@ -3,7 +3,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import Toast from "../components/Toast.jsx";
 import useQuotes from "../hooks/useQuotes.js";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 const REFRESH_MS = 15000;
 
 async function apiFetch(path, { token, ...opts } = {}) {

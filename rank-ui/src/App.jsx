@@ -28,7 +28,7 @@ import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 // [NOTE-API-HELPER] Centralized fetch wrapper with JWT.
 async function apiFetch(path, { token, ...opts }) {

@@ -45,7 +45,7 @@ describe("ArticleDetailPage markdown rendering", () => {
 
         render(
             <ArticleDetailPage
-                apiBase="http://127.0.0.1:8000"
+                apiBase=""
                 slug="markdown-test"
                 isAuthed={false}
                 user={null}
