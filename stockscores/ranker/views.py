@@ -882,6 +882,22 @@ class ConfigView(APIView):
         return Response({"allow_live_bots": getattr(settings, "ALLOW_LIVE_BOTS", False)})
 
 
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        return Response(
+            {
+                "id": user.id,
+                "username": user.get_username(),
+                "email": user.email,
+                "is_staff": bool(user.is_staff),
+                "is_superuser": bool(user.is_superuser),
+            }
+        )
+
+
 class ArticleListCreateView(APIView):
     """
     GET /api/articles/ -> public list
@@ -898,6 +914,8 @@ class ArticleListCreateView(APIView):
     def post(self, request, *args, **kwargs):
         if not request.user or not request.user.is_authenticated:
             return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({"detail": "Only staff can create articles."}, status=status.HTTP_403_FORBIDDEN)
         serializer = ArticleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()

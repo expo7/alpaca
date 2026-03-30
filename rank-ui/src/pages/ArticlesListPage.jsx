@@ -42,6 +42,7 @@ export default function ArticlesListPage({
     const [content, setContent] = useState("");
     const [creating, setCreating] = useState(false);
     const [createErr, setCreateErr] = useState("");
+    const canManageArticles = Boolean(isAuthed && (user?.is_staff || user?.is_superuser));
 
     const suggestedSlug = useMemo(() => slugify(title), [title]);
 
@@ -66,8 +67,8 @@ export default function ArticlesListPage({
 
     async function createArticle(e) {
         e.preventDefault();
-        if (!token) {
-            setCreateErr("Sign in required to create an article.");
+        if (!token || !canManageArticles) {
+            setCreateErr("Only staff users can create articles.");
             return;
         }
 
@@ -124,7 +125,7 @@ export default function ArticlesListPage({
                     <p className="text-sm text-slate-400">Simple public reads from the Quantelle team.</p>
                 </header>
 
-                {isAuthed && (
+                {canManageArticles && (
                     <section className="border border-slate-700 rounded-lg p-6 bg-slate-900/50">
                         <h2 className="text-base font-semibold mb-4">Create article</h2>
                         <form className="space-y-4" onSubmit={createArticle}>

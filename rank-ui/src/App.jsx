@@ -188,6 +188,9 @@ export default function App() {
   const [recentAlerts, setRecentAlerts] = useState([]);
   const [recentAlertsLoading, setRecentAlertsLoading] = useState(false);
   const [recentAlertsErr, setRecentAlertsErr] = useState("");
+  const [latestInsights, setLatestInsights] = useState([]);
+  const [latestInsightsLoading, setLatestInsightsLoading] = useState(false);
+  const [latestInsightsErr, setLatestInsightsErr] = useState("");
   const [macroSnapshot, setMacroSnapshot] = useState(null);
   const [screenCache, setScreenCache] = useState({});
   const [screenLoading, setScreenLoading] = useState(false);
@@ -229,6 +232,44 @@ export default function App() {
   const [explainingSymbol, setExplainingSymbol] = useState(null);
 
   const [errMsg, setErrMsg] = useState("");
+
+  useEffect(() => {
+    if (!isAuthed || route.kind !== "app") return;
+
+    let alive = true;
+
+    async function fetchLatestInsights() {
+      setLatestInsightsLoading(true);
+      setLatestInsightsErr("");
+      try {
+        const res = await fetch(`${BASE}/api/articles/`);
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.detail || "Failed to load insights.");
+
+        const sorted = (Array.isArray(json) ? json : [])
+          .slice()
+          .sort((a, b) => {
+            const aTime = new Date(a?.created_at || 0).getTime();
+            const bTime = new Date(b?.created_at || 0).getTime();
+            return bTime - aTime;
+          })
+          .slice(0, 3);
+
+        if (!alive) return;
+        setLatestInsights(sorted);
+      } catch (e) {
+        if (!alive) return;
+        setLatestInsightsErr(e?.message || "Failed to load insights.");
+      } finally {
+        if (alive) setLatestInsightsLoading(false);
+      }
+    }
+
+    fetchLatestInsights();
+    return () => {
+      alive = false;
+    };
+  }, [isAuthed, route.kind]);
 
   const pushChartDebug = useCallback((message, meta = {}) => {
     if (!DEBUG_CHART) return;
@@ -1262,6 +1303,47 @@ export default function App() {
                 </div>
               ) : (
                 <div className="text-xs text-slate-400">No tickers saved yet. Add one above.</div>
+              )}
+            </section>
+
+            <section className="bg-slate-900/35 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h3 className="text-sm font-semibold text-slate-200">Latest Insight</h3>
+                <button
+                  type="button"
+                  onClick={() => navigatePath("/articles")}
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  View all
+                </button>
+              </div>
+
+              {latestInsightsLoading && (
+                <p className="text-xs text-slate-500">Loading insights...</p>
+              )}
+
+              {!latestInsightsLoading && latestInsightsErr && (
+                <p className="text-xs text-rose-300">{latestInsightsErr}</p>
+              )}
+
+              {!latestInsightsLoading && !latestInsightsErr && latestInsights.length === 0 && (
+                <p className="text-xs text-slate-500">No insights published yet.</p>
+              )}
+
+              {!latestInsightsLoading && !latestInsightsErr && latestInsights.length > 0 && (
+                <ul className="space-y-2">
+                  {latestInsights.map((article) => (
+                    <li key={article.slug}>
+                      <button
+                        type="button"
+                        onClick={() => navigatePath(`/articles/${article.slug}`)}
+                        className="text-sm text-left text-slate-300 hover:text-indigo-300 transition"
+                      >
+                        {article.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </section>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import ArticleNav from "../components/ArticleNav.jsx";
 import ArticleCTA from "../components/ArticleCTA.jsx";
 
@@ -83,8 +84,8 @@ export default function ArticleDetailPage({
                             <h1 className="text-3xl sm:text-4xl font-bold leading-tight tracking-tight">{article.title}</h1>
                             <p className="text-sm text-slate-400">{formatDate(article.created_at)}</p>
                         </header>
-                        <div className="prose prose-invert max-w-none prose-sm sm:prose-base whitespace-pre-wrap leading-8 text-slate-100 font-light">
-                            {article.content}
+                        <div className="markdown-content prose prose-invert max-w-none prose-sm sm:prose-base leading-8 prose-headings:text-slate-100 prose-p:text-slate-200 prose-strong:text-white prose-li:text-slate-200 prose-hr:border-slate-700 prose-blockquote:text-slate-300 prose-blockquote:border-slate-600">
+                            <ReactMarkdown>{article.content || ""}</ReactMarkdown>
                         </div>
                     </article>
                 )}

@@ -62,6 +62,58 @@ body,
   gap: 16px;
 }
 
+/* Fallback markdown styling for article content when prose plugin styles are stale/not loaded. */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  color: #f8fafc;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+}
+
+.markdown-content h1 {
+  font-size: 1.75rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.35rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.125rem;
+}
+
+.markdown-content p,
+.markdown-content li,
+.markdown-content blockquote {
+  color: #cbd5e1;
+}
+
+.markdown-content ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.markdown-content strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid #475569;
+  padding-left: 0.9rem;
+  margin: 1rem 0;
+}
+
+.markdown-content hr {
+  border: 0;
+  border-top: 1px solid #334155;
+  margin: 1.25rem 0;
+}
+
 @media (min-width: 1024px) {
   .sbp-grid.two-col {
     grid-template-columns: 1fr 0.9fr;

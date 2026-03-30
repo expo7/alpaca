@@ -54,7 +54,7 @@ export default function Navbar({
 
         {/* Center: nav tabs — hidden in V1 (single page) */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          {!v1Mode && visibleTabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

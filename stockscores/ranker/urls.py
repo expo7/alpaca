@@ -28,6 +28,7 @@ from .views import (
     BotViewSet,
     YFinanceUsageView,
     ConfigView,
+    CurrentUserView,
     ArticleListCreateView,
     ArticleDetailView,
 )
@@ -187,6 +188,7 @@ urlpatterns = [
     ),
     path("metrics/yfinance/", YFinanceUsageView.as_view(), name="yfinance-usage"),
     path("config/", ConfigView.as_view(), name="config"),
+    path("auth/me/", CurrentUserView.as_view(), name="auth-me"),
     path("articles/", ArticleListCreateView.as_view(), name="article-list-create"),
     path("articles/<slug:slug>/", ArticleDetailView.as_view(), name="article-detail"),
 ]
