@@ -24,6 +24,7 @@ const tabs = [
 
 const V1_TABS = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "articles", label: "Articles" },
 ];
 
 export default function Navbar({

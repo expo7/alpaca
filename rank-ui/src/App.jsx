@@ -23,6 +23,8 @@ import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
 import BotDetailPage from "./pages/BotDetailPage.jsx";
 import MacroDashboardPage from "./pages/MacroDashboardPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
+import ArticlesListPage from "./pages/ArticlesListPage.jsx";
+import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -115,6 +117,28 @@ function IndicatorCell({
 export default function App() {
   const { token, user, logout } = useAuth();
   const isAuthed = Boolean(token);
+  const [pathname, setPathname] = useState(() => window.location.pathname || "/");
+
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname || "/");
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const route = useMemo(() => {
+    if (pathname === "/articles") return { kind: "articles-list" };
+    if (pathname.startsWith("/articles/")) {
+      const slug = decodeURIComponent(pathname.replace(/^\/articles\//, "")).trim();
+      if (slug) return { kind: "article-detail", slug };
+    }
+    return { kind: "app" };
+  }, [pathname]);
+
+  const navigatePath = useCallback((nextPath) => {
+    if (!nextPath || nextPath === pathname) return;
+    window.history.pushState({}, "", nextPath);
+    setPathname(nextPath);
+  }, [pathname]);
 
   // -------------------
   // [NOTE-NAV-STATE]
@@ -128,13 +152,18 @@ export default function App() {
 
   const navigateToPage = useCallback(
     (nextPage) => {
+      // Handle articles navigation separately using path routing
+      if (nextPage === "articles") {
+        navigatePath("/articles");
+        return;
+      }
       if (isBlockedPage(nextPage)) {
         setPage("dashboard");
         return;
       }
       setPage(nextPage);
     },
-    [isBlockedPage]
+    [isBlockedPage, navigatePath]
   );
 
   // -------------------
@@ -745,7 +774,69 @@ export default function App() {
   // [NOTE-UI] App Shell
   // ==============================
   if (!isAuthed) {
+    if (route.kind === "articles-list") {
+      return (
+        <ArticlesListPage
+          apiBase={BASE}
+          token={token}
+          isAuthed={isAuthed}
+          user={user}
+          onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
+          onNavigateDashboard={() => navigatePath("dashboard")}
+          onLogout={logout}
+          onSignUp={() => navigatePath("dashboard")}
+          onLogIn={() => navigatePath("dashboard")}
+        />
+      );
+    }
+    if (route.kind === "article-detail") {
+      return (
+        <ArticleDetailPage
+          apiBase={BASE}
+          slug={route.slug}
+          isAuthed={isAuthed}
+          user={user}
+          onBackToArticles={() => navigatePath("/articles")}
+          onNavigateDashboard={() => navigatePath("dashboard")}
+          onLogout={logout}
+          onSignUp={() => navigatePath("dashboard")}
+          onLogIn={() => navigatePath("dashboard")}
+        />
+      );
+    }
     return <Landing />;
+  }
+
+  if (route.kind === "articles-list") {
+    return (
+      <ArticlesListPage
+        apiBase={BASE}
+        token={token}
+        isAuthed={isAuthed}
+        user={user}
+        onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
+        onNavigateDashboard={() => navigatePath("dashboard")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("dashboard")}
+        onLogIn={() => navigatePath("dashboard")}
+      />
+    );
+  }
+
+  if (route.kind === "article-detail") {
+    return (
+      <ArticleDetailPage
+        apiBase={BASE}
+        slug={route.slug}
+        isAuthed={isAuthed}
+        user={user}
+        onBackToArticles={() => navigatePath("/articles")}
+        onNavigateDashboard={() => navigatePath("dashboard")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("dashboard")}
+        onLogIn={() => navigatePath("dashboard")}
+      />
+    );
   }
 
   return (

@@ -208,11 +208,10 @@ export default function Login() {
 
           {/* Value props — compact */}
           <ul className="mt-4 text-xs text-slate-400 space-y-1 list-disc pl-4">
-            <li>Read market direction on the dashboard.</li>
-            <li>Technical + fundamental ratings.</li>
-            <li>TradingView charting & explain panel.</li>
-            <li>Email alerts when ratings move.</li>
-            <li>One daily market decision workflow.</li>
+            <li>See today's market outlook.</li>
+            <li>Get a clear daily recommendation.</li>
+            <li>Focus on top-ranked opportunities.</li>
+            <li>Track your saved watchlist daily.</li>
           </ul>
         </div>
       </div>

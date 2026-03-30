@@ -9,7 +9,7 @@ from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRu
 from .models import Watchlist, WatchlistItem
 from rest_framework import serializers
 from .models import Alert, AlertEvent
-from .models import UserSettings
+from .models import UserSettings, Article
 
 # ranker/serializers.py
 from .models import BacktestRun
@@ -21,6 +21,7 @@ from .models import BacktestRun
 # ranker/serializers.py
 from rest_framework import serializers
 from .models import UserPreference
+from django.utils.text import slugify
 from itertools import product
 from datetime import datetime
 
@@ -546,3 +547,25 @@ class StockScoreSerializer(serializers.ModelSerializer):
         if isinstance(delta, (int, float)):
             return round(float(delta), 2)
         return None
+
+
+class ArticleSerializer(serializers.ModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Article
+        fields = ["title", "slug", "content", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def validate_slug(self, value):
+        return (value or "").strip()
+
+    def create(self, validated_data):
+        title = (validated_data.get("title") or "").strip()
+        slug = (validated_data.get("slug") or "").strip()
+        if not slug:
+            slug = slugify(title)
+        if not slug:
+            raise serializers.ValidationError({"slug": "Provide a slug or a title that can be slugified."})
+        validated_data["slug"] = slug
+        return super().create(validated_data)

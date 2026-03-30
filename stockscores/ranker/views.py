@@ -12,8 +12,9 @@ from .serializers import (
     BotSerializer,
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
+    ArticleSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -879,6 +880,43 @@ class ConfigView(APIView):
 
     def get(self, request, *args, **kwargs):
         return Response({"allow_live_bots": getattr(settings, "ALLOW_LIVE_BOTS", False)})
+
+
+class ArticleListCreateView(APIView):
+    """
+    GET /api/articles/ -> public list
+    POST /api/articles/ -> authenticated create
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        articles = Article.objects.all().order_by("-created_at")
+        serializer = ArticleSerializer(articles, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        if not request.user or not request.user.is_authenticated:
+            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = ArticleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ArticleDetailView(APIView):
+    """
+    GET /api/articles/:slug -> public detail
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, slug, *args, **kwargs):
+        article = Article.objects.filter(slug=slug).first()
+        if not article:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ArticleSerializer(article)
+        return Response(serializer.data)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

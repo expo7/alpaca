@@ -25,6 +25,9 @@ export default function Landing() {
                     </div>
 
                     <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
+                        <a href="/articles" className="text-slate-300 hover:text-white">
+                            Articles
+                        </a>
                         <span>Already have an account?</span>
                         <span className="px-3 py-1.5 rounded-full border border-slate-700">
                             Sign in below
@@ -44,40 +47,52 @@ export default function Landing() {
                         </div>
 
                         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
-                            Rank stocks by{" "}
-                            <span className="text-indigo-400">recommendations and fundamentals</span>{" "}
-                            in one click.
+                            Make better trading decisions in seconds
                         </h1>
 
                         <p className="text-sm sm:text-base text-slate-300 max-w-xl">
-                            {APP_NAME} turns noisy charts and financials into a single,
-                            tunable rating. Read market direction, rank opportunities, and
-                            set email alerts from one workflow.
+                            Quantelle analyzes the market and tells you what to do today-so you don't have to guess.
                         </p>
 
-                        <ul className="space-y-2 text-sm text-slate-300">
+                        <ul className="space-y-3 text-sm text-slate-300">
                             <li className="flex gap-2">
                                 <span className="mt-1 text-emerald-400">▸</span>
                                 <span>
-                                    Combine trend, momentum, volume, volatility, and mean
-                                    reversion with sliders — no code required.
+                                    <span className="font-semibold text-slate-100">See today's market outlook.</span>{" "}
+                                    Understand if conditions are favorable or risky.
                                 </span>
                             </li>
                             <li className="flex gap-2">
                                 <span className="mt-1 text-emerald-400">▸</span>
                                 <span>
-                                    Get lightweight <strong>email alerts</strong> when ranked
-                                    names cross your threshold.
+                                    <span className="font-semibold text-slate-100">Know what to do.</span>{" "}
+                                    Get a clear daily recommendation-no noise, no overthinking.
                                 </span>
                             </li>
                             <li className="flex gap-2">
                                 <span className="mt-1 text-emerald-400">▸</span>
                                 <span>
-                                    Keep a daily decision loop centered on market direction and top
-                                    ranked opportunities.
+                                    <span className="font-semibold text-slate-100">Focus on the right stocks.</span>{" "}
+                                    View top-ranked opportunities based on real signals.
+                                </span>
+                            </li>
+                            <li className="flex gap-2">
+                                <span className="mt-1 text-emerald-400">▸</span>
+                                <span>
+                                    <span className="font-semibold text-slate-100">Track what matters to you.</span>{" "}
+                                    Save tickers to your watchlist and check them daily.
                                 </span>
                             </li>
                         </ul>
+
+                        <div className="pt-1">
+                            <a
+                                href="#auth-card"
+                                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
+                            >
+                                Get today's recommendation
+                            </a>
+                        </div>
 
                         <div className="flex flex-wrap gap-3 text-xs text-slate-400 pt-2">
                             <span className="px-2 py-1 rounded-full border border-slate-700">
@@ -90,7 +105,7 @@ export default function Landing() {
                     </section>
 
                     {/* Right: login card */}
-                    <section className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl shadow-indigo-900/20">
+                    <section id="auth-card" className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl shadow-indigo-900/20">
                         <div className="mb-3 text-center">
                             <h2 className="text-base sm:text-lg font-semibold">
                                 Sign in to your dashboard

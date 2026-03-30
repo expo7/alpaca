@@ -28,6 +28,8 @@ from .views import (
     BotViewSet,
     YFinanceUsageView,
     ConfigView,
+    ArticleListCreateView,
+    ArticleDetailView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -185,4 +187,6 @@ urlpatterns = [
     ),
     path("metrics/yfinance/", YFinanceUsageView.as_view(), name="yfinance-usage"),
     path("config/", ConfigView.as_view(), name="config"),
+    path("articles/", ArticleListCreateView.as_view(), name="article-list-create"),
+    path("articles/<slug:slug>/", ArticleDetailView.as_view(), name="article-detail"),
 ]
