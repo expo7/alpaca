@@ -1,132 +1,115 @@
-// ==============================
-// File: src/Landing.jsx
-// Logged-out landing page + embedded Login form
-// ==============================
-
 import Login from "./Login.jsx";
-import { APP_NAME, APP_TAGLINE } from "./brand";
+import { APP_NAME } from "./brand";
+
+const workflow = [
+    { number: "01", title: "Read the market", copy: "See whether conditions favor offense, defense, or patience." },
+    { number: "02", title: "Focus on five", copy: "Start with a short list of ranked research ideas instead of an endless feed." },
+    { number: "03", title: "Verify the setup", copy: "Open the evidence behind each rating before deciding whether it belongs in your plan." },
+];
 
 export default function Landing() {
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-            {/* Top mini-nav */}
-            <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-xs font-bold">
-                            Q
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-sm font-semibold tracking-wide">
-                                {APP_NAME}
-                            </span>
-                            <span className="text-xs text-slate-400">{APP_TAGLINE}</span>
-                        </div>
-                    </div>
-
-                    <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
-                        <a href="/articles" className="text-slate-300 hover:text-white">
-                            Articles
-                        </a>
-                        <span>Want to save your setup?</span>
-                        <span className="px-3 py-1.5 rounded-full border border-slate-700">
-                            Create an account below
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+            <header className="border-b border-slate-800/80 bg-slate-950/90">
+                <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+                    <a href="/" className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold">Q</span>
+                        <span>
+                            <span className="block font-semibold tracking-wide">{APP_NAME}</span>
+                            <span className="block text-xs text-slate-500">Daily market decisions</span>
                         </span>
-                    </div>
+                    </a>
+                    <nav className="flex items-center gap-3 text-sm">
+                        <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
+                        <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
+                    </nav>
                 </div>
             </header>
 
-            {/* Hero */}
-            <main className="flex-1">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-center">
-                    {/* Left: marketing copy */}
-                    <section className="space-y-5">
-                        <div className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-emerald-900/20 border border-emerald-700/60 text-emerald-200">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Daily market decision engine</span>
-                        </div>
-
-                        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
-                            Make better trading decisions in seconds
-                        </h1>
-
-                        <p className="text-sm sm:text-base text-slate-300 max-w-xl">
-                            Quantelle analyzes the market and tells you what to do today-so you don't have to guess.
-                        </p>
-
-                        <ul className="space-y-3 text-sm text-slate-300">
-                            <li className="flex gap-2">
-                                <span className="mt-1 text-emerald-400">▸</span>
-                                <span>
-                                    <span className="font-semibold text-slate-100">See today's market outlook.</span>{" "}
-                                    Understand if conditions are favorable or risky.
-                                </span>
-                            </li>
-                            <li className="flex gap-2">
-                                <span className="mt-1 text-emerald-400">▸</span>
-                                <span>
-                                    <span className="font-semibold text-slate-100">Know what to do.</span>{" "}
-                                    Get a clear daily recommendation-no noise, no overthinking.
-                                </span>
-                            </li>
-                            <li className="flex gap-2">
-                                <span className="mt-1 text-emerald-400">▸</span>
-                                <span>
-                                    <span className="font-semibold text-slate-100">Focus on the right stocks.</span>{" "}
-                                    View top-ranked opportunities based on real signals.
-                                </span>
-                            </li>
-                            <li className="flex gap-2">
-                                <span className="mt-1 text-emerald-400">▸</span>
-                                <span>
-                                    <span className="font-semibold text-slate-100">Track what matters to you.</span>{" "}
-                                    Save tickers to your watchlist and check them daily.
-                                </span>
-                            </li>
-                        </ul>
-
-                        <div className="pt-1">
-                            <a
-                                href="/dashboard"
-                                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
-                            >
-                                Preview dashboard
-                            </a>
-                        </div>
-
-                        <div className="flex flex-wrap gap-3 text-xs text-slate-400 pt-2">
-                            <span className="px-2 py-1 rounded-full border border-slate-700">
-                                Built for personal research
-                            </span>
-                            <span className="px-2 py-1 rounded-full border border-slate-700">
-                                Not investment advice
-                            </span>
-                        </div>
-                    </section>
-
-                    {/* Right: login card */}
-                    <section id="auth-card" className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl shadow-indigo-900/20">
-                        <div className="mb-3 text-center">
-                            <h2 className="text-base sm:text-lg font-semibold">
-                                Create a free account to save your watchlist
-                            </h2>
-                            <p className="text-xs text-slate-400 mt-1">
-                                The dashboard is public. Create an account to save watchlists and personalize your experience.
+            <main>
+                <section className="relative overflow-hidden border-b border-slate-800/70">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_20%,rgba(79,70,229,0.18),transparent_35%)]" />
+                    <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+                        <div>
+                            <div className="inline-flex rounded-full border border-emerald-800/70 bg-emerald-950/30 px-3 py-1 text-xs font-medium text-emerald-300">
+                                Market context + ranked opportunities
+                            </div>
+                            <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
+                                Five focused ideas.<br />One plan for today.
+                            </h1>
+                            <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+                                Quantelle turns market conditions, technical strength, and fundamentals into a short daily research list—so you know where to look and when to stay cautious.
                             </p>
+                            <div className="mt-7 flex flex-wrap gap-3">
+                                <a href="/dashboard" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
+                                    See today&apos;s plan
+                                </a>
+                                <a href="/opportunities" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
+                                    Explore opportunities
+                                </a>
+                            </div>
+                            <p className="mt-4 text-xs text-slate-500">Free research preview · No brokerage connection required · Not investment advice</p>
                         </div>
 
-                        {/* We just reuse your existing Login component here */}
-                        <Login />
-                    </section>
-                </div>
+                        <div className="rounded-3xl border border-slate-700/80 bg-slate-900/75 p-5 shadow-2xl shadow-indigo-950/30 backdrop-blur">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                                <div>
+                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Today&apos;s research brief</div>
+                                    <div className="mt-1 text-lg font-semibold">A decision before a ticker</div>
+                                </div>
+                                <span className="rounded-full border border-amber-700/70 bg-amber-950/40 px-3 py-1 text-xs font-semibold text-amber-300">SELECTIVE</span>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                                    <div className="text-xs uppercase tracking-wide text-slate-500">Market first</div>
+                                    <div className="mt-2 font-medium">Set exposure before choosing ideas</div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                                    <div className="text-xs uppercase tracking-wide text-slate-500">Then focus</div>
+                                    <div className="mt-2 font-medium">Review five ranked opportunities</div>
+                                </div>
+                            </div>
+                            <div className="mt-3 rounded-xl border border-indigo-800/60 bg-indigo-950/25 p-4 text-sm leading-6 text-slate-300">
+                                Every rating should answer two questions: <span className="font-semibold text-white">why this idea</span> and <span className="font-semibold text-white">why now</span>.
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+                    <div className="max-w-2xl">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">A tighter daily workflow</div>
+                        <h2 className="mt-2 text-3xl font-bold tracking-tight">Less dashboard. More decision.</h2>
+                    </div>
+                    <div className="mt-8 grid gap-4 md:grid-cols-3">
+                        {workflow.map((item) => (
+                            <article key={item.number} className="rounded-2xl border border-slate-800 bg-slate-900/45 p-5">
+                                <div className="font-mono text-sm text-indigo-400">{item.number}</div>
+                                <h3 className="mt-4 text-lg font-semibold">{item.title}</h3>
+                                <p className="mt-2 text-sm leading-6 text-slate-400">{item.copy}</p>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="sign-in" className="border-t border-slate-800/70 bg-slate-900/25">
+                    <div className="mx-auto grid max-w-5xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+                        <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Keep your research together</div>
+                            <h2 className="mt-2 text-3xl font-bold">Save the names worth watching.</h2>
+                            <p className="mt-3 leading-7 text-slate-400">The market plan and opportunities are public. Create a free account to build a watchlist and follow the ratings that matter to you.</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-xl">
+                            <Login />
+                        </div>
+                    </div>
+                </section>
             </main>
 
-            <footer className="border-t border-slate-900 text-xs text-slate-500 py-3 px-4">
-                <div className="max-w-6xl mx-auto flex justify-between items-center gap-3">
+            <footer className="border-t border-slate-900 px-4 py-5 text-xs text-slate-500">
+                <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-2">
                     <span>© {new Date().getFullYear()} {APP_NAME}</span>
-                    <span className="hidden sm:inline">
-                        For educational use only • No guarantees • Markets are risky.
-                    </span>
+                    <span>Research only · No guarantees · Markets involve risk</span>
                 </div>
             </footer>
         </div>

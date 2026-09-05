@@ -21,6 +21,7 @@ export default function ArticleDetailPage({
     user,
     onBackToArticles,
     onNavigateDashboard,
+    onNavigateOpportunities,
     onNavigateAnalytics,
     onLogout,
     onSignUp,
@@ -62,6 +63,7 @@ export default function ArticleDetailPage({
                 isAuthed={isAuthed}
                 user={user}
                 onNavigateDashboard={onNavigateDashboard}
+                onNavigateOpportunities={onNavigateOpportunities}
                 onNavigateAnalytics={onNavigateAnalytics}
                 onLogout={onLogout}
                 onSignUp={onSignUp}

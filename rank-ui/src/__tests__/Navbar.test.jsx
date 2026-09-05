@@ -15,7 +15,7 @@ describe("Navbar", () => {
       />
     );
 
-    const dashboards = screen.getAllByRole("button", { name: /^Dashboard$/i });
+    const dashboards = screen.getAllByRole("button", { name: /^Today$/i });
     expect(dashboards.length).toBeGreaterThan(0);
     // Alerts is hidden in V1
     expect(screen.queryByRole("button", { name: /Alerts/i })).not.toBeInTheDocument();

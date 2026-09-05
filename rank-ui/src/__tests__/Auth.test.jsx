@@ -18,8 +18,8 @@ describe("Landing page", () => {
         <Landing />
       </AuthProvider>
     );
-    expect(screen.getByText(/Rank stocks by/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sign in to your dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/Five focused ideas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Sign in/i }).length).toBeGreaterThan(0);
   });
 });

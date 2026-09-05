@@ -22,8 +22,8 @@ describe("App routing and navigation smoke tests", () => {
   test("renders Landing when unauthenticated", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({}))));
     renderAppWithAuth();
-    expect(screen.getByText(/Make better trading decisions in seconds/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sign in to your dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/Five focused ideas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
   });
 
   test("renders navbar and dashboards page when authenticated", async () => {
@@ -43,7 +43,7 @@ describe("App routing and navigation smoke tests", () => {
 
     renderAppWithAuth();
 
-    const dashboards = await screen.findAllByText(/Dashboard/i);
+    const dashboards = await screen.findAllByText(/Today/i);
     expect(dashboards.length).toBeGreaterThan(0);
     // V1: Alerts and other non-dashboard tabs are hidden
     expect(screen.queryByRole("button", { name: /^Alerts$/i })).not.toBeInTheDocument();
@@ -99,7 +99,8 @@ describe("App routing and navigation smoke tests", () => {
 
     renderAppWithAuth();
 
-    await userEvent.click(await screen.findByRole("button", { name: /Update ratings|Rank/i }));
+    await userEvent.click((await screen.findAllByRole("button", { name: /Opportunities/i }))[0]);
+    await userEvent.click(await screen.findByRole("button", { name: /Find opportunities/i }));
 
     await waitFor(() => {
       expect(screen.getByText("AAPL")).toBeInTheDocument();

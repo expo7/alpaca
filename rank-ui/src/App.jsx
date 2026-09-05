@@ -75,7 +75,7 @@ const CHART_STUDIES = [
 ];
 
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard", "analytics"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard", "opportunities", "analytics"]);
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
@@ -152,11 +152,17 @@ export default function App() {
   // -------------------
   // [NOTE-NAV-STATE]
   // -------------------
-  const [page, setPage] = useState(() => window.location.pathname === "/analytics" ? "analytics" : "dashboard");
+  const [page, setPage] = useState(() => {
+    if (window.location.pathname === "/analytics") return "analytics";
+    if (window.location.pathname === "/opportunities") return "opportunities";
+    return "dashboard";
+  });
 
   useEffect(() => {
     if (route.kind !== "app") return;
-    setPage(pathname === "/analytics" ? "analytics" : "dashboard");
+    if (pathname === "/analytics") setPage("analytics");
+    else if (pathname === "/opportunities") setPage("opportunities");
+    else setPage("dashboard");
   }, [pathname, route.kind]);
 
   const isBlockedPage = useCallback(
@@ -174,6 +180,11 @@ export default function App() {
       if (nextPage === "analytics") {
         setPage("analytics");
         navigatePath("/analytics");
+        return;
+      }
+      if (nextPage === "opportunities") {
+        setPage("opportunities");
+        navigatePath("/opportunities");
         return;
       }
       if (isBlockedPage(nextPage)) {
@@ -842,6 +853,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
@@ -859,6 +871,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
@@ -879,6 +892,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
@@ -896,6 +910,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
@@ -920,11 +935,58 @@ export default function App() {
         {/* ==============================
           DASHBOARD PAGE
          ============================== */}
-        {page === "dashboard" && (
+        {(page === "dashboard" || page === "opportunities") && (
           <>
-            <MacroDashboardPage
-              onSnapshotChange={(snapshot) => setMacroSnapshot(snapshot)}
-            />
+            {page === "dashboard" && (
+            <>
+              <MacroDashboardPage
+                onSnapshotChange={(snapshot) => setMacroSnapshot(snapshot)}
+              />
+              <section className="mx-4 mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 lg:mx-6 lg:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Five to research</div>
+                    <h2 className="mt-1 text-xl font-semibold text-slate-100">Today&apos;s shortlist</h2>
+                    <p className="mt-1 text-sm text-slate-400">The highest-rated names from your latest opportunity scan—not trade instructions.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigateToPage("opportunities")}
+                    className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+                  >
+                    {rows.length ? "Update shortlist" : "Find opportunities"}
+                  </button>
+                </div>
+
+                {rows.length ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    {rows.slice(0, 5).map((row, index) => (
+                      <article key={row.symbol} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-slate-500">#{index + 1}</span>
+                          <span className="rounded-full bg-indigo-950 px-2 py-1 text-xs font-semibold text-indigo-200">
+                            {number(row.final_score, 1)}
+                          </span>
+                        </div>
+                        <div className="mt-3 text-lg font-bold text-slate-100">{row.symbol}</div>
+                        <div className="mt-3 space-y-1 text-xs text-slate-400">
+                          <div className="flex justify-between"><span>Technical</span><span className="text-slate-200">{number(row.tech_score, 1)}</span></div>
+                          <div className="flex justify-between"><span>Fundamental</span><span className="text-slate-200">{number(row.fundamental_score, 1)}</span></div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/30 px-4 py-6 text-sm text-slate-400">
+                    Run an opportunity scan to create a focused five-name research list.
+                  </div>
+                )}
+              </section>
+            </>
+            )}
+
+            {page === "opportunities" && (
+            <>
 
             {/* === your existing Dashboard CTA + controls + table === */}
 
@@ -1345,6 +1407,8 @@ export default function App() {
             <footer className="pt-2 text-xs text-slate-500">
               © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
             </footer>
+            </>
+            )}
           </>
         )}
 

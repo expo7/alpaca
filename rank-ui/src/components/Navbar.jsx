@@ -23,7 +23,8 @@ const tabs = [
 ];
 
 const V1_TABS = [
-  { id: "dashboard", label: "Dashboard" },
+  { id: "dashboard", label: "Today" },
+  { id: "opportunities", label: "Opportunities" },
   { id: "articles", label: "Articles" },
 ];
 

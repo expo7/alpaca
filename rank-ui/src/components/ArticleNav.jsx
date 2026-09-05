@@ -1,6 +1,6 @@
 import { APP_NAME } from "../brand";
 
-export default function ArticleNav({ isAuthed, user, onNavigateDashboard, onNavigateAnalytics, onLogout, onSignUp, onLogIn }) {
+export default function ArticleNav({ isAuthed, user, onNavigateDashboard, onNavigateOpportunities, onNavigateAnalytics, onLogout, onSignUp, onLogIn }) {
     return (
         <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -30,7 +30,14 @@ export default function ArticleNav({ isAuthed, user, onNavigateDashboard, onNavi
                                 onClick={onNavigateDashboard}
                                 className="text-slate-300 hover:text-white transition"
                             >
-                                Dashboard
+                                Today
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onNavigateOpportunities}
+                                className="text-slate-300 hover:text-white transition"
+                            >
+                                Opportunities
                             </button>
                             {(user?.is_staff || user?.is_superuser) && (
                                 <button

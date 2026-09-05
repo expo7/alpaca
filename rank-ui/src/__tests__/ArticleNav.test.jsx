@@ -18,7 +18,7 @@ describe("ArticleNav", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Dashboard" }));
+    await userEvent.click(screen.getByRole("button", { name: "Today" }));
     await userEvent.click(screen.getByRole("button", { name: "Analytics" }));
 
     expect(onNavigateDashboard).toHaveBeenCalledOnce();
