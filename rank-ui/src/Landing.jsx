@@ -28,9 +28,9 @@ export default function Landing() {
                         <a href="/articles" className="text-slate-300 hover:text-white">
                             Articles
                         </a>
-                        <span>Already have an account?</span>
+                        <span>Want to save your setup?</span>
                         <span className="px-3 py-1.5 rounded-full border border-slate-700">
-                            Sign in below
+                            Create an account below
                         </span>
                     </div>
                 </div>
@@ -43,7 +43,7 @@ export default function Landing() {
                     <section className="space-y-5">
                         <div className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-emerald-900/20 border border-emerald-700/60 text-emerald-200">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Private beta • Internal use only</span>
+                            <span>Daily market decision engine</span>
                         </div>
 
                         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
@@ -87,10 +87,10 @@ export default function Landing() {
 
                         <div className="pt-1">
                             <a
-                                href="#auth-card"
+                                href="/dashboard"
                                 className="inline-flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-semibold text-white"
                             >
-                                Get today's recommendation
+                                Preview dashboard
                             </a>
                         </div>
 
@@ -108,11 +108,10 @@ export default function Landing() {
                     <section id="auth-card" className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl shadow-indigo-900/20">
                         <div className="mb-3 text-center">
                             <h2 className="text-base sm:text-lg font-semibold">
-                                Sign in to your dashboard
+                                Create a free account to save your watchlist
                             </h2>
                             <p className="text-xs text-slate-400 mt-1">
-                                Use the same credentials you created for the API. Everything is
-                                scoped to your account.
+                                The dashboard is public. Create an account to save watchlists and personalize your experience.
                             </p>
                         </div>
 

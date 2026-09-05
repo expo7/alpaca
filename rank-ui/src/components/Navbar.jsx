@@ -28,6 +28,7 @@ const V1_TABS = [
 ];
 
 export default function Navbar({
+  isAuthed = false,
   user,
   active,
   onNavigate,
@@ -70,25 +71,36 @@ export default function Navbar({
           ))}
         </nav>
 
-        {/* Right: user + logout */}
+        {/* Right: auth state */}
         <div className="flex items-center gap-3 text-xs">
-          {user && (
-            <div className="hidden sm:flex flex-col items-end leading-tight">
-              <span className="text-slate-200 font-medium">
-                {user.username || user.email || "User"}
-              </span>
-              {user.email && (
-                <span className="text-slate-500">{user.email}</span>
+          {isAuthed ? (
+            <>
+              {user && (
+                <div className="hidden sm:flex flex-col items-end leading-tight">
+                  <span className="text-slate-200 font-medium">
+                    {user.username || user.email || "User"}
+                  </span>
+                  {user.email && (
+                    <span className="text-slate-500">{user.email}</span>
+                  )}
+                </div>
               )}
-            </div>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <a
+              href="/"
+              className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
+            >
+              Sign in / Create account
+            </a>
           )}
-          <button
-            type="button"
-            onClick={onLogout}
-            className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
-          >
-            Log out
-          </button>
         </div>
       </div>
 

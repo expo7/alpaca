@@ -135,9 +135,11 @@ export default function App() {
   }, [pathname]);
 
   const navigatePath = useCallback((nextPath) => {
-    if (!nextPath || nextPath === pathname) return;
-    window.history.pushState({}, "", nextPath);
-    setPathname(nextPath);
+    if (!nextPath) return;
+    const normalizedPath = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
+    if (normalizedPath === pathname) return;
+    window.history.pushState({}, "", normalizedPath);
+    setPathname(normalizedPath);
   }, [pathname]);
 
   // -------------------
@@ -209,13 +211,8 @@ export default function App() {
     const saved = localStorage.getItem("taWeights");
     return saved ? JSON.parse(saved) : DEFAULT_TA;
   });
-  // [NOTE-ONBOARDING]
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    // default: show if we've never set the flag
-    return localStorage.getItem("seenOnboarding") !== "1";
-  });
-
   const [loading, setLoading] = useState(false);
+  const [showRankingControls, setShowRankingControls] = useState(false);
   const [rows, setRows] = useState([]);
   const [errors, setErrors] = useState([]);
   const [explain, setExplain] = useState(null);
@@ -563,10 +560,6 @@ export default function App() {
     }
   }
   useEffect(() => {
-    localStorage.setItem("seenOnboarding", showOnboarding ? "0" : "1");
-  }, [showOnboarding]);
-
-  useEffect(() => {
     if (saveOpen) {
       fetchWatchlistsForSave();
     }
@@ -815,36 +808,7 @@ export default function App() {
   // [NOTE-UI] App Shell
   // ==============================
   if (!isAuthed) {
-    if (route.kind === "articles-list") {
-      return (
-        <ArticlesListPage
-          apiBase={BASE}
-          token={token}
-          isAuthed={isAuthed}
-          user={user}
-          onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
-          onNavigateDashboard={() => navigatePath("dashboard")}
-          onLogout={logout}
-          onSignUp={() => navigatePath("dashboard")}
-          onLogIn={() => navigatePath("dashboard")}
-        />
-      );
-    }
-    if (route.kind === "article-detail") {
-      return (
-        <ArticleDetailPage
-          apiBase={BASE}
-          slug={route.slug}
-          isAuthed={isAuthed}
-          user={user}
-          onBackToArticles={() => navigatePath("/articles")}
-          onNavigateDashboard={() => navigatePath("dashboard")}
-          onLogout={logout}
-          onSignUp={() => navigatePath("dashboard")}
-          onLogIn={() => navigatePath("dashboard")}
-        />
-      );
-    }
+  if (pathname === "/") {
     return <Landing />;
   }
 
@@ -856,10 +820,10 @@ export default function App() {
         isAuthed={isAuthed}
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
-        onNavigateDashboard={() => navigatePath("dashboard")}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
         onLogout={logout}
-        onSignUp={() => navigatePath("dashboard")}
-        onLogIn={() => navigatePath("dashboard")}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
       />
     );
   }
@@ -872,10 +836,45 @@ export default function App() {
         isAuthed={isAuthed}
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
-        onNavigateDashboard={() => navigatePath("dashboard")}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
         onLogout={logout}
-        onSignUp={() => navigatePath("dashboard")}
-        onLogIn={() => navigatePath("dashboard")}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
+  }
+
+  // allow access to dashboard without auth
+}
+
+  if (route.kind === "articles-list") {
+    return (
+      <ArticlesListPage
+        apiBase={BASE}
+        token={token}
+        isAuthed={isAuthed}
+        user={user}
+        onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
+  }
+
+  if (route.kind === "article-detail") {
+    return (
+      <ArticleDetailPage
+        apiBase={BASE}
+        slug={route.slug}
+        isAuthed={isAuthed}
+        user={user}
+        onBackToArticles={() => navigatePath("/articles")}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
       />
     );
   }
@@ -884,6 +883,7 @@ export default function App() {
     <div className="app-shell">
       {/* NAVBAR */}
       <Navbar
+        isAuthed={isAuthed}
         user={user}
         onLogout={logout}
         active={page}
@@ -901,74 +901,38 @@ export default function App() {
               onSnapshotChange={(snapshot) => setMacroSnapshot(snapshot)}
             />
 
-            {/* [NOTE-ONBOARDING-PANEL] */}
-            {showOnboarding && (
-              <div className="bg-indigo-950/40 border border-indigo-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
-                <div className="flex-1">
-                  <div className="text-sm font-semibold mb-1">
-                    Welcome to Quantelle
-                  </div>
-                  <p className="text-xs text-slate-300 mb-2">
-                    Here’s a quick path to get useful output in under a minute:
-                  </p>
-                  <ol className="list-decimal ml-4 space-y-1 text-xs text-slate-200">
-                    <li>Enter a basket of tickers you care about.</li>
-                    <li>Adjust tech vs fund weights and TA sub-weights.</li>
-                    <li>
-                      Click <span className="font-semibold">Rank</span> to rate
-                      the basket.
-                    </li>
-                    <li>
-                      Save tickers you like to
-                      your <span className="font-semibold">Watchlist</span> below.
-                    </li>
-                  </ol>
-                </div>
-                <div className="flex flex-col gap-2 text-xs">
-                  <button
-                    onClick={() => setShowOnboarding(false)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white"
-                  >
-                    Got it, hide this
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowOnboarding(false);
-                      rank();
-                    }}
-                    disabled={loading}
-                    className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-900"
-                  >
-                    {loading ? "Loading..." : "Run first update"}
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* === your existing Dashboard CTA + controls + table === */}
 
             {/* CTA card */}
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-lg font-semibold">Daily Market Decision Engine</div>
+                <div className="text-lg font-semibold">Stock opportunities</div>
                 <div className="text-sm text-slate-400">
-                  Market Direction + top opportunities in one workflow
-                </div>
-                <div className="text-xs text-slate-500 mt-1">
-                  Start with the highest Overall Rating, then open Chart or Why.
+                  Rank a ticker list using Quantelle's technical and fundamental model.
                 </div>
               </div>
-              <button
-                onClick={rank}
-                disabled={loading}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 shadow"
-              >
-                {loading ? "Updating ratings..." : "Update ratings"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRankingControls((open) => !open)}
+                  className="px-4 py-2 rounded-xl border border-slate-700 text-sm text-slate-200 hover:bg-slate-800"
+                  aria-expanded={showRankingControls}
+                >
+                  {showRankingControls ? "Hide settings" : "Customize"}
+                </button>
+                <button
+                  onClick={rank}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 shadow"
+                >
+                  {loading ? "Updating..." : rows.length ? "Refresh rankings" : "Find opportunities"}
+                </button>
+              </div>
             </div>
 
             {/* Controls */}
-            <section className="grid lg:grid-cols-2 gap-4">
+            {showRankingControls && (
+            <section className="grid lg:grid-cols-2 gap-4" aria-label="Ranking settings">
               <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <label className="block text-sm mb-1">
                   Tickers (comma-separated)
@@ -980,6 +944,7 @@ export default function App() {
                   placeholder="AAPL, MSFT, NVDA, TSLA, AMD"
                 />
                 <div className="flex flex-col gap-2">
+  {isAuthed && (
                   <select
                     defaultValue=""
                     onChange={handleWatchlistSelect}
@@ -992,7 +957,9 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <select
+  )}
+
+  <select
                     defaultValue=""
                     onChange={handleScreenSelect}
                     disabled={screenLoading}
@@ -1053,6 +1020,7 @@ export default function App() {
                 </p>
               </div>
             </section>
+            )}
 
             {/* Errors */}
             {!!errMsg && (
@@ -1234,7 +1202,8 @@ export default function App() {
               </section>
             )}
 
-            <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+            {isAuthed && (
+<section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <h3 className="text-base font-semibold">My Watchlist</h3>
@@ -1305,6 +1274,7 @@ export default function App() {
                 <div className="text-xs text-slate-400">No tickers saved yet. Add one above.</div>
               )}
             </section>
+            )}
 
             <section className="bg-slate-900/35 border border-slate-800 rounded-2xl p-4">
               <div className="flex items-center justify-between gap-2 mb-3">

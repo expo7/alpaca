@@ -160,8 +160,8 @@ class UserPreferenceView(APIView):
     GET  /api/user-prefs/   -> current user's email/scan prefs
     PATCH /api/user-prefs/  -> update fields
     """
-
     permission_classes = [IsAuthenticated]
+
 
     def get(self, request, *args, **kwargs):
         prefs, _ = UserPreference.objects.get_or_create(user=request.user)
@@ -975,6 +975,7 @@ DEFAULT_TA_WEIGHTS = {
 
 
 class RankView(APIView):
+    permission_classes = [permissions.AllowAny]
     """
     POST /api/rank
     {
@@ -985,7 +986,6 @@ class RankView(APIView):
     }
     """
 
-    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         tickers = request.data.get("tickers", [])

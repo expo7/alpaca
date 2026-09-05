@@ -27,23 +27,32 @@ function buildTodaysRecommendation(regime, confidence) {
 
     if (regimeText.includes("risk-off")) {
         return {
-            action: "Stay defensive and avoid new long positions",
+            status: "DEFENSIVE",
+            action: "Protect capital; pause new high-beta longs",
             reason: `Market Direction is Risk-Off with ${confidenceText} confidence.`,
+            nextStep: "Reduce concentrated risk and require confirmation before adding exposure.",
+            invalidation: "Reassess when liquidity and risk appetite both turn positive.",
             tone: "defensive",
         };
     }
 
     if (regimeText.includes("risk-on")) {
         return {
-            action: "Favorable conditions - consider increasing exposure",
+            status: "RISK ON",
+            action: "Add exposure selectively on confirmed strength",
             reason: `Market Direction is Risk-On with ${confidenceText} confidence.`,
+            nextStep: "Favor liquid leaders and scale entries instead of chasing gaps.",
+            invalidation: "Reassess if liquidity or risk appetite turns negative.",
             tone: "favorable",
         };
     }
 
     return {
-        action: "Be selective - only take high-conviction setups",
-        reason: `Market Direction is neutral with ${confidenceText} confidence.`,
+        status: "SELECTIVE",
+        action: "Keep exposure moderate; take only high-conviction setups",
+        reason: `Market Direction is mixed with ${confidenceText} confidence.`,
+        nextStep: "Prefer smaller starter positions and wait for confirmation before scaling.",
+        invalidation: "Increase conviction only when liquidity and risk appetite agree.",
         tone: "neutral",
     };
 }
@@ -59,7 +68,6 @@ export default function MacroDashboardPage({ onSnapshotChange }) {
     const [reloadKey, setReloadKey] = useState(0);
 
     useEffect(() => {
-        if (!token) return;
         let cancelled = false;
 
         (async () => {
@@ -94,14 +102,6 @@ export default function MacroDashboardPage({ onSnapshotChange }) {
             asOf: data?.as_of,
         });
     }, [data, onSnapshotChange]);
-
-    if (!token) {
-        return (
-            <div className="p-4 text-sm text-amber-300">
-                Login required to view Market Direction.
-            </div>
-        );
-    }
 
     if (loading && !data) {
         return (
@@ -142,6 +142,9 @@ export default function MacroDashboardPage({ onSnapshotChange }) {
     const scores = data?.scores || {};
     const optionSuggestions = data?.options_engine?.suggestions || [];
     const recommendation = buildTodaysRecommendation(data?.overall_regime, data?.confidence);
+    const favoredAssets = data?.playbook?.favored_assets || [];
+    const unfavorableAssets = data?.playbook?.unfavorable_assets || [];
+    const primaryOptionsSetup = optionSuggestions[0];
 
     const recommendationToneClass =
         recommendation.tone === "defensive"
@@ -153,9 +156,57 @@ export default function MacroDashboardPage({ onSnapshotChange }) {
     return (
         <div className="p-4 lg:p-6 space-y-4">
             <section className={`rounded-2xl border-2 p-5 lg:p-6 shadow-md ${recommendationToneClass}`}>
-                <div className="text-xs uppercase tracking-wide text-slate-300">Today's Recommendation</div>
-                <div className="mt-2 text-2xl lg:text-3xl font-bold text-slate-100">{recommendation.action}</div>
-                <p className="mt-3 text-sm text-slate-200">{recommendation.reason}</p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.18em] text-slate-300">Today's decision</div>
+                    <div className="flex items-center gap-2 text-xs">
+                        <span className="rounded-full border border-slate-600/70 bg-slate-950/40 px-2.5 py-1 font-semibold text-slate-100">
+                            {recommendation.status}
+                        </span>
+                        <span className="text-slate-300">As of {data?.as_of || "latest close"}</span>
+                    </div>
+                </div>
+
+                <div className="mt-3 text-2xl lg:text-3xl font-bold leading-tight text-slate-100">
+                    {recommendation.action}
+                </div>
+                <p className="mt-2 text-sm text-slate-200">{recommendation.reason}</p>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400">Do now</div>
+                        <p className="mt-1.5 text-sm text-slate-100">{recommendation.nextStep}</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-800/60 bg-emerald-950/20 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-emerald-300">Favor</div>
+                        <p className="mt-1.5 text-sm text-slate-100">
+                            {favoredAssets.slice(0, 3).join(" · ") || "No clear preference"}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-rose-800/60 bg-rose-950/20 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-rose-300">Avoid / reduce</div>
+                        <p className="mt-1.5 text-sm text-slate-100">
+                            {unfavorableAssets.slice(0, 3).join(" · ") || "No clear avoidance"}
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-700/70 bg-slate-950/35 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400">Reassess when</div>
+                        <p className="mt-1.5 text-sm text-slate-100">{recommendation.invalidation}</p>
+                    </div>
+                </div>
+
+                {primaryOptionsSetup && (
+                    <div className="mt-4 flex flex-col gap-2 rounded-xl border border-indigo-700/60 bg-indigo-950/25 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div className="text-[11px] uppercase tracking-wide text-indigo-300">Best-fit options structure</div>
+                            <div className="mt-1 text-sm font-semibold text-slate-100">{primaryOptionsSetup.label}</div>
+                            <p className="mt-1 text-xs text-slate-300">{primaryOptionsSetup.reason}</p>
+                        </div>
+                        <div className="shrink-0 text-xs text-slate-300 sm:text-right">
+                            <div>{primaryOptionsSetup.setup?.dte || "-"} DTE</div>
+                            <div>{primaryOptionsSetup.setup?.delta_target || "No delta target"}</div>
+                        </div>
+                    </div>
+                )}
             </section>
 
             <RegimeCard

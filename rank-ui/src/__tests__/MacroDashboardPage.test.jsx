@@ -85,13 +85,15 @@ describe("MacroDashboardPage", () => {
         );
 
         await waitFor(() => expect(screen.getByText("Risk-On Expansion")).toBeInTheDocument());
-        expect(screen.getByText("Today's Recommendation")).toBeInTheDocument();
-        expect(screen.getByText("Favorable conditions - consider increasing exposure")).toBeInTheDocument();
+        expect(screen.getByText("Today's decision")).toBeInTheDocument();
+        expect(screen.getByText("Add exposure selectively on confirmed strength")).toBeInTheDocument();
+        expect(screen.getByText("Do now")).toBeInTheDocument();
+        expect(screen.getByText("Reassess when")).toBeInTheDocument();
         expect(screen.getByText("Market Momentum: Strong")).toBeInTheDocument();
         expect(screen.getByText("Inflation Pressure: Moderate")).toBeInTheDocument();
         expect(screen.getByText("Cross-Asset Recommendations")).toBeInTheDocument();
         expect(screen.getByText("Options Engine")).toBeInTheDocument();
-        expect(screen.getByText("Bull Call Spread")).toBeInTheDocument();
+        expect(screen.getAllByText("Bull Call Spread")).toHaveLength(2);
         expect(screen.getByText("SPY")).toBeInTheDocument();
     });
 });
