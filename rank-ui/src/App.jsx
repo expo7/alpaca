@@ -26,6 +26,8 @@ import Landing from "./Landing.jsx";  // <-- NEW
 import ArticlesListPage from "./pages/ArticlesListPage.jsx";
 import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
+import AnalyticsPage from "./pages/AnalyticsPage.jsx";
+import { trackEvent } from "./analytics.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
 const BASE = "";
@@ -73,7 +75,7 @@ const CHART_STUDIES = [
 ];
 
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard", "analytics"]);
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
@@ -134,6 +136,11 @@ export default function App() {
     return { kind: "app" };
   }, [pathname]);
 
+  useEffect(() => {
+    if (pathname === "/analytics") return;
+    trackEvent("page_view", { path: pathname });
+  }, [pathname]);
+
   const navigatePath = useCallback((nextPath) => {
     if (!nextPath) return;
     const normalizedPath = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
@@ -145,7 +152,7 @@ export default function App() {
   // -------------------
   // [NOTE-NAV-STATE]
   // -------------------
-  const [page, setPage] = useState("dashboard"); // "dashboard" | "watchlists" | "alerts" | "settings"
+  const [page, setPage] = useState(() => window.location.pathname === "/analytics" ? "analytics" : "dashboard");
 
   const isBlockedPage = useCallback(
     (nextPage) => V1_MODE && !V1_ALLOWED_PAGES.has(nextPage),
@@ -159,11 +166,17 @@ export default function App() {
         navigatePath("/articles");
         return;
       }
+      if (nextPage === "analytics") {
+        setPage("analytics");
+        navigatePath("/analytics");
+        return;
+      }
       if (isBlockedPage(nextPage)) {
         setPage("dashboard");
         return;
       }
       setPage(nextPage);
+      if (nextPage === "dashboard") navigatePath("/dashboard");
     },
     [isBlockedPage, navigatePath]
   );
@@ -530,6 +543,7 @@ export default function App() {
       });
       setWatchlistInput("");
       setWatchlistFeedback(`${symbol} saved to your watchlist.`);
+      trackEvent("watchlist_add", { path: "/dashboard", metadata: { symbol } });
       await fetchWatchlistsForSave();
     } catch {
       setWatchlistSectionErr("Something went wrong. Retry.");
@@ -697,6 +711,7 @@ export default function App() {
       asyncStarted: true,
     });
     setChartSym(resolved);
+    trackEvent("chart_opened", { path: "/dashboard", metadata: { symbol: resolved } });
   }
 
   function closeChart(reason = "manual") {
@@ -738,6 +753,7 @@ export default function App() {
         token,
       });
       setExplain(json);
+      trackEvent("explanation_opened", { path: "/dashboard", metadata: { symbol } });
     } catch (e) {
       setErrMsg(String(e));
     } finally {
@@ -1321,6 +1337,13 @@ export default function App() {
               © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
             </footer>
           </>
+        )}
+
+        {page === "analytics" && (
+          <AnalyticsPage
+            token={token}
+            isStaff={Boolean(user?.is_staff || user?.is_superuser)}
+          />
         )}
 
         {/* ==============================

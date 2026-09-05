@@ -31,6 +31,8 @@ from .views import (
     CurrentUserView,
     ArticleListCreateView,
     ArticleDetailView,
+    AnalyticsEventCreateView,
+    AnalyticsSummaryView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -191,4 +193,6 @@ urlpatterns = [
     path("auth/me/", CurrentUserView.as_view(), name="auth-me"),
     path("articles/", ArticleListCreateView.as_view(), name="article-list-create"),
     path("articles/<slug:slug>/", ArticleDetailView.as_view(), name="article-detail"),
+    path("analytics/events/", AnalyticsEventCreateView.as_view(), name="analytics-event-create"),
+    path("analytics/summary/", AnalyticsSummaryView.as_view(), name="analytics-summary"),
 ]

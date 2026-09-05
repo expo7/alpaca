@@ -40,6 +40,8 @@ from .serializers import AlertEventSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from ranker.scoring import technical_score, fundamental_score
 from ranker.models import WatchlistItem
 from rest_framework import generics, permissions
@@ -47,6 +49,8 @@ from .models import UserSettings
 from .serializers import UserSettingsSerializer
 from .metrics import get_yf_counter, increment_yf_counter
 from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
+from .analytics import AnalyticsEventThrottle, record_analytics_event
+from .models import AnalyticsEvent
 
 # ranker/views.py
 
@@ -110,6 +114,7 @@ class RegisterView(APIView):
         serializer = UserSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        record_analytics_event(request, "registration", path="/")
         refresh = RefreshToken.for_user(user)
         return Response(
             {
@@ -898,6 +903,89 @@ class CurrentUserView(APIView):
         )
 
 
+class AnalyticsEventCreateView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnalyticsEventThrottle]
+
+    def post(self, request, *args, **kwargs):
+        record_analytics_event(
+            request,
+            request.data.get("event_name"),
+            path=request.data.get("path", ""),
+            metadata=request.data.get("metadata"),
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnalyticsSummaryView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = min(max(days, 1), 90)
+        since = timezone.now() - timedelta(days=days)
+        events = AnalyticsEvent.objects.filter(occurred_at__gte=since).filter(
+            Q(user__isnull=True) | Q(user__is_staff=False, user__is_superuser=False)
+        )
+        page_views = events.filter(event_name="page_view")
+
+        daily_rows = (
+            page_views.annotate(day=TruncDate("occurred_at"))
+            .values("day")
+            .annotate(
+                page_views=Count("id"),
+                visitors=Count("visitor_hash", distinct=True),
+            )
+            .order_by("day")
+        )
+        top_pages = list(
+            page_views.exclude(path="")
+            .values("path")
+            .annotate(views=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-views")[:12]
+        )
+        referrers = list(
+            page_views.exclude(referrer_host="")
+            .exclude(referrer_host__in=["quantelle.io", "www.quantelle.io"])
+            .values("referrer_host")
+            .annotate(views=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-views")[:10]
+        )
+        event_breakdown = list(
+            events.exclude(event_name="page_view")
+            .values("event_name")
+            .annotate(count=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-count")
+        )
+
+        return Response(
+            {
+                "days": days,
+                "totals": {
+                    "visitors": page_views.values("visitor_hash").distinct().count(),
+                    "page_views": page_views.count(),
+                    "article_views": page_views.filter(path__startswith="/articles/").count(),
+                    "ranking_runs": events.filter(event_name="ranking_run").count(),
+                    "registrations": events.filter(event_name="registration").count(),
+                },
+                "daily": [
+                    {
+                        "date": row["day"].isoformat(),
+                        "page_views": row["page_views"],
+                        "visitors": row["visitors"],
+                    }
+                    for row in daily_rows
+                ],
+                "top_pages": top_pages,
+                "referrers": referrers,
+                "events": event_breakdown,
+            }
+        )
+
+
 class ArticleListCreateView(APIView):
     """
     GET /api/articles/ -> public list
@@ -991,6 +1079,13 @@ class RankView(APIView):
         tickers = request.data.get("tickers", [])
         if not tickers or not isinstance(tickers, list):
             return Response({"detail": "tickers must be a non-empty list"}, status=400)
+
+        record_analytics_event(
+            request,
+            "ranking_run",
+            path="/dashboard",
+            metadata={"ticker_count": len(tickers)},
+        )
 
         tech_weight = float(request.data.get("tech_weight", 0.5))
         fund_weight = float(request.data.get("fund_weight", 0.5))

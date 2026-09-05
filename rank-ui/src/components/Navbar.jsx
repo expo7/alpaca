@@ -35,7 +35,10 @@ export default function Navbar({
   onLogout,
   v1Mode = false,
 }) {
-  const visibleTabs = v1Mode ? V1_TABS : tabs;
+  const baseTabs = v1Mode ? V1_TABS : tabs;
+  const visibleTabs = user?.is_staff || user?.is_superuser
+    ? [...baseTabs, { id: "analytics", label: "Analytics" }]
+    : baseTabs;
 
   return (
     <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">

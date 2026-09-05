@@ -427,3 +427,34 @@ class Article(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class AnalyticsEvent(models.Model):
+    """Privacy-conscious first-party product analytics event."""
+
+    EVENT_PAGE_VIEW = "page_view"
+
+    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    event_name = models.CharField(max_length=64, db_index=True)
+    path = models.CharField(max_length=512, blank=True, default="", db_index=True)
+    referrer_host = models.CharField(max_length=255, blank=True, default="")
+    visitor_hash = models.CharField(max_length=64, db_index=True)
+    device_type = models.CharField(max_length=16, blank=True, default="unknown")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="analytics_events",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-occurred_at"]
+        indexes = [
+            models.Index(fields=["event_name", "occurred_at"]),
+            models.Index(fields=["path", "occurred_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event_name} · {self.path or '-'}"
