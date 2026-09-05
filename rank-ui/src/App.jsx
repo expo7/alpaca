@@ -154,6 +154,11 @@ export default function App() {
   // -------------------
   const [page, setPage] = useState(() => window.location.pathname === "/analytics" ? "analytics" : "dashboard");
 
+  useEffect(() => {
+    if (route.kind !== "app") return;
+    setPage(pathname === "/analytics" ? "analytics" : "dashboard");
+  }, [pathname, route.kind]);
+
   const isBlockedPage = useCallback(
     (nextPage) => V1_MODE && !V1_ALLOWED_PAGES.has(nextPage),
     []
@@ -837,6 +842,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -853,6 +859,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -872,6 +879,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -888,6 +896,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}

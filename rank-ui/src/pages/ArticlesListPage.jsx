@@ -29,6 +29,7 @@ export default function ArticlesListPage({
     user,
     onOpenArticle,
     onNavigateDashboard,
+    onNavigateAnalytics,
     onLogout,
     onSignUp,
     onLogIn,
@@ -114,6 +115,7 @@ export default function ArticlesListPage({
                 isAuthed={isAuthed}
                 user={user}
                 onNavigateDashboard={onNavigateDashboard}
+                onNavigateAnalytics={onNavigateAnalytics}
                 onLogout={onLogout}
                 onSignUp={onSignUp}
                 onLogIn={onLogIn}
