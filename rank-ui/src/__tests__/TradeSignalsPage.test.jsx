@@ -6,10 +6,10 @@ import TradeSignalsPage from "../pages/TradeSignalsPage.jsx";
 describe("TradeSignalsPage", () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it("shows the Monday launch state before the first publication", async () => {
+  it("shows the empty state before the first publication", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
     render(<TradeSignalsPage />);
-    expect(await screen.findByText("The record starts Monday")).toBeInTheDocument();
+    expect(await screen.findByText("No setups published yet")).toBeInTheDocument();
   });
 
   it("shows published plans and completed outcomes", async () => {
@@ -42,7 +42,7 @@ describe("TradeSignalsPage", () => {
 
     render(<TradeSignalsPage />);
     expect(await screen.findByText("MU 110C 9/18/26")).toBeInTheDocument();
-    expect(screen.getByText("+40.65%")).toBeInTheDocument();
+    expect(screen.getAllByText("+40.65%")).toHaveLength(2);
     expect(screen.getByText("Booked profits at the second target.")).toBeInTheDocument();
   });
 });

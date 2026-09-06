@@ -484,6 +484,8 @@ class TradeSignal(models.Model):
         ("put", "Put option"),
     ]
     RISK_CHOICES = [("low", "Low"), ("moderate", "Moderate"), ("high", "High")]
+    TRIGGER_CHOICES = [("above", "Trades above"), ("below", "Trades below")]
+    FILL_CHOICES = [("ask", "Ask at activation (conservative)"), ("midpoint", "Bid/ask midpoint at activation")]
 
     symbol = models.CharField(max_length=16, db_index=True)
     company_name = models.CharField(max_length=160, blank=True, default="")
@@ -492,6 +494,12 @@ class TradeSignal(models.Model):
     expiration = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
     risk_level = models.CharField(max_length=12, choices=RISK_CHOICES, default="moderate")
+    trigger_direction = models.CharField(max_length=8, choices=TRIGGER_CHOICES, default="above")
+    underlying_trigger_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    trigger_confirmation = models.CharField(max_length=255, blank=True, default="")
+    do_not_chase_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    entry_deadline = models.DateField(null=True, blank=True)
+    official_fill_method = models.CharField(max_length=12, choices=FILL_CHOICES, default="ask")
     entry_low = models.DecimalField(max_digits=12, decimal_places=2)
     entry_high = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     initial_stop = models.DecimalField(max_digits=12, decimal_places=2)
@@ -506,6 +514,15 @@ class TradeSignal(models.Model):
     thesis = models.TextField(help_text="Why this setup qualified when it was published.")
     invalidation = models.TextField(blank=True, default="", help_text="What would prove the thesis wrong.")
     evidence_tags = models.JSONField(default=list, blank=True, help_text='Examples: ["Price action", "News", "Sentiment"]')
+    publication_underlying_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    publication_option_bid = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    publication_option_ask = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    publication_option_midpoint = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    publication_option_spread_pct = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    publication_option_volume = models.PositiveBigIntegerField(null=True, blank=True)
+    publication_option_open_interest = models.PositiveBigIntegerField(null=True, blank=True)
+    publication_quote_at = models.DateTimeField(null=True, blank=True)
+    publication_quote_source = models.CharField(max_length=80, blank=True, default="")
     published_at = models.DateTimeField(null=True, blank=True, db_index=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -516,8 +533,13 @@ class TradeSignal(models.Model):
 
     LOCKED_AFTER_PUBLICATION = (
         "symbol", "company_name", "instrument_type", "strike", "expiration", "risk_level",
+        "trigger_direction", "underlying_trigger_price", "trigger_confirmation", "do_not_chase_price",
+        "entry_deadline", "official_fill_method",
         "entry_low", "entry_high", "initial_stop", "target_1", "target_2", "target_3",
         "thesis", "invalidation", "evidence_tags", "published_at",
+        "publication_underlying_price", "publication_option_bid", "publication_option_ask",
+        "publication_option_midpoint", "publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest",
+        "publication_quote_at", "publication_quote_source",
     )
 
     @property
@@ -529,12 +551,24 @@ class TradeSignal(models.Model):
         side = "C" if self.instrument_type == "call" else "P"
         return " ".join(part for part in [self.symbol, f"{strike}{side}", expiration] if part)
 
+    @property
+    def contract_symbol(self):
+        if self.instrument_type == "stock" or not self.expiration or self.strike is None:
+            return self.symbol
+        side = "C" if self.instrument_type == "call" else "P"
+        strike_code = f"{int(self.strike * 1000):08d}"
+        return f"{self.symbol}{self.expiration:%y%m%d}{side}{strike_code}"
+
     def save(self, *args, **kwargs):
         self.symbol = (self.symbol or "").strip().upper()
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original and original.published_at:
-                changed = [field for field in self.LOCKED_AFTER_PUBLICATION if getattr(original, field) != getattr(self, field)]
+                changed = [
+                    field for field in self.LOCKED_AFTER_PUBLICATION
+                    if getattr(original, field) not in (None, "", [])
+                    and getattr(original, field) != getattr(self, field)
+                ]
                 if changed:
                     raise ValidationError(
                         "Published trade plans cannot be rewritten. Add a timestamped update instead. "

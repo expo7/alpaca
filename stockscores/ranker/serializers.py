@@ -581,14 +581,20 @@ class TradeSignalUpdateSerializer(serializers.ModelSerializer):
 
 class TradeSignalSerializer(serializers.ModelSerializer):
     instrument = serializers.CharField(source="display_instrument", read_only=True)
+    contract_symbol = serializers.CharField(read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     updates = TradeSignalUpdateSerializer(many=True, read_only=True)
 
     class Meta:
         model = TradeSignal
         fields = [
-            "id", "symbol", "company_name", "instrument_type", "instrument", "strike", "expiration",
-            "status", "status_label", "risk_level", "entry_low", "entry_high", "initial_stop", "current_stop",
+            "id", "symbol", "company_name", "instrument_type", "instrument", "contract_symbol", "strike", "expiration",
+            "status", "status_label", "risk_level", "trigger_direction", "underlying_trigger_price",
+            "trigger_confirmation", "do_not_chase_price", "entry_deadline", "official_fill_method",
+            "entry_low", "entry_high", "initial_stop", "current_stop",
             "target_1", "target_2", "target_3", "actual_entry", "final_exit", "realized_return_pct",
-            "max_return_pct", "thesis", "invalidation", "evidence_tags", "published_at", "closed_at", "updates",
+            "max_return_pct", "thesis", "invalidation", "evidence_tags", "publication_underlying_price",
+            "publication_option_bid", "publication_option_ask", "publication_option_midpoint", "publication_option_spread_pct",
+            "publication_option_volume", "publication_option_open_interest", "publication_quote_at",
+            "publication_quote_source", "published_at", "closed_at", "updates",
         ]

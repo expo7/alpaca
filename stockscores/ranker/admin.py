@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import AnalyticsEvent, Article, TradeSignal, TradeSignalUpdate
+from .trade_quotes import apply_publication_snapshot
 
 
 @admin.register(Article)
@@ -37,22 +38,47 @@ class TradeSignalAdmin(admin.ModelAdmin):
 	list_display = ("display_instrument", "status", "risk_level", "entry_low", "target_1", "published_at", "realized_return_pct")
 	list_filter = ("status", "instrument_type", "risk_level", "published_at")
 	search_fields = ("symbol", "company_name", "thesis")
-	readonly_fields = ("published_at", "created_at", "updated_at")
+	readonly_fields = (
+		"published_at", "created_at", "updated_at", "contract_symbol",
+		"publication_underlying_price", "publication_option_bid", "publication_option_ask",
+		"publication_option_midpoint", "publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest",
+		"publication_quote_at", "publication_quote_source",
+	)
 	ordering = ("-published_at", "-created_at")
 	inlines = (TradeSignalUpdateInline,)
 	fieldsets = (
-		("Instrument", {"fields": (("symbol", "company_name"), ("instrument_type", "strike", "expiration"), ("status", "risk_level"))}),
+		("Instrument", {"fields": (("symbol", "company_name"), ("instrument_type", "strike", "expiration"), "contract_symbol", ("status", "risk_level"))}),
+		("Entry trigger", {"fields": (("trigger_direction", "underlying_trigger_price"), "trigger_confirmation", ("do_not_chase_price", "entry_deadline"), "official_fill_method")}),
 		("Trade plan", {"fields": (("entry_low", "entry_high"), ("initial_stop", "current_stop"), ("target_1", "target_2", "target_3"))}),
 		("Research", {"fields": ("thesis", "invalidation", "evidence_tags")}),
+		("Publication quote snapshot", {
+			"fields": (
+				("publication_underlying_price", "publication_quote_at"),
+				("publication_option_bid", "publication_option_ask", "publication_option_midpoint"),
+				("publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest"),
+				"publication_quote_source",
+			),
+			"classes": ("collapse",),
+		}),
 		("Outcome", {"fields": (("actual_entry", "final_exit"), ("realized_return_pct", "max_return_pct"), ("published_at", "closed_at"))}),
 		("Record", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
 	)
 
 	def get_readonly_fields(self, request, obj=None):
-		base = ("published_at", "created_at", "updated_at")
+		base = self.readonly_fields
 		if obj and obj.published_at:
-			return base + tuple(field for field in TradeSignal.LOCKED_AFTER_PUBLICATION if field != "published_at")
+			return tuple(dict.fromkeys(base + tuple(
+				field for field in TradeSignal.LOCKED_AFTER_PUBLICATION
+				if field not in base and getattr(obj, field) not in (None, "", [])
+			)))
 		return base
+
+	def save_model(self, request, obj, form, change):
+		# Capture only on the first publication. Never backfill an old record with a
+		# later quote and present it as though it existed at publication time.
+		if obj.status != TradeSignal.STATUS_DRAFT and not obj.published_at:
+			apply_publication_snapshot(obj)
+		super().save_model(request, obj, form, change)
 
 
 @admin.register(TradeSignalUpdate)

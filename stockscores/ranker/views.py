@@ -52,6 +52,7 @@ from .metrics import get_yf_counter, increment_yf_counter
 from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
 from .analytics import AnalyticsEventThrottle, record_analytics_event
 from .models import AnalyticsEvent
+from .trade_quotes import get_trade_signal_quote
 
 # ranker/views.py
 
@@ -1038,6 +1039,18 @@ class TradeSignalListView(APIView):
             .order_by("-published_at", "-created_at")
         )
         return Response(TradeSignalSerializer(signals, many=True).data)
+
+
+class TradeSignalQuoteView(APIView):
+    """Best-effort delayed quote for one public, non-draft signal."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        signal = TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(pk=pk).first()
+        if not signal:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(get_trade_signal_quote(signal))
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

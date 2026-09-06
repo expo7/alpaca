@@ -1,4 +1,6 @@
 from decimal import Decimal
+from datetime import date
+from unittest.mock import patch
 
 from django.urls import reverse
 from django.core.exceptions import ValidationError
@@ -13,6 +15,7 @@ class TradeSignalApiTests(APITestCase):
             "symbol": "mu",
             "instrument_type": "call",
             "strike": Decimal("110"),
+            "expiration": date(2026, 9, 18),
             "status": TradeSignal.STATUS_PUBLISHED,
             "entry_low": Decimal("12.30"),
             "initial_stop": Decimal("9.80"),
@@ -37,7 +40,8 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["symbol"], "MU")
-        self.assertEqual(response.data[0]["instrument"], "MU 110C")
+        self.assertEqual(response.data[0]["instrument"], "MU 110C 9/18/26")
+        self.assertEqual(response.data[0]["contract_symbol"], "MU260918C00110000")
         self.assertEqual(response.data[0]["updates"][0]["note"], "First target reached.")
 
     def test_publishing_sets_an_immutable_initial_timestamp(self):
@@ -62,3 +66,20 @@ class TradeSignalApiTests(APITestCase):
         update.note = "Rewritten update"
         with self.assertRaises(ValidationError):
             update.save()
+
+    @patch("ranker.views.get_trade_signal_quote")
+    def test_public_quote_endpoint(self, get_quote):
+        signal = self._signal()
+        get_quote.return_value = {
+            "available": True,
+            "status": "delayed",
+            "status_label": "Delayed quote",
+            "underlying_price": 1016.59,
+            "option_bid": 34.90,
+            "option_ask": 37.00,
+        }
+
+        response = self.client.get(reverse("trade-signal-quote", args=[signal.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["option_ask"], 37.00)
