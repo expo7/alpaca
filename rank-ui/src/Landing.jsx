@@ -20,6 +20,7 @@ export default function Landing() {
                         </span>
                     </a>
                     <nav className="flex items-center gap-3 text-sm">
+                        <a href="/signals" className="text-slate-300 hover:text-white">Trade Record</a>
                         <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
                         <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
                     </nav>
@@ -41,11 +42,11 @@ export default function Landing() {
                                 Quantelle turns market conditions, technical strength, and fundamentals into a short daily research list—so you know where to look and when to stay cautious.
                             </p>
                             <div className="mt-7 flex flex-wrap gap-3">
-                                <a href="/dashboard" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
-                                    See today&apos;s plan
+                                <a href="/signals" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
+                                    View the trade record
                                 </a>
-                                <a href="/opportunities" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
-                                    Explore opportunities
+                                <a href="/dashboard" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
+                                    See today&apos;s market
                                 </a>
                             </div>
                             <p className="mt-4 text-xs text-slate-500">Free research preview · No brokerage connection required · Not investment advice</p>

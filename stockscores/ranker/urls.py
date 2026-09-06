@@ -33,6 +33,7 @@ from .views import (
     ArticleDetailView,
     AnalyticsEventCreateView,
     AnalyticsSummaryView,
+    TradeSignalListView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -195,4 +196,5 @@ urlpatterns = [
     path("articles/<slug:slug>/", ArticleDetailView.as_view(), name="article-detail"),
     path("analytics/events/", AnalyticsEventCreateView.as_view(), name="analytics-event-create"),
     path("analytics/summary/", AnalyticsSummaryView.as_view(), name="analytics-summary"),
+    path("trade-signals/", TradeSignalListView.as_view(), name="trade-signal-list"),
 ]

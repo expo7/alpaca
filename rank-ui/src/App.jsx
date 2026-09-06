@@ -27,6 +27,7 @@ import ArticlesListPage from "./pages/ArticlesListPage.jsx";
 import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
+import TradeSignalsPage from "./pages/TradeSignalsPage.jsx";
 import { trackEvent } from "./analytics.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -75,7 +76,7 @@ const CHART_STUDIES = [
 ];
 
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard", "opportunities", "analytics"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "opportunities", "analytics"]);
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
@@ -154,6 +155,7 @@ export default function App() {
   // -------------------
   const [page, setPage] = useState(() => {
     if (window.location.pathname === "/analytics") return "analytics";
+    if (window.location.pathname === "/signals") return "signals";
     if (window.location.pathname === "/opportunities") return "opportunities";
     return "dashboard";
   });
@@ -161,6 +163,7 @@ export default function App() {
   useEffect(() => {
     if (route.kind !== "app") return;
     if (pathname === "/analytics") setPage("analytics");
+    else if (pathname === "/signals") setPage("signals");
     else if (pathname === "/opportunities") setPage("opportunities");
     else setPage("dashboard");
   }, [pathname, route.kind]);
@@ -180,6 +183,11 @@ export default function App() {
       if (nextPage === "analytics") {
         setPage("analytics");
         navigatePath("/analytics");
+        return;
+      }
+      if (nextPage === "signals") {
+        setPage("signals");
+        navigatePath("/signals");
         return;
       }
       if (nextPage === "opportunities") {
@@ -853,6 +861,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -871,6 +880,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -892,6 +902,7 @@ export default function App() {
         user={user}
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -910,6 +921,7 @@ export default function App() {
         user={user}
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -932,6 +944,7 @@ export default function App() {
       />
 
       <main className="app-main">
+        {page === "signals" && <TradeSignalsPage />}
         {/* ==============================
           DASHBOARD PAGE
          ============================== */}

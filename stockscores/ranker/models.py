@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -458,3 +459,123 @@ class AnalyticsEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_name} · {self.path or '-'}"
+
+
+class TradeSignal(models.Model):
+    """A staff-published, timestamped trade plan and its final outcome."""
+
+    STATUS_DRAFT = "draft"
+    STATUS_PUBLISHED = "published"
+    STATUS_OPEN = "open"
+    STATUS_CLOSED = "closed"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_EXPIRED = "expired"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PUBLISHED, "Published — waiting for entry"),
+        (STATUS_OPEN, "Open"),
+        (STATUS_CLOSED, "Closed"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+    INSTRUMENT_CHOICES = [
+        ("stock", "Stock"),
+        ("call", "Call option"),
+        ("put", "Put option"),
+    ]
+    RISK_CHOICES = [("low", "Low"), ("moderate", "Moderate"), ("high", "High")]
+
+    symbol = models.CharField(max_length=16, db_index=True)
+    company_name = models.CharField(max_length=160, blank=True, default="")
+    instrument_type = models.CharField(max_length=8, choices=INSTRUMENT_CHOICES, default="stock")
+    strike = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    expiration = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    risk_level = models.CharField(max_length=12, choices=RISK_CHOICES, default="moderate")
+    entry_low = models.DecimalField(max_digits=12, decimal_places=2)
+    entry_high = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    initial_stop = models.DecimalField(max_digits=12, decimal_places=2)
+    current_stop = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    target_1 = models.DecimalField(max_digits=12, decimal_places=2)
+    target_2 = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    target_3 = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    actual_entry = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    final_exit = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    realized_return_pct = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    max_return_pct = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    thesis = models.TextField(help_text="Why this setup qualified when it was published.")
+    invalidation = models.TextField(blank=True, default="", help_text="What would prove the thesis wrong.")
+    evidence_tags = models.JSONField(default=list, blank=True, help_text='Examples: ["Price action", "News", "Sentiment"]')
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-published_at", "-created_at"]
+
+    LOCKED_AFTER_PUBLICATION = (
+        "symbol", "company_name", "instrument_type", "strike", "expiration", "risk_level",
+        "entry_low", "entry_high", "initial_stop", "target_1", "target_2", "target_3",
+        "thesis", "invalidation", "evidence_tags", "published_at",
+    )
+
+    @property
+    def display_instrument(self):
+        if self.instrument_type == "stock":
+            return self.symbol
+        expiration = self.expiration.strftime("%-m/%-d/%y") if self.expiration else ""
+        strike = f"{self.strike:g}" if self.strike is not None else ""
+        side = "C" if self.instrument_type == "call" else "P"
+        return " ".join(part for part in [self.symbol, f"{strike}{side}", expiration] if part)
+
+    def save(self, *args, **kwargs):
+        self.symbol = (self.symbol or "").strip().upper()
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original and original.published_at:
+                changed = [field for field in self.LOCKED_AFTER_PUBLICATION if getattr(original, field) != getattr(self, field)]
+                if changed:
+                    raise ValidationError(
+                        "Published trade plans cannot be rewritten. Add a timestamped update instead. "
+                        f"Locked fields changed: {', '.join(changed)}"
+                    )
+        if self.status != self.STATUS_DRAFT and not self.published_at:
+            self.published_at = timezone.now()
+        if self.status in {self.STATUS_CLOSED, self.STATUS_CANCELLED, self.STATUS_EXPIRED} and not self.closed_at:
+            self.closed_at = timezone.now()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.display_instrument} · {self.status}"
+
+
+class TradeSignalUpdate(models.Model):
+    EVENT_CHOICES = [
+        ("note", "Status note"),
+        ("triggered", "Entry triggered"),
+        ("target", "Target reached"),
+        ("stop", "Stop changed"),
+        ("partial_exit", "Partial exit"),
+        ("closed", "Closed"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="updates")
+    event_type = models.CharField(max_length=20, choices=EVENT_CHOICES, default="note")
+    note = models.TextField()
+    price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    return_pct = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["occurred_at", "id"]
+
+    def __str__(self):
+        return f"{self.signal.symbol} · {self.get_event_type_display()}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Published trade updates are append-only. Add a correction as a new update.")
+        super().save(*args, **kwargs)

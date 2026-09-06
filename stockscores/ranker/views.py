@@ -13,8 +13,9 @@ from .serializers import (
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
     ArticleSerializer,
+    TradeSignalSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeSignal
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -1023,6 +1024,20 @@ class ArticleDetailView(APIView):
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
         serializer = ArticleSerializer(article)
         return Response(serializer.data)
+
+
+class TradeSignalListView(APIView):
+    """Public, read-only trade record. Drafts never leave the staff workflow."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        signals = (
+            TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT)
+            .prefetch_related("updates")
+            .order_by("-published_at", "-created_at")
+        )
+        return Response(TradeSignalSerializer(signals, many=True).data)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

@@ -24,6 +24,7 @@ const tabs = [
 
 const V1_TABS = [
   { id: "dashboard", label: "Today" },
+  { id: "signals", label: "Trade Record" },
   { id: "opportunities", label: "Opportunities" },
   { id: "articles", label: "Articles" },
 ];

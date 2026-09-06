@@ -9,7 +9,7 @@ from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRu
 from .models import Watchlist, WatchlistItem
 from rest_framework import serializers
 from .models import Alert, AlertEvent
-from .models import UserSettings, Article
+from .models import UserSettings, Article, TradeSignal, TradeSignalUpdate
 
 # ranker/serializers.py
 from .models import BacktestRun
@@ -569,3 +569,26 @@ class ArticleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"slug": "Provide a slug or a title that can be slugified."})
         validated_data["slug"] = slug
         return super().create(validated_data)
+
+
+class TradeSignalUpdateSerializer(serializers.ModelSerializer):
+    event_label = serializers.CharField(source="get_event_type_display", read_only=True)
+
+    class Meta:
+        model = TradeSignalUpdate
+        fields = ["id", "event_type", "event_label", "note", "price", "return_pct", "occurred_at"]
+
+
+class TradeSignalSerializer(serializers.ModelSerializer):
+    instrument = serializers.CharField(source="display_instrument", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    updates = TradeSignalUpdateSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TradeSignal
+        fields = [
+            "id", "symbol", "company_name", "instrument_type", "instrument", "strike", "expiration",
+            "status", "status_label", "risk_level", "entry_low", "entry_high", "initial_stop", "current_stop",
+            "target_1", "target_2", "target_3", "actual_entry", "final_exit", "realized_return_pct",
+            "max_return_pct", "thesis", "invalidation", "evidence_tags", "published_at", "closed_at", "updates",
+        ]
