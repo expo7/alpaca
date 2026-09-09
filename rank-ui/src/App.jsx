@@ -28,6 +28,8 @@ import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 import TradeSignalsPage from "./pages/TradeSignalsPage.jsx";
+import PolicyPage from "./pages/PolicyPage.jsx";
+import SiteFooter from "./components/SiteFooter.jsx";
 import { trackEvent } from "./analytics.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
@@ -129,6 +131,9 @@ export default function App() {
   }, []);
 
   const route = useMemo(() => {
+    if (["/support", "/privacy", "/terms"].includes(pathname)) {
+      return { kind: "policy", type: pathname.slice(1) };
+    }
     if (pathname === "/articles") return { kind: "articles-list" };
     if (pathname.startsWith("/articles/")) {
       const slug = decodeURIComponent(pathname.replace(/^\/articles\//, "")).trim();
@@ -848,6 +853,9 @@ export default function App() {
   // [NOTE-UI] App Shell
   // ==============================
   if (!isAuthed) {
+  if (route.kind === "policy") {
+    return <PolicyPage type={route.type} />;
+  }
   if (pathname === "/") {
     return <Landing />;
   }
@@ -890,8 +898,12 @@ export default function App() {
     );
   }
 
-  // allow access to dashboard without auth
+// allow access to dashboard without auth
 }
+
+  if (route.kind === "policy") {
+    return <PolicyPage type={route.type} />;
+  }
 
   if (route.kind === "articles-list") {
     return (
@@ -1417,9 +1429,6 @@ export default function App() {
               )}
             </section>
 
-            <footer className="pt-2 text-xs text-slate-500">
-              © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
-            </footer>
             </>
             )}
           </>
@@ -1491,6 +1500,8 @@ export default function App() {
 
         {!V1_MODE && page === "strategies" && <StrategyBuilder />}
       </main>
+
+      <SiteFooter />
 
       {/* ==============================
         SAVE-TO-WATCHLIST MODAL

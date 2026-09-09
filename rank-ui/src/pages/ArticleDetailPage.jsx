@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import ArticleNav from "../components/ArticleNav.jsx";
 import ArticleCTA from "../components/ArticleCTA.jsx";
+import SiteFooter from "../components/SiteFooter.jsx";
 
 function formatDate(ts) {
     if (!ts) return "";
@@ -104,6 +105,7 @@ export default function ArticleDetailPage({
                     />
                 )}
             </main>
+            <SiteFooter />
         </div>
     );
 }

@@ -1,5 +1,6 @@
 import Login from "./Login.jsx";
 import { APP_NAME } from "./brand";
+import SiteFooter from "./components/SiteFooter.jsx";
 
 const workflow = [
     { number: "01", title: "Read the market", copy: "See whether conditions favor offense, defense, or patience." },
@@ -107,12 +108,7 @@ export default function Landing() {
                 </section>
             </main>
 
-            <footer className="border-t border-slate-900 px-4 py-5 text-xs text-slate-500">
-                <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-2">
-                    <span>© {new Date().getFullYear()} {APP_NAME}</span>
-                    <span>Research only · No guarantees · Markets involve risk</span>
-                </div>
-            </footer>
+            <SiteFooter />
         </div>
     );
 }

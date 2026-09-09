@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ArticleNav from "../components/ArticleNav.jsx";
 import ArticleCTA from "../components/ArticleCTA.jsx";
+import SiteFooter from "../components/SiteFooter.jsx";
 
 function formatDate(ts) {
     if (!ts) return "";
@@ -203,6 +204,7 @@ export default function ArticlesListPage({
                     onSignUp={onSignUp}
                 />
             </main>
+            <SiteFooter />
         </div>
     );
 }
