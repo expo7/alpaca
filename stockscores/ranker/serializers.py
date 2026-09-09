@@ -597,4 +597,5 @@ class TradeSignalSerializer(serializers.ModelSerializer):
             "publication_option_bid", "publication_option_ask", "publication_option_midpoint", "publication_option_spread_pct",
             "publication_option_volume", "publication_option_open_interest", "publication_quote_at",
             "publication_quote_source", "published_at", "closed_at", "updates",
+            "paper_execution_enabled", "paper_quantity", "paper_order_status", "paper_filled_at",
         ]

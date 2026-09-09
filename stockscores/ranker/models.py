@@ -523,6 +523,20 @@ class TradeSignal(models.Model):
     publication_option_open_interest = models.PositiveBigIntegerField(null=True, blank=True)
     publication_quote_at = models.DateTimeField(null=True, blank=True)
     publication_quote_source = models.CharField(max_length=80, blank=True, default="")
+    paper_execution_enabled = models.BooleanField(
+        default=False,
+        help_text="Allow the globally enabled Alpaca paper executor to manage this signal.",
+    )
+    paper_quantity = models.PositiveIntegerField(default=1)
+    paper_entry_order_id = models.CharField(max_length=64, blank=True, default="")
+    paper_exit_order_id = models.CharField(max_length=64, blank=True, default="")
+    paper_order_status = models.CharField(max_length=32, blank=True, default="")
+    paper_submitted_at = models.DateTimeField(null=True, blank=True)
+    paper_filled_at = models.DateTimeField(null=True, blank=True)
+    paper_last_checked_at = models.DateTimeField(null=True, blank=True)
+    paper_last_error = models.CharField(max_length=255, blank=True, default="")
+    paper_exit_reason = models.CharField(max_length=32, blank=True, default="")
+    trigger_first_seen_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True, db_index=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -574,6 +588,8 @@ class TradeSignal(models.Model):
                         "Published trade plans cannot be rewritten. Add a timestamped update instead. "
                         f"Locked fields changed: {', '.join(changed)}"
                     )
+            if original and original.paper_entry_order_id and original.paper_quantity != self.paper_quantity:
+                raise ValidationError("Paper quantity cannot change after an entry order has been submitted.")
         if self.status != self.STATUS_DRAFT and not self.published_at:
             self.published_at = timezone.now()
         if self.status in {self.STATUS_CLOSED, self.STATUS_CANCELLED, self.STATUS_EXPIRED} and not self.closed_at:

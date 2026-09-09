@@ -1,12 +1,16 @@
 from datetime import timedelta, datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict
 
 from celery import shared_task
+from django.core.cache import cache
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .backtest import BacktestResult, run_basket_backtest
-from .models import Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
+from .alpaca_paper import AlpacaPaperClient, PaperTradingError, load_paper_config
+from .models import Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, TradeSignal, TradeSignalUpdate
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 
 SCHEDULE_OFFSETS = {
@@ -16,6 +20,215 @@ SCHEDULE_OFFSETS = {
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
 }
+
+
+def _money(value):
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _filled_at(order):
+    value = parse_datetime(order.get("filled_at") or "")
+    return value or timezone.now()
+
+
+def _record_update(signal, event_type, note, *, price=None, return_pct=None):
+    TradeSignalUpdate.objects.create(
+        signal=signal,
+        event_type=event_type,
+        note=note,
+        price=price,
+        return_pct=return_pct,
+    )
+
+
+def _reconcile_entry(signal, client):
+    order = client.order(signal.paper_entry_order_id)
+    status_value = order.get("status", "")[:32]
+    signal.paper_order_status = status_value
+    signal.paper_last_checked_at = timezone.now()
+    if status_value == "filled":
+        fill = _money(order["filled_avg_price"])
+        signal.actual_entry = fill
+        signal.status = TradeSignal.STATUS_OPEN
+        signal.paper_filled_at = _filled_at(order)
+        signal.paper_last_error = ""
+        signal.save(update_fields=[
+            "actual_entry", "status", "paper_order_status", "paper_filled_at",
+            "paper_last_checked_at", "paper_last_error", "updated_at",
+        ])
+        _record_update(
+            signal,
+            "triggered",
+            f"Alpaca paper order filled {signal.paper_quantity} contract(s) at ${fill}.",
+            price=fill,
+        )
+        return "entry_filled"
+    if status_value in {"canceled", "expired", "rejected", "replaced"}:
+        signal.paper_last_error = f"Entry order ended with status: {status_value}"
+    signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "paper_last_error", "updated_at"])
+    return status_value or "entry_pending"
+
+
+def _reconcile_exit(signal, client):
+    order = client.order(signal.paper_exit_order_id)
+    status_value = order.get("status", "")[:32]
+    signal.paper_order_status = status_value
+    signal.paper_last_checked_at = timezone.now()
+    if status_value == "filled":
+        fill = _money(order["filled_avg_price"])
+        entry = signal.actual_entry or Decimal("0")
+        return_pct = _money(((fill - entry) / entry) * 100) if entry else None
+        signal.final_exit = fill
+        signal.realized_return_pct = return_pct
+        signal.status = TradeSignal.STATUS_CLOSED
+        signal.closed_at = _filled_at(order)
+        signal.paper_last_error = ""
+        signal.save(update_fields=[
+            "final_exit", "realized_return_pct", "status", "closed_at", "paper_order_status",
+            "paper_last_checked_at", "paper_last_error", "updated_at",
+        ])
+        _record_update(
+            signal,
+            "closed",
+            f"Alpaca paper position closed at ${fill} ({signal.paper_exit_reason}).",
+            price=fill,
+            return_pct=return_pct,
+        )
+        return "exit_filled"
+    if status_value in {"canceled", "expired", "rejected", "replaced"}:
+        signal.paper_last_error = f"Exit order ended with status: {status_value}"
+    signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "paper_last_error", "updated_at"])
+    return status_value or "exit_pending"
+
+
+def _process_published_signal(signal, client, now, config):
+    if signal.paper_entry_order_id:
+        return _reconcile_entry(signal, client)
+    if signal.entry_deadline and now.date() > signal.entry_deadline:
+        signal.status = TradeSignal.STATUS_EXPIRED
+        signal.paper_last_error = "Entry deadline passed before activation"
+        signal.save(update_fields=["status", "paper_last_error", "updated_at"])
+        _record_update(signal, "cancelled", "Alpaca paper setup expired before an entry was triggered.")
+        return "expired"
+    if signal.instrument_type not in {"call", "put"}:
+        raise PaperTradingError("Initial executor supports long call and put signals only")
+    stock = client.stock_quote(signal.symbol)
+    trigger = signal.underlying_trigger_price
+    if trigger is None:
+        raise PaperTradingError("Signal has no underlying trigger price")
+    crossed = stock["midpoint"] >= trigger if signal.trigger_direction == "above" else stock["midpoint"] <= trigger
+    if not crossed:
+        if signal.trigger_first_seen_at:
+            signal.trigger_first_seen_at = None
+            signal.save(update_fields=["trigger_first_seen_at", "updated_at"])
+        return "waiting_for_trigger"
+    if not signal.trigger_first_seen_at:
+        signal.trigger_first_seen_at = now
+        signal.save(update_fields=["trigger_first_seen_at", "updated_at"])
+        return "confirming_trigger"
+    if (now - signal.trigger_first_seen_at).total_seconds() < config.confirm_seconds:
+        return "confirming_trigger"
+
+    quote = client.option_quote(signal.contract_symbol)
+    ask = quote["ask"]
+    upper = signal.do_not_chase_price or signal.entry_high or signal.entry_low
+    if ask < signal.entry_low or ask > upper:
+        return "premium_outside_entry_range"
+    if quote["spread_pct"] > config.max_spread_pct:
+        return "spread_too_wide"
+    open_count = TradeSignal.objects.filter(
+        paper_execution_enabled=True,
+        status=TradeSignal.STATUS_OPEN,
+    ).count()
+    if open_count >= config.max_open_positions:
+        return "position_limit"
+
+    order = client.submit_limit_order(
+        symbol=signal.contract_symbol,
+        quantity=signal.paper_quantity,
+        side="buy",
+        limit_price=_money(ask),
+        client_order_id=f"quantelle-{signal.pk}-entry",
+    )
+    signal.paper_entry_order_id = order["id"]
+    signal.paper_order_status = order.get("status", "submitted")[:32]
+    signal.paper_submitted_at = now
+    signal.paper_last_checked_at = now
+    signal.paper_last_error = ""
+    signal.save(update_fields=[
+        "paper_entry_order_id", "paper_order_status", "paper_submitted_at",
+        "paper_last_checked_at", "paper_last_error", "updated_at",
+    ])
+    _record_update(signal, "note", f"Submitted Alpaca paper buy limit for {signal.paper_quantity} contract(s) at ${_money(ask)}.", price=_money(ask))
+    return "entry_submitted"
+
+
+def _process_open_signal(signal, client, now):
+    if signal.paper_exit_order_id:
+        return _reconcile_exit(signal, client)
+    quote = client.option_quote(signal.contract_symbol)
+    bid = quote["bid"]
+    stop = signal.current_stop or signal.initial_stop
+    if bid <= stop:
+        reason = "stop"
+    elif bid >= signal.target_1:
+        reason = "target_1"
+    else:
+        signal.paper_last_checked_at = now
+        signal.save(update_fields=["paper_last_checked_at", "updated_at"])
+        return "position_open"
+
+    order = client.submit_limit_order(
+        symbol=signal.contract_symbol,
+        quantity=signal.paper_quantity,
+        side="sell",
+        limit_price=_money(bid),
+        client_order_id=f"quantelle-{signal.pk}-exit",
+    )
+    signal.paper_exit_order_id = order["id"]
+    signal.paper_exit_reason = reason
+    signal.paper_order_status = order.get("status", "submitted")[:32]
+    signal.paper_last_checked_at = now
+    signal.paper_last_error = ""
+    signal.save(update_fields=[
+        "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
+        "paper_last_checked_at", "paper_last_error", "updated_at",
+    ])
+    _record_update(signal, "note", f"Submitted Alpaca paper sell limit at ${_money(bid)} ({reason}).", price=_money(bid))
+    return "exit_submitted"
+
+
+@shared_task
+def run_paper_trade_executor():
+    config = load_paper_config()
+    if not config.enabled:
+        return {"status": "disabled"}
+    if not cache.add("ranker-paper-trade-executor-lock", "1", timeout=14):
+        return {"status": "locked"}
+    results = {}
+    try:
+        client = AlpacaPaperClient()
+        if not client.clock().get("is_open"):
+            return {"status": "market_closed"}
+        now = timezone.now()
+        signals = TradeSignal.objects.filter(
+            paper_execution_enabled=True,
+            status__in=[TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN],
+        ).order_by("published_at", "id")
+        for signal in signals:
+            try:
+                if signal.status == TradeSignal.STATUS_PUBLISHED:
+                    results[str(signal.pk)] = _process_published_signal(signal, client, now, config)
+                else:
+                    results[str(signal.pk)] = _process_open_signal(signal, client, now)
+            except (PaperTradingError, KeyError, ValueError) as exc:
+                signal.paper_last_error = str(exc)[:255]
+                signal.paper_last_checked_at = now
+                signal.save(update_fields=["paper_last_error", "paper_last_checked_at", "updated_at"])
+                results[str(signal.pk)] = "error"
+        return {"status": "ok", "signals": results}
+    finally:
+        cache.delete("ranker-paper-trade-executor-lock")
 
 
 def compute_next_run_at(bot: Bot, from_time=None):

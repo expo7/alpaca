@@ -43,6 +43,9 @@ class TradeSignalAdmin(admin.ModelAdmin):
 		"publication_underlying_price", "publication_option_bid", "publication_option_ask",
 		"publication_option_midpoint", "publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest",
 		"publication_quote_at", "publication_quote_source",
+		"paper_entry_order_id", "paper_exit_order_id", "paper_order_status",
+		"paper_submitted_at", "paper_filled_at", "paper_last_checked_at",
+		"paper_last_error", "paper_exit_reason", "trigger_first_seen_at",
 	)
 	ordering = ("-published_at", "-created_at")
 	inlines = (TradeSignalUpdateInline,)
@@ -59,6 +62,15 @@ class TradeSignalAdmin(admin.ModelAdmin):
 				"publication_quote_source",
 			),
 			"classes": ("collapse",),
+		}),
+		("Alpaca paper execution", {
+			"fields": (
+				("paper_execution_enabled", "paper_quantity"),
+				("paper_entry_order_id", "paper_exit_order_id", "paper_order_status"),
+				("paper_submitted_at", "paper_filled_at", "paper_last_checked_at"),
+				("trigger_first_seen_at", "paper_exit_reason"),
+				"paper_last_error",
+			),
 		}),
 		("Outcome", {"fields": (("actual_entry", "final_exit"), ("realized_return_pct", "max_return_pct"), ("published_at", "closed_at"))}),
 		("Record", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),

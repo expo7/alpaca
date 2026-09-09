@@ -105,6 +105,11 @@ function TradeCard({ signal, archived = false }) {
               <span className="rounded-full border border-amber-700/60 px-2.5 py-1 text-xs font-semibold capitalize text-amber-300">
                 {signal.risk_level} risk
               </span>
+              {signal.paper_execution_enabled && (
+                <span className="rounded-full border border-sky-700/60 bg-sky-950/40 px-2.5 py-1 text-xs font-semibold text-sky-300">
+                  Alpaca paper · {signal.paper_quantity} {Number(signal.paper_quantity) === 1 ? "contract" : "contracts"}
+                </span>
+              )}
             </div>
             {signal.company_name && <p className="mt-1 text-slate-400">{signal.company_name}</p>}
           </div>
