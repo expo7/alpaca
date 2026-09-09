@@ -64,6 +64,10 @@ export default function AnalyticsPage({ token, isStaff }) {
     () => Math.max(1, ...(data?.daily || []).map((row) => row.page_views)),
     [data]
   );
+  const tradeRecordTraffic = useMemo(
+    () => (data?.top_pages || []).find((row) => row.path === "/signals") || { views: 0, visitors: 0 },
+    [data]
+  );
 
   if (!isStaff) {
     return (
@@ -103,10 +107,15 @@ export default function AnalyticsPage({ token, isStaff }) {
 
       {!loading && !error && data && (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <MetricCard label="Visitors" value={data.totals?.visitors} detail={`Unique in ${days} days`} />
             <MetricCard label="Page views" value={data.totals?.page_views} />
             <MetricCard label="Article reads" value={data.totals?.article_views} />
+            <MetricCard
+              label="Trade Record views"
+              value={tradeRecordTraffic.views}
+              detail={`${tradeRecordTraffic.visitors} unique ${tradeRecordTraffic.visitors === 1 ? "visitor" : "visitors"}`}
+            />
             <MetricCard label="Ranking runs" value={data.totals?.ranking_runs} />
             <MetricCard label="Registrations" value={data.totals?.registrations} />
           </section>

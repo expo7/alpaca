@@ -14,7 +14,7 @@ describe("AnalyticsPage", () => {
       json: async () => ({
         totals: { visitors: 4, page_views: 9, article_views: 3, ranking_runs: 2, registrations: 1 },
         daily: [{ date: "2026-09-05", page_views: 9, visitors: 4 }],
-        top_pages: [{ path: "/dashboard", views: 5, visitors: 3 }],
+        top_pages: [{ path: "/signals", views: 2, visitors: 1 }, { path: "/dashboard", views: 5, visitors: 3 }],
         referrers: [{ referrer_host: "www.google.com", views: 2, visitors: 1 }],
         events: [{ event_name: "ranking_run", count: 2, visitors: 1 }],
       }),
@@ -23,6 +23,8 @@ describe("AnalyticsPage", () => {
     render(<AnalyticsPage token="token" isStaff />);
 
     expect(await screen.findByText("Site analytics")).toBeInTheDocument();
+    expect(screen.getByText("Trade Record views")).toBeInTheDocument();
+    expect(screen.getByText("1 unique visitor")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("www.google.com")).toBeInTheDocument());
     expect(screen.getAllByText("Ranking runs")).toHaveLength(2);
   });
