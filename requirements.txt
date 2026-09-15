@@ -12,3 +12,4 @@ dj-database-url>=2.1
 python-dotenv>=1.0
 gunicorn
 whitenoise
+stripe>=12.0,<13.0

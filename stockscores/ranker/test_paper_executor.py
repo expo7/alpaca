@@ -30,7 +30,7 @@ class PaperExecutorTests(TestCase):
             "trigger_direction": "above",
             "underlying_trigger_price": Decimal("234.80"),
             "do_not_chase_price": Decimal("9.00"),
-            "entry_deadline": date(2026, 9, 11),
+            "entry_deadline": timezone.localdate() + timedelta(days=3),
             "entry_low": Decimal("6.50"),
             "entry_high": Decimal("9.00"),
             "initial_stop": Decimal("4.25"),

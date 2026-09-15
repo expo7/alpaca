@@ -35,6 +35,10 @@ from .views import (
     AnalyticsSummaryView,
     TradeSignalListView,
     TradeSignalQuoteView,
+    BillingStatusView,
+    BillingCheckoutView,
+    BillingPortalView,
+    StripeWebhookView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -199,4 +203,8 @@ urlpatterns = [
     path("analytics/summary/", AnalyticsSummaryView.as_view(), name="analytics-summary"),
     path("trade-signals/", TradeSignalListView.as_view(), name="trade-signal-list"),
     path("trade-signals/<int:pk>/quote/", TradeSignalQuoteView.as_view(), name="trade-signal-quote"),
+    path("billing/status/", BillingStatusView.as_view(), name="billing-status"),
+    path("billing/checkout/", BillingCheckoutView.as_view(), name="billing-checkout"),
+    path("billing/portal/", BillingPortalView.as_view(), name="billing-portal"),
+    path("billing/webhook/", StripeWebhookView.as_view(), name="stripe-webhook"),
 ]

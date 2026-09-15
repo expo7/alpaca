@@ -45,4 +45,26 @@ describe("TradeSignalsPage", () => {
     expect(screen.getAllByText("+40.65%")).toHaveLength(2);
     expect(screen.getByText("Booked profits at the second target.")).toBeInTheDocument();
   });
+
+  it("shows a Pro call to action without leaking an active setup", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{
+        id: 2,
+        symbol: "NVDA",
+        company_name: "NVIDIA Corporation",
+        instrument_type: "call",
+        status: "published",
+        status_label: "Published — waiting for entry",
+        risk_level: "high",
+        published_at: "2026-09-15T21:36:00Z",
+        is_locked: true,
+      }],
+    }));
+
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("Active NVDA setup")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View Quantelle Pro/i })).toBeInTheDocument();
+    expect(screen.queryByText(/entry range/i)).toBeInTheDocument();
+  });
 });

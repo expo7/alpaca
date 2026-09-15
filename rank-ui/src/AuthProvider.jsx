@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
           email: json?.email || "",
           is_staff: Boolean(json?.is_staff),
           is_superuser: Boolean(json?.is_superuser),
+          is_pro: Boolean(json?.is_pro),
         };
         setUser(nextUser);
         localStorage.setItem("auth_user", JSON.stringify(nextUser));

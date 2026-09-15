@@ -38,17 +38,17 @@ function PlanValue({ value, entryReference, tone = "text-white" }) {
   );
 }
 
-function CurrentQuote({ signal }) {
+function CurrentQuote({ signal, token = "" }) {
   const [quote, setQuote] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/trade-signals/${signal.id}/quote/`)
+    fetch(`/api/trade-signals/${signal.id}/quote/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Quote unavailable")))
       .then((data) => { if (!cancelled) setQuote(data); })
       .catch(() => { if (!cancelled) setQuote({ available: false, status_label: "Quote unavailable" }); });
     return () => { cancelled = true; };
-  }, [signal.id]);
+  }, [signal.id, token]);
 
   const optionChange = quote?.option_midpoint && signal.actual_entry
     ? plannedPercent(quote.option_midpoint, Number(signal.actual_entry))
@@ -77,7 +77,22 @@ function CurrentQuote({ signal }) {
   );
 }
 
-function TradeCard({ signal, archived = false }) {
+function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
+  if (signal.is_locked) {
+    return (
+      <article className="overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
+        <div className="h-1 bg-indigo-500" />
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-xl font-bold text-white">Active {signal.symbol} setup</h2><p className="mt-1 text-slate-400">{signal.company_name}</p></div>
+            <span className="rounded-full bg-indigo-950 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-indigo-300">Pro setup</span>
+          </div>
+          <p className="mt-5 max-w-2xl leading-7 text-slate-300">The contract, trigger, entry range, risk controls, live quote, thesis, and evidence are available to Quantelle Pro subscribers. The complete result will remain on the public record when the setup ends.</p>
+          <button type="button" onClick={onUpgrade} className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-500">View Quantelle Pro</button>
+        </div>
+      </article>
+    );
+  }
   const entry = signal.entry_high && signal.entry_high !== signal.entry_low
     ? `${money(signal.entry_low)}–${money(signal.entry_high)}`
     : money(signal.entry_low);
@@ -141,7 +156,7 @@ function TradeCard({ signal, archived = false }) {
           <div><div className="text-xs uppercase tracking-wide text-slate-500">Targets 2 / 3</div><div className="flex flex-wrap gap-x-2"><PlanValue value={signal.target_2} entryReference={entryReference} tone="text-emerald-300" /><PlanValue value={signal.target_3} entryReference={entryReference} tone="text-emerald-300" /></div></div>
         </div>
 
-        {!archived && <div className="mt-5"><CurrentQuote signal={signal} /></div>}
+        {!archived && <div className="mt-5"><CurrentQuote signal={signal} token={token} /></div>}
 
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/25 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -191,14 +206,14 @@ function TradeCard({ signal, archived = false }) {
   );
 }
 
-export default function TradeSignalsPage() {
+export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/trade-signals/")
+    fetch("/api/trade-signals/", { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((response) => {
         if (!response.ok) throw new Error("Unable to load the trade record.");
         return response.json();
@@ -207,7 +222,7 @@ export default function TradeSignalsPage() {
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [token]);
 
   const active = useMemo(() => signals.filter((signal) => ACTIVE.has(signal.status)), [signals]);
   const history = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)), [signals]);
@@ -234,7 +249,7 @@ export default function TradeSignalsPage() {
         </div>
       )}
 
-      {!!active.length && <section><h2 className="mb-3 text-lg font-semibold text-white">Active setups</h2><div className="space-y-4">{active.map((signal) => <TradeCard key={signal.id} signal={signal} />)}</div></section>}
+      {!!active.length && <section><h2 className="mb-3 text-lg font-semibold text-white">Active setups</h2><div className="space-y-4">{active.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div></section>}
       {!!history.length && <section className="mt-8"><h2 className="mb-3 text-lg font-semibold text-white">Past performance <span className="ml-1 text-sm font-normal text-slate-500">{history.length}</span></h2><div className="space-y-4">{history.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div></section>}
 
       <p className="mt-8 border-t border-slate-800 pt-5 text-xs leading-5 text-slate-500">For research and educational use only. Options can lose their entire value. Published performance does not include commissions, slippage, taxes, or differences in execution unless a record specifically says otherwise.</p>

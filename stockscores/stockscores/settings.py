@@ -11,7 +11,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import hashlib
 import os
+import sys
 from decimal import Decimal
 import dj_database_url
 from datetime import timedelta
@@ -23,13 +25,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY", "django-insecure-ey=ruy!1ep34%^k8+qf!zq=fnam%d(&7-wk=4$orxk2td0xf(g"
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = "False"
+DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes")
+
+# SECURITY WARNING: keep the secret key used in production secret. The
+# deterministic fallback exists only so local tests can boot without secrets.
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY and (DEBUG or "test" in sys.argv):
+    SECRET_KEY = hashlib.sha256(b"quantelle-local-test-key").hexdigest()
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY must be set when DEBUG is false")
 
 ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [
@@ -253,14 +258,21 @@ EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Live trading safeguard
 ALLOW_LIVE_BOTS = os.getenv("ALLOW_LIVE_BOTS", "false").lower() in ("1", "true", "yes")
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "bsavelli66@gmail.com"
-# EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
-EMAIL_HOST_PASSWORD = "jvcu litz cpvo lggs"  # example with spaces removed
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.zoho.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 EMAIL_SUBJECT_PREFIX = ""
+
+# Stripe Billing. Secrets are supplied through .env.docker and are never
+# committed. Checkout remains unavailable until all required values are set.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+STRIPE_APP_URL = os.getenv("STRIPE_APP_URL", "https://quantelle.io").rstrip("/")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True

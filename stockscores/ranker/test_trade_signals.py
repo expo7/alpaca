@@ -25,8 +25,8 @@ class TradeSignalApiTests(APITestCase):
         data.update(overrides)
         return TradeSignal.objects.create(**data)
 
-    def test_public_feed_excludes_drafts_and_includes_updates(self):
-        published = self._signal()
+    def test_public_feed_excludes_drafts_and_includes_completed_updates(self):
+        published = self._signal(status=TradeSignal.STATUS_CLOSED)
         self._signal(symbol="AAPL", status=TradeSignal.STATUS_DRAFT)
         TradeSignalUpdate.objects.create(
             signal=published,
@@ -40,7 +40,7 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["symbol"], "MU")
-        self.assertEqual(response.data[0]["instrument"], "MU 110C 9/18/26")
+        self.assertEqual(response.data[0]["instrument"], "MU 110.00C 9/18/26")
         self.assertEqual(response.data[0]["contract_symbol"], "MU260918C00110000")
         self.assertEqual(response.data[0]["updates"][0]["note"], "First target reached.")
 
@@ -68,8 +68,8 @@ class TradeSignalApiTests(APITestCase):
             update.save()
 
     @patch("ranker.views.get_trade_signal_quote")
-    def test_public_quote_endpoint(self, get_quote):
-        signal = self._signal()
+    def test_completed_quote_endpoint_remains_public(self, get_quote):
+        signal = self._signal(status=TradeSignal.STATUS_CLOSED)
         get_quote.return_value = {
             "available": True,
             "status": "delayed",

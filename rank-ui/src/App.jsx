@@ -29,6 +29,7 @@ import useQuotes from "./hooks/useQuotes.js";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 import TradeSignalsPage from "./pages/TradeSignalsPage.jsx";
 import PolicyPage from "./pages/PolicyPage.jsx";
+import BillingPage from "./pages/BillingPage.jsx";
 import SiteFooter from "./components/SiteFooter.jsx";
 import { trackEvent } from "./analytics.js";
 
@@ -78,7 +79,7 @@ const CHART_STUDIES = [
 ];
 
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "opportunities", "analytics"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "billing", "opportunities", "analytics"]);
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
@@ -161,6 +162,7 @@ export default function App() {
   const [page, setPage] = useState(() => {
     if (window.location.pathname === "/analytics") return "analytics";
     if (window.location.pathname === "/signals") return "signals";
+    if (window.location.pathname === "/billing") return "billing";
     if (window.location.pathname === "/opportunities") return "opportunities";
     return "dashboard";
   });
@@ -169,6 +171,7 @@ export default function App() {
     if (route.kind !== "app") return;
     if (pathname === "/analytics") setPage("analytics");
     else if (pathname === "/signals") setPage("signals");
+    else if (pathname === "/billing") setPage("billing");
     else if (pathname === "/opportunities") setPage("opportunities");
     else setPage("dashboard");
   }, [pathname, route.kind]);
@@ -193,6 +196,11 @@ export default function App() {
       if (nextPage === "signals") {
         setPage("signals");
         navigatePath("/signals");
+        return;
+      }
+      if (nextPage === "billing") {
+        setPage("billing");
+        navigatePath("/billing");
         return;
       }
       if (nextPage === "opportunities") {
@@ -956,7 +964,8 @@ export default function App() {
       />
 
       <main className="app-main">
-        {page === "signals" && <TradeSignalsPage />}
+        {page === "signals" && <TradeSignalsPage token={token} onUpgrade={() => navigateToPage("billing")} />}
+        {page === "billing" && <BillingPage token={token} isAuthed={isAuthed} />}
         {/* ==============================
           DASHBOARD PAGE
          ============================== */}

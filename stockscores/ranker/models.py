@@ -629,3 +629,29 @@ class TradeSignalUpdate(models.Model):
         if self.pk:
             raise ValidationError("Published trade updates are append-only. Add a correction as a new update.")
         super().save(*args, **kwargs)
+
+
+class BillingProfile(models.Model):
+    """Stripe identifiers and the webhook-derived subscription state for one user."""
+
+    ACCESS_STATUSES = {"active", "trialing"}
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="billing_profile",
+    )
+    stripe_customer_id = models.CharField(max_length=64, blank=True, default=None, unique=True, null=True)
+    stripe_subscription_id = models.CharField(max_length=64, blank=True, default=None, unique=True, null=True)
+    stripe_price_id = models.CharField(max_length=64, blank=True, default="")
+    status = models.CharField(max_length=32, blank=True, default="inactive", db_index=True)
+    current_period_end = models.DateTimeField(null=True, blank=True)
+    cancel_at_period_end = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def has_pro_access(self):
+        return bool(self.user.is_staff or self.user.is_superuser or self.status in self.ACCESS_STATUSES)
+
+    def __str__(self):
+        return f"{self.user} · {self.status}"

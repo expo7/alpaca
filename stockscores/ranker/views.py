@@ -53,6 +53,18 @@ from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
 from .analytics import AnalyticsEventThrottle, record_analytics_event
 from .models import AnalyticsEvent
 from .trade_quotes import get_trade_signal_quote
+from .billing import (
+    BillingConfigurationError,
+    billing_payload,
+    get_billing_profile,
+    require_stripe_config,
+    stripe_ready,
+    sync_subscription,
+    user_has_pro_access,
+)
+from .models import BillingProfile
+from django.conf import settings
+import stripe
 
 # ranker/views.py
 
@@ -894,15 +906,109 @@ class CurrentUserView(APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        return Response(
-            {
+        payload = {
                 "id": user.id,
                 "username": user.get_username(),
                 "email": user.email,
                 "is_staff": bool(user.is_staff),
                 "is_superuser": bool(user.is_superuser),
+                "is_pro": user_has_pro_access(user),
             }
+        return Response(payload)
+
+
+class BillingStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(billing_payload(request.user))
+
+
+class BillingCheckoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config()
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        profile = get_billing_profile(request.user)
+        if profile.has_pro_access:
+            return Response({"detail": "This account already has Pro access."}, status=status.HTTP_409_CONFLICT)
+
+        customer_kwargs = {"customer": profile.stripe_customer_id} if profile.stripe_customer_id else {}
+        if not profile.stripe_customer_id and request.user.email:
+            customer_kwargs["customer_email"] = request.user.email
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
+            client_reference_id=str(request.user.pk),
+            metadata={"user_id": str(request.user.pk)},
+            subscription_data={"metadata": {"user_id": str(request.user.pk)}},
+            success_url=f"{settings.STRIPE_APP_URL}/billing?checkout=success",
+            cancel_url=f"{settings.STRIPE_APP_URL}/billing?checkout=cancelled",
+            allow_promotion_codes=True,
+            **customer_kwargs,
         )
+        return Response({"url": session.url})
+
+
+class BillingPortalView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config()
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        profile = get_billing_profile(request.user)
+        if not profile.stripe_customer_id:
+            return Response({"detail": "No Stripe customer exists for this account."}, status=status.HTTP_409_CONFLICT)
+        session = stripe.billing_portal.Session.create(
+            customer=profile.stripe_customer_id,
+            return_url=f"{settings.STRIPE_APP_URL}/billing",
+        )
+        return Response({"url": session.url})
+
+
+class StripeWebhookView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config(require_webhook=True)
+            event = stripe.Webhook.construct_event(
+                request.body,
+                request.headers.get("Stripe-Signature", ""),
+                settings.STRIPE_WEBHOOK_SECRET,
+            )
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except (ValueError, stripe.error.SignatureVerificationError):
+            return Response({"detail": "Invalid webhook signature."}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = event["type"]
+        obj = event["data"]["object"]
+        if event_type == "checkout.session.completed":
+            user_id = (obj.get("metadata") or {}).get("user_id") or obj.get("client_reference_id")
+            profile = BillingProfile.objects.filter(user_id=user_id).first() if user_id else None
+            if profile:
+                profile.stripe_customer_id = obj.get("customer") or profile.stripe_customer_id
+                profile.stripe_subscription_id = obj.get("subscription") or profile.stripe_subscription_id
+                profile.save()
+                if obj.get("subscription"):
+                    sync_subscription(stripe.Subscription.retrieve(obj["subscription"]), user=profile.user)
+        elif event_type in {
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        }:
+            sync_subscription(obj)
+
+        return Response({"received": True})
 
 
 class AnalyticsEventCreateView(APIView):
@@ -1038,7 +1144,27 @@ class TradeSignalListView(APIView):
             .prefetch_related("updates")
             .order_by("-published_at", "-created_at")
         )
-        return Response(TradeSignalSerializer(signals, many=True).data)
+        pro_access = user_has_pro_access(request.user)
+        payload = []
+        for signal in signals:
+            active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
+            if active and not pro_access:
+                payload.append({
+                    "id": signal.id,
+                    "symbol": signal.symbol,
+                    "company_name": signal.company_name,
+                    "instrument_type": signal.instrument_type,
+                    "status": signal.status,
+                    "status_label": signal.get_status_display(),
+                    "risk_level": signal.risk_level,
+                    "published_at": signal.published_at,
+                    "is_locked": True,
+                })
+                continue
+            item = TradeSignalSerializer(signal).data
+            item["is_locked"] = False
+            payload.append(item)
+        return Response(payload)
 
 
 class TradeSignalQuoteView(APIView):
@@ -1050,6 +1176,9 @@ class TradeSignalQuoteView(APIView):
         signal = TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(pk=pk).first()
         if not signal:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
+        if active and not user_has_pro_access(request.user):
+            return Response({"detail": "Quantelle Pro is required."}, status=status.HTTP_403_FORBIDDEN)
         return Response(get_trade_signal_quote(signal))
 
 
