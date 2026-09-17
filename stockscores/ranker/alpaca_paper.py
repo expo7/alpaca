@@ -88,8 +88,9 @@ class AlpacaPaperClient:
     def clock(self):
         return self._request("GET", f"{self.base_url}/v2/clock")
 
-    def order(self, order_id):
-        return self._request("GET", f"{self.base_url}/v2/orders/{order_id}")
+    def order(self, order_id, *, nested=False):
+        params = {"nested": "true"} if nested else None
+        return self._request("GET", f"{self.base_url}/v2/orders/{order_id}", params=params)
 
     def position(self, symbol):
         """Return Alpaca's current paper position for an exact asset symbol."""
@@ -109,6 +110,25 @@ class AlpacaPaperClient:
                 "limit_price": str(limit_price),
                 "client_order_id": client_order_id,
                 "position_intent": intent,
+            },
+        )
+
+    def submit_oco_exit(self, *, symbol, quantity, target_price, stop_price, client_order_id):
+        """Place broker-held take-profit and stop-loss exits for one long position."""
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": "sell",
+                "type": "limit",
+                "time_in_force": "day",
+                "order_class": "oco",
+                "take_profit": {"limit_price": str(target_price)},
+                "stop_loss": {"stop_price": str(stop_price)},
+                "client_order_id": client_order_id,
+                "position_intent": "sell_to_close",
             },
         )
 

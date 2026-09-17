@@ -70,33 +70,62 @@ def _reconcile_entry(signal, client):
 
 
 def _reconcile_exit(signal, client):
-    order = client.order(signal.paper_exit_order_id)
+    order = client.order(signal.paper_exit_order_id, nested=True)
     status_value = order.get("status", "")[:32]
     signal.paper_order_status = status_value
     signal.paper_last_checked_at = timezone.now()
-    if status_value == "filled":
-        fill = _money(order["filled_avg_price"])
+    filled_order = order if status_value == "filled" else next(
+        (leg for leg in (order.get("legs") or []) if leg.get("status") == "filled"),
+        None,
+    )
+    if filled_order:
+        fill = _money(filled_order["filled_avg_price"])
+        exit_reason = signal.paper_exit_reason
+        if exit_reason == "oco":
+            exit_reason = "stop" if filled_order.get("stop_price") else "target_1"
         entry = signal.actual_entry or Decimal("0")
         return_pct = _money(((fill - entry) / entry) * 100) if entry else None
         signal.final_exit = fill
         signal.realized_return_pct = return_pct
         signal.status = TradeSignal.STATUS_CLOSED
-        signal.closed_at = _filled_at(order)
+        signal.closed_at = _filled_at(filled_order)
+        signal.paper_exit_reason = exit_reason
+        signal.paper_order_status = "filled"
         signal.paper_last_error = ""
         signal.save(update_fields=[
             "final_exit", "realized_return_pct", "status", "closed_at", "paper_order_status",
-            "paper_last_checked_at", "paper_last_error", "updated_at",
+            "paper_exit_reason", "paper_last_checked_at", "paper_last_error", "updated_at",
         ])
         _record_update(
             signal,
             "closed",
-            f"Alpaca paper position closed at ${fill} ({signal.paper_exit_reason}).",
+            f"Alpaca paper position closed at ${fill} ({exit_reason}).",
             price=fill,
             return_pct=return_pct,
         )
         return "exit_filled"
-    if status_value in {"canceled", "expired", "rejected", "replaced"}:
-        signal.paper_last_error = f"Exit order ended with status: {status_value}"
+    if status_value in {"canceled", "done_for_day", "expired", "rejected", "replaced"}:
+        old_order_id = signal.paper_exit_order_id
+        was_oco = signal.paper_exit_reason == "oco"
+        prior_error = signal.paper_last_error
+        oco_was_unsupported = prior_error.startswith("Broker OCO unsupported:")
+        signal.paper_exit_order_id = ""
+        signal.paper_exit_reason = ""
+        if was_oco and status_value == "rejected":
+            signal.paper_last_error = f"Broker OCO unsupported: order {old_order_id} was rejected"
+        elif oco_was_unsupported:
+            signal.paper_last_error = prior_error
+        else:
+            signal.paper_last_error = f"Exit protection {old_order_id} ended with status: {status_value}; replacement required"
+        signal.save(update_fields=[
+            "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
+            "paper_last_checked_at", "paper_last_error", "updated_at",
+        ])
+        if was_oco and status_value == "rejected":
+            _record_update(signal, "note", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
+            return "exit_protection_unsupported"
+        _record_update(signal, "note", f"Alpaca exit protection ended with status {status_value}; Quantelle will replace it.")
+        return "exit_protection_replacement_required"
     signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "paper_last_error", "updated_at"])
     return status_value or "exit_pending"
 
@@ -166,9 +195,43 @@ def _process_published_signal(signal, client, now, config):
 def _process_open_signal(signal, client, now):
     if signal.paper_exit_order_id:
         return _reconcile_exit(signal, client)
+    stop = signal.current_stop or signal.initial_stop
+    if not signal.paper_last_error.startswith("Broker OCO unsupported:"):
+        try:
+            order = client.submit_oco_exit(
+                symbol=signal.contract_symbol,
+                quantity=signal.paper_quantity,
+                target_price=_money(signal.target_1),
+                stop_price=_money(stop),
+                client_order_id=f"quantelle-{signal.pk}-exit-{now:%Y%m%d%H%M%S}",
+            )
+        except PaperTradingError as exc:
+            if "returned 422" not in str(exc):
+                raise
+            signal.paper_last_error = f"Broker OCO unsupported: {str(exc)}"[:255]
+            signal.paper_last_checked_at = now
+            signal.save(update_fields=["paper_last_error", "paper_last_checked_at", "updated_at"])
+            _record_update(signal, "note", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
+        else:
+            signal.paper_exit_order_id = order["id"]
+            signal.paper_exit_reason = "oco"
+            signal.paper_order_status = order.get("status", "submitted")[:32]
+            signal.paper_last_checked_at = now
+            signal.paper_last_error = ""
+            signal.save(update_fields=[
+                "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
+                "paper_last_checked_at", "paper_last_error", "updated_at",
+            ])
+            _record_update(
+                signal,
+                "note",
+                f"Submitted Alpaca broker-held OCO exit: target ${_money(signal.target_1)}, stop ${_money(stop)}.",
+            )
+            return "exit_protection_submitted"
+
+    # Compatibility fallback for accounts that reject OCO on single-leg options.
     quote = client.option_quote(signal.contract_symbol)
     bid = quote["bid"]
-    stop = signal.current_stop or signal.initial_stop
     if bid <= stop:
         reason = "stop"
     elif bid >= signal.target_1:
@@ -189,7 +252,10 @@ def _process_open_signal(signal, client, now):
     signal.paper_exit_reason = reason
     signal.paper_order_status = order.get("status", "submitted")[:32]
     signal.paper_last_checked_at = now
-    signal.paper_last_error = ""
+    # Retain the compatibility marker so a terminal fallback order does not
+    # cause us to retry a broker-incompatible OCO on every following session.
+    fallback_error = signal.paper_last_error if signal.paper_last_error.startswith("Broker OCO unsupported:") else ""
+    signal.paper_last_error = fallback_error
     signal.save(update_fields=[
         "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
         "paper_last_checked_at", "paper_last_error", "updated_at",
