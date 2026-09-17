@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
 from .models import TradeSignal, TradeSignalUpdate
+from .trade_quotes import get_paper_position
 
 
 class TradeSignalApiTests(APITestCase):
@@ -83,3 +84,27 @@ class TradeSignalApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["option_ask"], 37.00)
+
+    @patch("ranker.trade_quotes.AlpacaPaperClient")
+    def test_open_executed_signal_reports_paper_position(self, client_class):
+        signal = self._signal(
+            status=TradeSignal.STATUS_OPEN,
+            paper_execution_enabled=True,
+            paper_entry_order_id="paper-order-1",
+        )
+        client_class.return_value.position.return_value = {
+            "qty": "1",
+            "avg_entry_price": "2.91",
+            "current_price": "3.20",
+            "market_value": "320.00",
+            "cost_basis": "291.00",
+            "unrealized_pl": "29.00",
+            "unrealized_plpc": "0.09965636",
+        }
+
+        position = get_paper_position(signal, use_cache=False)
+
+        self.assertTrue(position["available"])
+        self.assertEqual(position["unrealized_pl"], 29.0)
+        self.assertEqual(position["unrealized_pl_pct"], 9.97)
+        client_class.return_value.position.assert_called_once_with(signal.contract_symbol)

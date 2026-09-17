@@ -18,8 +18,8 @@ describe("ArticleNav", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Today" }));
-    await userEvent.click(screen.getByRole("button", { name: "Analytics" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Today" })[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: "Analytics" })[0]);
 
     expect(onNavigateDashboard).toHaveBeenCalledOnce();
     expect(onNavigateAnalytics).toHaveBeenCalledOnce();

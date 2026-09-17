@@ -4,7 +4,8 @@ const ACTIVE = new Set(["published", "open"]);
 
 function money(value) {
   if (value === null || value === undefined || value === "") return "—";
-  return `$${Number(value).toFixed(2)}`;
+  const number = Number(value);
+  return `${number < 0 ? "−" : ""}$${Math.abs(number).toFixed(2)}`;
 }
 
 function percent(value) {
@@ -43,16 +44,25 @@ function CurrentQuote({ signal, token = "" }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/trade-signals/${signal.id}/quote/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Quote unavailable")))
-      .then((data) => { if (!cancelled) setQuote(data); })
-      .catch(() => { if (!cancelled) setQuote({ available: false, status_label: "Quote unavailable" }); });
-    return () => { cancelled = true; };
+    const loadQuote = () => {
+      fetch(`/api/trade-signals/${signal.id}/quote/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Quote unavailable")))
+        .then((data) => { if (!cancelled) setQuote(data); })
+        .catch(() => { if (!cancelled) setQuote({ available: false, status_label: "Quote unavailable" }); });
+    };
+    loadQuote();
+    const interval = window.setInterval(loadQuote, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [signal.id, token]);
 
   const optionChange = quote?.option_midpoint && signal.actual_entry
     ? plannedPercent(quote.option_midpoint, Number(signal.actual_entry))
     : null;
+  const position = quote?.paper_position;
+  const positionPositive = Number(position?.unrealized_pl) >= 0;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
@@ -70,6 +80,23 @@ function CurrentQuote({ signal, token = "" }) {
           <div><div className="text-xs text-slate-500">Spread / OI</div><div className="mt-1 font-semibold text-white">{quote?.spread_pct != null ? `${Number(quote.spread_pct).toFixed(1)}%` : "—"} / {quote?.option_open_interest ?? "—"}</div></div>
         </>}
       </div>
+      {position?.available && (
+        <div className="mt-4 rounded-xl border border-sky-800/60 bg-sky-950/25 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-bold uppercase tracking-[0.16em] text-sky-300">Alpaca paper position</div>
+            <div className={`text-lg font-bold ${positionPositive ? "text-emerald-400" : "text-rose-400"}`}>
+              {money(position.unrealized_pl)} <span className="text-sm">({percent(position.unrealized_pl_pct)})</span>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <div><div className="text-xs text-slate-500">Quantity</div><div className="mt-1 font-semibold text-slate-200">{position.quantity ?? "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Average fill</div><div className="mt-1 font-semibold text-slate-200">{money(position.average_entry_price)}</div></div>
+            <div><div className="text-xs text-slate-500">Alpaca price</div><div className="mt-1 font-semibold text-slate-200">{money(position.current_price)}</div></div>
+            <div><div className="text-xs text-slate-500">Market value</div><div className="mt-1 font-semibold text-slate-200">{money(position.market_value)}</div></div>
+          </div>
+          <div className="mt-2 text-xs text-slate-600">Unrealized P/L · paper account · checked {dateTime(position.fetched_at)}</div>
+        </div>
+      )}
       <div className="mt-3 text-xs text-slate-600">
         {quote?.source || "Yahoo Finance (delayed)"} · {quote?.market_quote_at ? dateTime(quote.market_quote_at) : quote?.fetched_at ? `Checked ${dateTime(quote.fetched_at)}` : "Awaiting quote"}
       </div>

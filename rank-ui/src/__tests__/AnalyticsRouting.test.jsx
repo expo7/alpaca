@@ -32,7 +32,7 @@ describe("analytics route synchronization", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Articles" })[0]);
     expect(await screen.findByRole("heading", { name: "Articles" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Today" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Today" })[0]);
     expect(await screen.findByText("Today's shortlist")).toBeInTheDocument();
     expect(screen.queryByText("Site analytics")).not.toBeInTheDocument();
   });

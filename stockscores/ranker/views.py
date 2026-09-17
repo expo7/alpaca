@@ -52,7 +52,7 @@ from .metrics import get_yf_counter, increment_yf_counter
 from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
 from .analytics import AnalyticsEventThrottle, record_analytics_event
 from .models import AnalyticsEvent
-from .trade_quotes import get_trade_signal_quote
+from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1179,7 +1179,9 @@ class TradeSignalQuoteView(APIView):
         active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
         if active and not user_has_pro_access(request.user):
             return Response({"detail": "Quantelle Pro is required."}, status=status.HTTP_403_FORBIDDEN)
-        return Response(get_trade_signal_quote(signal))
+        payload = get_trade_signal_quote(signal)
+        payload["paper_position"] = get_paper_position(signal)
+        return Response(payload)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

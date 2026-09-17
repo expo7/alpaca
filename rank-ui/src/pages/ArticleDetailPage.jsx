@@ -23,6 +23,7 @@ export default function ArticleDetailPage({
     onBackToArticles,
     onNavigateDashboard,
     onNavigateSignals,
+    onNavigateBilling,
     onNavigateOpportunities,
     onNavigateAnalytics,
     onLogout,
@@ -66,7 +67,9 @@ export default function ArticleDetailPage({
                 user={user}
                 onNavigateDashboard={onNavigateDashboard}
                 onNavigateSignals={onNavigateSignals}
+                onNavigateBilling={onNavigateBilling}
                 onNavigateOpportunities={onNavigateOpportunities}
+                onNavigateArticles={onBackToArticles}
                 onNavigateAnalytics={onNavigateAnalytics}
                 onLogout={onLogout}
                 onSignUp={onSignUp}

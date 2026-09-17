@@ -878,6 +878,7 @@ export default function App() {
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
         onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -897,6 +898,7 @@ export default function App() {
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
         onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -923,6 +925,7 @@ export default function App() {
         onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
         onNavigateDashboard={() => navigatePath("/dashboard")}
         onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}
@@ -942,6 +945,7 @@ export default function App() {
         onBackToArticles={() => navigatePath("/articles")}
         onNavigateDashboard={() => navigatePath("/dashboard")}
         onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
         onLogout={logout}

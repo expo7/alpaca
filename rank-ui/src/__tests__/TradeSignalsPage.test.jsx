@@ -67,4 +67,48 @@ describe("TradeSignalsPage", () => {
     expect(screen.getByRole("button", { name: /View Quantelle Pro/i })).toBeInTheDocument();
     expect(screen.queryByText(/entry range/i)).toBeInTheDocument();
   });
+
+  it("shows unrealized Alpaca paper P/L for an executed open trade", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [{
+        id: 3,
+        symbol: "NVDA",
+        company_name: "NVIDIA Corporation",
+        instrument_type: "call",
+        instrument: "NVDA 240C 10/16/26",
+        contract_symbol: "NVDA261016C00240000",
+        status: "open",
+        status_label: "Open",
+        risk_level: "high",
+        entry_low: "2.90",
+        initial_stop: "1.90",
+        target_1: "4.25",
+        thesis: "Test thesis",
+        evidence_tags: [],
+        paper_execution_enabled: true,
+        paper_quantity: 1,
+        published_at: "2026-09-10T13:30:00Z",
+        updates: [],
+      }] })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        available: true,
+        status_label: "Delayed quote",
+        underlying_price: 221.10,
+        paper_position: {
+          available: true,
+          quantity: 1,
+          average_entry_price: 2.91,
+          current_price: 3.20,
+          market_value: 320,
+          unrealized_pl: 29,
+          unrealized_pl_pct: 9.97,
+          fetched_at: "2026-09-17T15:00:00Z",
+        },
+      }) }));
+
+    render(<TradeSignalsPage token="pro-token" />);
+    expect(await screen.findByText("Alpaca paper position")).toBeInTheDocument();
+    expect(screen.getByText("$29.00")).toBeInTheDocument();
+    expect(screen.getByText("(+9.97%)")).toBeInTheDocument();
+  });
 });

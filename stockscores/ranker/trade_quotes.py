@@ -7,9 +7,12 @@ from django.core.cache import cache
 from django.utils import timezone
 import yfinance as yf
 
+from .alpaca_paper import AlpacaPaperClient, PaperTradingError
+
 
 QUOTE_SOURCE = "Yahoo Finance (delayed)"
 QUOTE_CACHE_SECONDS = 90
+POSITION_CACHE_SECONDS = 15
 
 
 def _number(value):
@@ -120,6 +123,44 @@ def get_trade_signal_quote(signal, use_cache=True):
         result["error"] = str(exc)[:160]
 
     cache.set(cache_key, result, QUOTE_CACHE_SECONDS)
+    return result
+
+
+def get_paper_position(signal, use_cache=True):
+    """Return a short-lived snapshot of the position opened for this signal."""
+    if not signal.paper_execution_enabled or signal.status != signal.STATUS_OPEN:
+        return None
+
+    cache_key = f"trade-signal-paper-position-v1:{signal.pk}:{signal.contract_symbol}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    result = {
+        "available": False,
+        "source": "Alpaca paper account",
+        "fetched_at": timezone.now().isoformat(),
+    }
+    try:
+        position = AlpacaPaperClient().position(signal.contract_symbol)
+        result.update(
+            available=True,
+            quantity=_number(position.get("qty")),
+            average_entry_price=_number(position.get("avg_entry_price")),
+            current_price=_number(position.get("current_price")),
+            market_value=_number(position.get("market_value")),
+            cost_basis=_number(position.get("cost_basis")),
+            unrealized_pl=_number(position.get("unrealized_pl")),
+            unrealized_pl_pct=(
+                round(float(position["unrealized_plpc"]) * 100, 2)
+                if position.get("unrealized_plpc") not in (None, "") else None
+            ),
+        )
+    except (PaperTradingError, TypeError, ValueError) as exc:
+        result["error"] = str(exc)[:160]
+
+    cache.set(cache_key, result, POSITION_CACHE_SECONDS)
     return result
 
 
