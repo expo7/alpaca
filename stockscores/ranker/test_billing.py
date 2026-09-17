@@ -84,8 +84,8 @@ class BillingApiTests(APITestCase):
         self.assertEqual(profile.status, "active")
         self.assertTrue(profile.has_pro_access)
 
-    def test_active_signal_is_redacted_until_subscription_is_active(self):
-        signal = TradeSignal.objects.create(
+    def _create_active_signal(self):
+        return TradeSignal.objects.create(
             symbol="NVDA",
             company_name="NVIDIA Corporation",
             instrument_type="call",
@@ -99,6 +99,33 @@ class BillingApiTests(APITestCase):
             target_1="1.75",
             thesis="Private thesis",
         )
+
+    def test_active_signal_is_public_while_pro_gate_is_disabled(self):
+        self._create_active_signal()
+        response = self.client.get("/api/trade-signals/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data[0]["is_locked"])
+        self.assertEqual(response.data[0]["thesis"], "Private thesis")
+
+    @patch("ranker.views.get_paper_position", return_value={"available": False})
+    @patch("ranker.views.get_trade_signal_quote", return_value={"available": True})
+    def test_active_signal_quote_is_public_while_pro_gate_is_disabled(self, _quote, _position):
+        signal = self._create_active_signal()
+        self.client.force_authenticate(user=None)
+        response = self.client.get(f"/api/trade-signals/{signal.pk}/quote/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["available"])
+
+    @override_settings(PRO_GATE_ENABLED=True)
+    def test_active_signal_quote_requires_pro_when_gate_enabled(self):
+        signal = self._create_active_signal()
+        self.client.force_authenticate(user=None)
+        response = self.client.get(f"/api/trade-signals/{signal.pk}/quote/")
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(PRO_GATE_ENABLED=True)
+    def test_active_signal_is_redacted_until_subscription_is_active_when_gate_enabled(self):
+        self._create_active_signal()
         response = self.client.get("/api/trade-signals/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data[0]["is_locked"])

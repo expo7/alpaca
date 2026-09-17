@@ -273,6 +273,10 @@ STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
 STRIPE_APP_URL = os.getenv("STRIPE_APP_URL", "https://quantelle.io").rstrip("/")
+# Keep billing operational while the product is being validated publicly.
+# Set this to true at launch to require an active Pro subscription for active
+# trade details and their live quote/P&L endpoint.
+PRO_GATE_ENABLED = os.getenv("PRO_GATE_ENABLED", "false").lower() in ("1", "true", "yes")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True

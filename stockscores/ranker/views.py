@@ -1144,11 +1144,12 @@ class TradeSignalListView(APIView):
             .prefetch_related("updates")
             .order_by("-published_at", "-created_at")
         )
+        gate_enabled = getattr(settings, "PRO_GATE_ENABLED", False)
         pro_access = user_has_pro_access(request.user)
         payload = []
         for signal in signals:
             active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
-            if active and not pro_access:
+            if gate_enabled and active and not pro_access:
                 payload.append({
                     "id": signal.id,
                     "symbol": signal.symbol,
@@ -1177,7 +1178,8 @@ class TradeSignalQuoteView(APIView):
         if not signal:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
         active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
-        if active and not user_has_pro_access(request.user):
+        gate_enabled = getattr(settings, "PRO_GATE_ENABLED", False)
+        if gate_enabled and active and not user_has_pro_access(request.user):
             return Response({"detail": "Quantelle Pro is required."}, status=status.HTTP_403_FORBIDDEN)
         payload = get_trade_signal_quote(signal)
         payload["paper_position"] = get_paper_position(signal)
