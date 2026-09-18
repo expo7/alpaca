@@ -75,7 +75,7 @@ def format_trade_update(update):
     lines.extend([
         _line("Time", occurred),
         html.escape(update.note),
-        '<a href="https://quantelle.io/signals">View Quantelle trade signals</a>',
+        f'<a href="https://quantelle.io/signals#trade-{signal.pk}">View this trade on Quantelle</a>',
     ])
     return "\n".join(line for line in lines if line)
 
