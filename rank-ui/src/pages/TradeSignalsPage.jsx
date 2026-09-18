@@ -267,6 +267,22 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </div>
       </div>
 
+      <aside className="mb-6 flex flex-col gap-4 rounded-2xl border border-sky-500/35 bg-sky-950/30 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-sky-300">Complimentary early access</div>
+          <h2 className="mt-1 text-lg font-bold text-white">Get Quantelle trade alerts on Telegram</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-300">Receive alerts when a trade is opened, updated, or closed.</p>
+        </div>
+        <a
+          href="https://t.me/+6zJGLH-XJWY0MTcx"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center justify-center rounded-xl bg-sky-500 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+        >
+          Join on Telegram
+        </a>
+      </aside>
+
       {loading && <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">Loading trade record…</div>}
       {error && <div className="rounded-2xl border border-rose-800 bg-rose-950/40 p-5 text-rose-200">{error}</div>}
       {!loading && !error && !signals.length && (
