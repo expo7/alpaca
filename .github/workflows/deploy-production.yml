@@ -48,7 +48,7 @@ jobs:
           PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/quantelle_deploy
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/quantelle_deploy
           chmod 600 ~/.ssh/quantelle_deploy
           printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
