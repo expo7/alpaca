@@ -36,6 +36,7 @@ class TelegramNotificationTests(TestCase):
         publication = TradeSignalUpdate.objects.get(signal=signal, event_type="published")
         self.assertEqual(publication.telegram_notification.status, TelegramNotification.STATUS_PENDING)
 
+        signal.refresh_from_db()
         signal.company_name = "Amazon"
         signal.save(update_fields=["company_name", "updated_at"])
         self.assertEqual(
@@ -60,7 +61,7 @@ class TelegramNotificationTests(TestCase):
         message = format_trade_update(update)
 
         self.assertIn("New Trade Setup", message)
-        self.assertIn("AMZN 240C", message)
+        self.assertIn("AMZN 240.00C", message)
         self.assertIn("$6.50–$7.00", message)
         self.assertIn("$4.25", message)
         self.assertIn("$13.00", message)
