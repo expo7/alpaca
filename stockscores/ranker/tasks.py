@@ -122,9 +122,9 @@ def _reconcile_exit(signal, client):
             "paper_last_checked_at", "paper_last_error", "updated_at",
         ])
         if was_oco and status_value == "rejected":
-            _record_update(signal, "note", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
+            _record_update(signal, "execution_warning", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
             return "exit_protection_unsupported"
-        _record_update(signal, "note", f"Alpaca exit protection ended with status {status_value}; Quantelle will replace it.")
+        _record_update(signal, "execution_warning", f"Alpaca exit protection ended with status {status_value}; Quantelle will replace it.")
         return "exit_protection_replacement_required"
     signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "paper_last_error", "updated_at"])
     return status_value or "exit_pending"
@@ -188,7 +188,7 @@ def _process_published_signal(signal, client, now, config):
         "paper_entry_order_id", "paper_order_status", "paper_submitted_at",
         "paper_last_checked_at", "paper_last_error", "updated_at",
     ])
-    _record_update(signal, "note", f"Submitted Alpaca paper buy limit for {signal.paper_quantity} contract(s) at ${_money(ask)}.", price=_money(ask))
+    _record_update(signal, "entry_submitted", f"Submitted Alpaca paper buy limit for {signal.paper_quantity} contract(s) at ${_money(ask)}.", price=_money(ask))
     return "entry_submitted"
 
 
@@ -211,7 +211,7 @@ def _process_open_signal(signal, client, now):
             signal.paper_last_error = f"Broker OCO unsupported: {str(exc)}"[:255]
             signal.paper_last_checked_at = now
             signal.save(update_fields=["paper_last_error", "paper_last_checked_at", "updated_at"])
-            _record_update(signal, "note", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
+            _record_update(signal, "execution_warning", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
         else:
             signal.paper_exit_order_id = order["id"]
             signal.paper_exit_reason = "oco"
@@ -224,7 +224,7 @@ def _process_open_signal(signal, client, now):
             ])
             _record_update(
                 signal,
-                "note",
+                "protection_active",
                 f"Submitted Alpaca broker-held OCO exit: target ${_money(signal.target_1)}, stop ${_money(stop)}.",
             )
             return "exit_protection_submitted"
@@ -260,7 +260,7 @@ def _process_open_signal(signal, client, now):
         "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
         "paper_last_checked_at", "paper_last_error", "updated_at",
     ])
-    _record_update(signal, "note", f"Submitted Alpaca paper sell limit at ${_money(bid)} ({reason}).", price=_money(bid))
+    _record_update(signal, "exit_submitted", f"Submitted Alpaca paper sell limit at ${_money(bid)} ({reason}).", price=_money(bid))
     return "exit_submitted"
 
 
@@ -288,9 +288,17 @@ def run_paper_trade_executor():
                 else:
                     results[str(signal.pk)] = _process_open_signal(signal, client, now)
             except (PaperTradingError, KeyError, ValueError) as exc:
-                signal.paper_last_error = str(exc)[:255]
+                previous_error = signal.paper_last_error
+                error_message = str(exc)[:255]
+                signal.paper_last_error = error_message
                 signal.paper_last_checked_at = now
                 signal.save(update_fields=["paper_last_error", "paper_last_checked_at", "updated_at"])
+                if error_message != previous_error:
+                    _record_update(
+                        signal,
+                        "execution_warning",
+                        f"Paper execution error: {error_message}",
+                    )
                 results[str(signal.pk)] = "error"
         return {"status": "ok", "signals": results}
     finally:

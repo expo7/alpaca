@@ -223,6 +223,18 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Telegram delivery is disabled until explicitly enabled in production. The
+# outbox task is isolated from paper execution and may safely retry failures.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv(
+    "TELEGRAM_NOTIFICATIONS_ENABLED", "false"
+).lower() in ("1", "true", "yes")
+CELERY_BEAT_SCHEDULE["telegram-notification-outbox"] = {
+    "task": "ranker.deliver_pending_telegram_notifications",
+    "schedule": 15.0,
+}
+
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")
 HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")
 WEBSHARE_PROXY = os.getenv("WEBSHARE_PROXY", "")
