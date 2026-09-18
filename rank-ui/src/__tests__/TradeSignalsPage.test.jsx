@@ -111,4 +111,61 @@ describe("TradeSignalsPage", () => {
     expect(screen.getByText("$29.00")).toBeInTheDocument();
     expect(screen.getByText("(+9.97%)")).toBeInTheDocument();
   });
+
+  it("separates open positions, pending entries, and completed history", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          id: 10,
+          symbol: "AMZN",
+          company_name: "Amazon",
+          instrument_type: "call",
+          status: "open",
+          status_label: "Open",
+          risk_level: "moderate",
+          published_at: "2026-09-18T14:00:00Z",
+          is_locked: true,
+        },
+        {
+          id: 11,
+          symbol: "INTC",
+          company_name: "Intel",
+          instrument_type: "call",
+          status: "published",
+          status_label: "Published — waiting for entry",
+          risk_level: "high",
+          published_at: "2026-09-18T15:00:00Z",
+          is_locked: true,
+        },
+        {
+          id: 12,
+          symbol: "NVDA",
+          company_name: "NVIDIA",
+          instrument_type: "call",
+          instrument: "NVDA 240C 10/16/26",
+          status: "closed",
+          status_label: "Closed",
+          risk_level: "high",
+          entry_low: "2.90",
+          initial_stop: "1.90",
+          target_1: "4.25",
+          thesis: "Completed test trade.",
+          evidence_tags: [],
+          published_at: "2026-09-10T13:30:00Z",
+          updates: [],
+          is_locked: false,
+        },
+      ],
+    }));
+
+    render(<TradeSignalsPage />);
+
+    expect(await screen.findByRole("heading", { name: "Open positions" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Completed history/ })).toBeInTheDocument();
+    expect(screen.getByText("3 published · 1 open · 1 pending")).toBeInTheDocument();
+    expect(document.getElementById("trade-12")).toBeInTheDocument();
+  });
+
 });
