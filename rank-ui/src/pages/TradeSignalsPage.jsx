@@ -107,7 +107,7 @@ function CurrentQuote({ signal, token = "" }) {
 function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
   if (signal.is_locked) {
     return (
-      <article className="overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
+      <article id={`trade-${signal.id}`} className="scroll-mt-28 overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
         <div className="h-1 bg-indigo-500" />
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
