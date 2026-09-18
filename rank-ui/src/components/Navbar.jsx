@@ -1,6 +1,6 @@
 // ==============================
 // File: src/components/Navbar.jsx
-// Simple top nav using page + onNavigate, no react-router
+// Responsive top navigation using page + onNavigate, no react-router
 // ==============================
 
 import Logo from "./Logo.jsx";
@@ -43,42 +43,48 @@ export default function Navbar({
     ? [...baseTabs, { id: "analytics", label: "Analytics" }]
     : baseTabs;
 
+  const renderTabs = (mobile = false) => visibleTabs.map((tab) => (
+    <button
+      key={tab.id}
+      type="button"
+      onClick={() => onNavigate(tab.id)}
+      className={`rounded-full border whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950
+        ${mobile ? "px-3 py-1.5" : "px-3 py-1.5"}
+        ${active === tab.id
+          ? "bg-indigo-600 border-indigo-500 text-white shadow-sm shadow-indigo-950/40"
+          : "bg-slate-900/70 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 hover:text-white"
+        }`}
+    >
+      {tab.label}
+    </button>
+  ));
+
   return (
-    <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-        {/* Left: logo + brand */}
-        <div className="flex items-center gap-3">
-          <Logo className="w-8 h-8" />
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold tracking-wide">
+    <header className="navbar border-b border-slate-800/90 bg-slate-950/90 backdrop-blur w-full">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-3 xl:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
+        {/* Brand */}
+        <div className="flex items-center gap-3 min-w-0 col-start-1 row-start-1">
+          <Logo className="w-8 h-8 shrink-0" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-semibold tracking-wide text-slate-100">
               {APP_NAME}
             </span>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-400 truncate">
               Tech + fundamentals, one rating.
             </span>
           </div>
         </div>
 
-        {/* Center: nav tabs — hidden in V1 (single page) */}
-        <nav className="hidden md:flex items-center gap-2 text-sm">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onNavigate(tab.id)}
-              className={`px-3 py-1.5 rounded-full border text-xs transition
-                ${active === tab.id
-                  ? "bg-indigo-600/90 border-indigo-500 text-white shadow-sm"
-                  : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-                }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Navigation: its own centered row on medium screens, one row on wide screens */}
+        <nav
+          className="hidden md:flex col-span-2 row-start-2 items-center justify-center gap-2 text-sm xl:col-span-1 xl:col-start-2 xl:row-start-1"
+          aria-label="Primary navigation"
+        >
+          {renderTabs()}
         </nav>
 
-        {/* Right: auth state */}
-        <div className="flex items-center gap-3 text-xs">
+        {/* Account */}
+        <div className="flex items-center justify-self-end gap-3 text-xs col-start-2 row-start-1 xl:col-start-3">
           {isAuthed ? (
             <>
               {user && (
@@ -87,14 +93,14 @@ export default function Navbar({
                     {user.username || user.email || "User"}
                   </span>
                   {user.email && (
-                    <span className="text-slate-500">{user.email}</span>
+                    <span className="text-slate-500 max-w-48 truncate">{user.email}</span>
                   )}
                 </div>
               )}
               <button
                 type="button"
                 onClick={onLogout}
-                className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
+                className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 Log out
               </button>
@@ -102,7 +108,7 @@ export default function Navbar({
           ) : (
             <a
               href="/"
-              className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
+              className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
               Sign in / Create account
             </a>
@@ -110,22 +116,13 @@ export default function Navbar({
         </div>
       </div>
 
-      {/* Mobile nav row */}
-      <div className="md:hidden border-t border-slate-800 px-3 py-2 flex gap-2 overflow-x-auto text-xs">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onNavigate(tab.id)}
-            className={`px-3 py-1.5 rounded-full border whitespace-nowrap ${active === tab.id
-              ? "bg-indigo-600/90 border-indigo-500 text-white"
-              : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-              }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Mobile navigation remains horizontally scrollable rather than wrapping */}
+      <nav
+        className="md:hidden border-t border-slate-800/90 px-4 py-2 flex gap-2 overflow-x-auto text-xs"
+        aria-label="Primary navigation"
+      >
+        {renderTabs(true)}
+      </nav>
     </header>
   );
 }
