@@ -101,6 +101,8 @@ def deliver_telegram_notification(self, notification_id):
         )
         if notification.status == TelegramNotification.STATUS_SENT:
             return {"status": "already_sent"}
+        if notification.status == TelegramNotification.STATUS_SENDING:
+            return {"status": "already_sending"}
         notification.status = TelegramNotification.STATUS_SENDING
         notification.attempt_count += 1
         notification.last_error = ""
@@ -162,6 +164,11 @@ def deliver_pending_telegram_notifications(limit=25):
         .order_by("updated_at")
         .values_list("id", flat=True)[: max(0, limit - len(notification_ids))]
     )
+    if stale_ids:
+        TelegramNotification.objects.filter(id__in=stale_ids).update(
+            status=TelegramNotification.STATUS_PENDING,
+            updated_at=timezone.now(),
+        )
     notification_ids.extend(stale_ids)
     for notification_id in notification_ids:
         deliver_telegram_notification.delay(notification_id)
