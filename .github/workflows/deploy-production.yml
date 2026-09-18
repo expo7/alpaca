@@ -61,7 +61,7 @@ jobs:
           ssh -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/alpaca
-          git fetch origin production
+          git fetch origin production:refs/remotes/origin/production
           if git show-ref --verify --quiet refs/heads/production; then
             git switch production
           else
