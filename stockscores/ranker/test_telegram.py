@@ -66,6 +66,8 @@ class TelegramNotificationTests(TestCase):
         self.assertIn("$4.25", message)
         self.assertIn("$13.00", message)
         self.assertIn(" ET", message)
+        self.assertIn(f"https://quantelle.io/signals#trade-{signal.pk}", message)
+        self.assertIn("View this trade on Quantelle", message)
 
     @override_settings(
         TELEGRAM_NOTIFICATIONS_ENABLED=True,
