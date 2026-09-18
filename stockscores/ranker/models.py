@@ -602,13 +602,18 @@ class TradeSignal(models.Model):
 
 class TradeSignalUpdate(models.Model):
     EVENT_CHOICES = [
-        ("note", "Status note"),
-        ("triggered", "Entry triggered"),
+        ("published", "Setup published"),
+        ("entry_submitted", "Entry order submitted"),
+        ("triggered", "Entry filled"),
+        ("protection_active", "Exit protection active"),
         ("target", "Target reached"),
         ("stop", "Stop changed"),
         ("partial_exit", "Partial exit"),
+        ("exit_submitted", "Exit order submitted"),
         ("closed", "Closed"),
         ("cancelled", "Cancelled"),
+        ("execution_warning", "Execution warning"),
+        ("note", "Status note"),
     ]
 
     signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="updates")
@@ -629,6 +634,38 @@ class TradeSignalUpdate(models.Model):
         if self.pk:
             raise ValidationError("Published trade updates are append-only. Add a correction as a new update.")
         super().save(*args, **kwargs)
+
+
+class TelegramNotification(models.Model):
+    """Idempotent outbox entry for one immutable trade lifecycle update."""
+
+    STATUS_PENDING = "pending"
+    STATUS_SENDING = "sending"
+    STATUS_SENT = "sent"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SENDING, "Sending"),
+        (STATUS_SENT, "Sent"),
+    ]
+
+    update = models.OneToOneField(
+        TradeSignalUpdate,
+        on_delete=models.CASCADE,
+        related_name="telegram_notification",
+    )
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"Telegram · {self.update} · {self.status}"
 
 
 class BillingProfile(models.Model):
