@@ -61,13 +61,13 @@ jobs:
           ssh -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/alpaca
-          git fetch origin production:refs/remotes/origin/production
-          if git show-ref --verify --quiet refs/heads/production; then
-            git switch production
-          else
-            git switch --track origin/production
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Refusing to deploy over a dirty production worktree."
+            git status --short
+            exit 1
           fi
-          git pull --ff-only origin production
+          git fetch origin production
+          git switch -C production FETCH_HEAD
           cd rank-ui
           npm ci
           npm run build
