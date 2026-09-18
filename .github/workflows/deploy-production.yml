@@ -1,0 +1,82 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quantelle-production
+  cancel-in-progress: false
+
+jobs:
+  verify-and-deploy:
+    name: Verify and deploy Quantelle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out production
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rank-ui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: rank-ui
+        run: npm ci
+
+      - name: Test frontend
+        working-directory: rank-ui
+        run: npm test
+
+      - name: Build frontend
+        working-directory: rank-ui
+        run: npm run build
+
+      - name: Configure production SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/quantelle_deploy
+          chmod 600 ~/.ssh/quantelle_deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy production branch
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/alpaca
+          git fetch origin production
+          if git show-ref --verify --quiet refs/heads/production; then
+            git switch production
+          else
+            git switch --track origin/production
+          fi
+          git pull --ff-only origin production
+          cd rank-ui
+          npm ci
+          npm run build
+          cd /opt/alpaca
+          docker compose up -d --build web worker beat
+          docker compose ps
+          curl --fail --retry 12 --retry-delay 5 --retry-connrefused http://127.0.0.1:8000/api/trade-signals/ > /dev/null
+          REMOTE
+
+      - name: Verify public site
+        run: |
+          curl --fail --retry 12 --retry-delay 5 --retry-connrefused https://quantelle.io/signals > /dev/null
