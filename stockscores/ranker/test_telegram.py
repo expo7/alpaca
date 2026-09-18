@@ -97,6 +97,28 @@ class TelegramNotificationTests(TestCase):
         self.assertIn("$6.88", payload["text"])
 
     @override_settings(
+        TELEGRAM_NOTIFICATIONS_ENABLED=True,
+        TELEGRAM_BOT_TOKEN="test-token",
+        TELEGRAM_CHAT_ID="-100123",
+    )
+    @patch("ranker.telegram.requests.post")
+    def test_duplicate_queued_delivery_does_not_send_twice(self, post):
+        signal = self.signal()
+        update = TradeSignalUpdate.objects.create(
+            signal=signal,
+            event_type="note",
+            note="Only send this once.",
+        )
+        notification = update.telegram_notification
+        notification.status = TelegramNotification.STATUS_SENDING
+        notification.save(update_fields=["status", "updated_at"])
+
+        result = deliver_telegram_notification.run(notification.pk)
+
+        self.assertEqual(result["status"], "already_sending")
+        post.assert_not_called()
+
+    @override_settings(
         TELEGRAM_NOTIFICATIONS_ENABLED=False,
         TELEGRAM_BOT_TOKEN="test-token",
         TELEGRAM_CHAT_ID="-100123",
