@@ -134,7 +134,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
   const hasPublicationQuote = signal.publication_underlying_price || signal.publication_option_bid || signal.publication_option_ask;
 
   return (
-    <article className={`overflow-hidden rounded-2xl border ${archived ? "border-slate-700 bg-slate-900/65" : "border-indigo-500/40 bg-slate-900"}`}>
+    <article id={`trade-${signal.id}`} className={`scroll-mt-28 overflow-hidden rounded-2xl border ${archived ? "border-slate-700 bg-slate-900/65" : "border-indigo-500/40 bg-slate-900"}`}>
       <div className={`h-1 ${archived ? "bg-slate-600" : signal.instrument_type === "put" ? "bg-rose-500" : "bg-emerald-500"}`} />
       <div className="p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -251,6 +251,8 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
     return () => { cancelled = true; };
   }, [token]);
 
+  const pending = useMemo(() => signals.filter((signal) => signal.status === "published"), [signals]);
+  const open = useMemo(() => signals.filter((signal) => signal.status === "open"), [signals]);
   const active = useMemo(() => signals.filter((signal) => ACTIVE.has(signal.status)), [signals]);
   const history = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)), [signals]);
 
@@ -263,7 +265,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
           <p className="mt-2 max-w-2xl text-slate-400">Every setup is timestamped before its outcome is known. Entries, stops, targets, changes, wins, and losses remain on the record.</p>
         </div>
         <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
-          {signals.length} published · {active.length} active
+          {signals.length} published · {open.length} open · {pending.length} pending
         </div>
       </div>
 
@@ -292,8 +294,44 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </div>
       )}
 
-      {!!active.length && <section><h2 className="mb-3 text-lg font-semibold text-white">Active setups</h2><div className="space-y-4">{active.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div></section>}
-      {!!history.length && <section className="mt-8"><h2 className="mb-3 text-lg font-semibold text-white">Past performance <span className="ml-1 text-sm font-normal text-slate-500">{history.length}</span></h2><div className="space-y-4">{history.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div></section>}
+      {!!active.length && (
+        <div className="space-y-8">
+          {!!open.length && (
+            <section aria-labelledby="open-positions-heading">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 id="open-positions-heading" className="text-lg font-semibold text-white">Open positions</h2>
+                  <p className="mt-1 text-sm text-slate-500">Entered trades currently being managed against their published stops and targets.</p>
+                </div>
+                <span className="rounded-full bg-emerald-950/70 px-2.5 py-1 text-xs font-semibold text-emerald-300">{open.length} open</span>
+              </div>
+              <div className="space-y-4">{open.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div>
+            </section>
+          )}
+
+          {!!pending.length && (
+            <section aria-labelledby="pending-entries-heading">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 id="pending-entries-heading" className="text-lg font-semibold text-white">Pending entries</h2>
+                  <p className="mt-1 text-sm text-slate-500">Published plans waiting for their entry conditions—these are not open positions yet.</p>
+                </div>
+                <span className="rounded-full bg-indigo-950/70 px-2.5 py-1 text-xs font-semibold text-indigo-300">{pending.length} pending</span>
+              </div>
+              <div className="space-y-4">{pending.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div>
+            </section>
+          )}
+        </div>
+      )}
+      {!!history.length && (
+        <section className={active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
+          <div className="mb-3">
+            <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed history <span className="ml-1 text-sm font-normal text-slate-500">{history.length}</span></h2>
+            <p className="mt-1 text-sm text-slate-500">Closed and cancelled setups remain visible as the permanent performance record.</p>
+          </div>
+          <div className="space-y-4">{history.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
+        </section>
+      )}
 
       <p className="mt-8 border-t border-slate-800 pt-5 text-xs leading-5 text-slate-500">For research and educational use only. Options can lose their entire value. Published performance does not include commissions, slippage, taxes, or differences in execution unless a record specifically says otherwise.</p>
     </div>
