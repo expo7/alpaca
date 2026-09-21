@@ -196,40 +196,9 @@ def _process_open_signal(signal, client, now):
     if signal.paper_exit_order_id:
         return _reconcile_exit(signal, client)
     stop = signal.current_stop or signal.initial_stop
-    if not signal.paper_last_error.startswith("Broker OCO unsupported:"):
-        try:
-            order = client.submit_oco_exit(
-                symbol=signal.contract_symbol,
-                quantity=signal.paper_quantity,
-                target_price=_money(signal.target_1),
-                stop_price=_money(stop),
-                client_order_id=f"quantelle-{signal.pk}-exit-{now:%Y%m%d%H%M%S}",
-            )
-        except PaperTradingError as exc:
-            if "returned 422" not in str(exc):
-                raise
-            signal.paper_last_error = f"Broker OCO unsupported: {str(exc)}"[:255]
-            signal.paper_last_checked_at = now
-            signal.save(update_fields=["paper_last_error", "paper_last_checked_at", "updated_at"])
-            _record_update(signal, "execution_warning", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
-        else:
-            signal.paper_exit_order_id = order["id"]
-            signal.paper_exit_reason = "oco"
-            signal.paper_order_status = order.get("status", "submitted")[:32]
-            signal.paper_last_checked_at = now
-            signal.paper_last_error = ""
-            signal.save(update_fields=[
-                "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
-                "paper_last_checked_at", "paper_last_error", "updated_at",
-            ])
-            _record_update(
-                signal,
-                "protection_active",
-                f"Submitted Alpaca broker-held OCO exit: target ${_money(signal.target_1)}, stop ${_money(stop)}.",
-            )
-            return "exit_protection_submitted"
-
-    # Compatibility fallback for accounts that reject OCO on single-leg options.
+    # Alpaca rejects broker-held OCO exits for these single-leg option
+    # positions, so Quantelle monitors the quote and submits one closing order
+    # only when the published stop or first target is reached.
     quote = client.option_quote(signal.contract_symbol)
     bid = quote["bid"]
     if bid <= stop:
@@ -238,7 +207,11 @@ def _process_open_signal(signal, client, now):
         reason = "target_1"
     else:
         signal.paper_last_checked_at = now
-        signal.save(update_fields=["paper_last_checked_at", "updated_at"])
+        update_fields = ["paper_last_checked_at", "updated_at"]
+        if signal.paper_last_error.startswith("Broker OCO unsupported:"):
+            signal.paper_last_error = ""
+            update_fields.append("paper_last_error")
+        signal.save(update_fields=update_fields)
         return "position_open"
 
     order = client.submit_limit_order(
@@ -252,10 +225,7 @@ def _process_open_signal(signal, client, now):
     signal.paper_exit_reason = reason
     signal.paper_order_status = order.get("status", "submitted")[:32]
     signal.paper_last_checked_at = now
-    # Retain the compatibility marker so a terminal fallback order does not
-    # cause us to retry a broker-incompatible OCO on every following session.
-    fallback_error = signal.paper_last_error if signal.paper_last_error.startswith("Broker OCO unsupported:") else ""
-    signal.paper_last_error = fallback_error
+    signal.paper_last_error = ""
     signal.save(update_fields=[
         "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
         "paper_last_checked_at", "paper_last_error", "updated_at",

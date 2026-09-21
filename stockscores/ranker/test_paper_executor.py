@@ -7,7 +7,6 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .models import TradeSignal, TradeSignalUpdate
-from .alpaca_paper import AlpacaPaperClient
 from .tasks import run_paper_trade_executor
 
 
@@ -56,7 +55,7 @@ class PaperExecutorTests(TestCase):
     @patch("ranker.tasks.AlpacaPaperClient")
     def test_qualifying_signal_submits_one_paper_limit_order(self, client_class):
         signal = self.signal()
-        client = Mock()
+        client = Mock(spec=["clock", "stock_quote", "option_quote", "submit_limit_order", "order"])
         client.clock.return_value = {"is_open": True}
         client.stock_quote.return_value = {"bid": Decimal("235.00"), "ask": Decimal("235.02"), "midpoint": Decimal("235.01")}
         client.option_quote.return_value = {"bid": Decimal("6.80"), "ask": Decimal("6.90"), "midpoint": Decimal("6.85"), "spread_pct": Decimal("1.46")}
@@ -81,7 +80,7 @@ class PaperExecutorTests(TestCase):
     @patch("ranker.tasks.AlpacaPaperClient")
     def test_filled_entry_becomes_open_and_is_recorded(self, client_class):
         signal = self.signal(paper_entry_order_id="paper-entry-1", paper_order_status="accepted")
-        client = Mock()
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
         client.clock.return_value = {"is_open": True}
         client.order.return_value = {
             "status": "filled",
@@ -99,28 +98,65 @@ class PaperExecutorTests(TestCase):
 
     @patch.dict(os.environ, EXECUTOR_SETTINGS)
     @patch("ranker.tasks.AlpacaPaperClient")
-    def test_open_signal_submits_broker_held_oco_exit(self, client_class):
+    def test_open_signal_uses_monitored_exits_without_submitting_oco(self, client_class):
         signal = self.signal(
             status=TradeSignal.STATUS_OPEN,
             actual_entry=Decimal("6.88"),
             paper_entry_order_id="paper-entry-1",
+            paper_last_error="Broker OCO unsupported: legacy rejection",
         )
-        client = Mock()
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
         client.clock.return_value = {"is_open": True}
-        client.submit_oco_exit.return_value = {"id": "paper-oco-1", "status": "accepted"}
+        client.option_quote.return_value = {
+            "bid": Decimal("6.90"),
+            "ask": Decimal("7.00"),
+            "midpoint": Decimal("6.95"),
+            "spread_pct": Decimal("1.44"),
+        }
         client_class.return_value = client
 
         result = run_paper_trade_executor()
 
         signal.refresh_from_db()
-        self.assertEqual(result["signals"][str(signal.pk)], "exit_protection_submitted")
-        self.assertEqual(signal.paper_exit_order_id, "paper-oco-1")
-        self.assertEqual(signal.paper_exit_reason, "oco")
-        kwargs = client.submit_oco_exit.call_args.kwargs
-        self.assertEqual(kwargs["symbol"], "NVDA261016C00240000")
-        self.assertEqual(kwargs["quantity"], 1)
-        self.assertEqual(kwargs["target_price"], Decimal("13.00"))
-        self.assertEqual(kwargs["stop_price"], Decimal("4.25"))
+        self.assertEqual(result["signals"][str(signal.pk)], "position_open")
+        self.assertEqual(signal.paper_exit_order_id, "")
+        self.assertEqual(signal.paper_exit_reason, "")
+        self.assertEqual(signal.paper_last_error, "")
+        client.option_quote.assert_called_once_with("NVDA261016C00240000")
+        self.assertFalse(hasattr(client, "submit_oco_exit"))
+
+    @patch.dict(os.environ, EXECUTOR_SETTINGS)
+    @patch("ranker.tasks.AlpacaPaperClient")
+    def test_monitored_target_submits_single_closing_order(self, client_class):
+        signal = self.signal(
+            status=TradeSignal.STATUS_OPEN,
+            actual_entry=Decimal("6.88"),
+            paper_entry_order_id="paper-entry-1",
+        )
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
+        client.clock.return_value = {"is_open": True}
+        client.option_quote.return_value = {
+            "bid": Decimal("13.10"),
+            "ask": Decimal("13.20"),
+            "midpoint": Decimal("13.15"),
+            "spread_pct": Decimal("0.76"),
+        }
+        client.submit_limit_order.return_value = {"id": "paper-exit-1", "status": "accepted"}
+        client_class.return_value = client
+
+        result = run_paper_trade_executor()
+
+        signal.refresh_from_db()
+        self.assertEqual(result["signals"][str(signal.pk)], "exit_submitted")
+        self.assertEqual(signal.paper_exit_order_id, "paper-exit-1")
+        self.assertEqual(signal.paper_exit_reason, "target_1")
+        client.submit_limit_order.assert_called_once_with(
+            symbol="NVDA261016C00240000",
+            quantity=1,
+            side="sell",
+            limit_price=Decimal("13.10"),
+            client_order_id=f"quantelle-{signal.pk}-exit",
+        )
 
     @patch.dict(os.environ, EXECUTOR_SETTINGS)
     @patch("ranker.tasks.AlpacaPaperClient")
@@ -154,31 +190,3 @@ class PaperExecutorTests(TestCase):
         self.assertEqual(signal.final_exit, Decimal("13.00"))
         self.assertEqual(signal.paper_exit_reason, "target_1")
         client.order.assert_called_once_with("paper-oco-1", nested=True)
-
-
-class AlpacaPaperClientOrderTests(TestCase):
-    @patch.dict(os.environ, {
-        "ALPACA_PAPER_API_KEY": "paper-key",
-        "ALPACA_PAPER_SECRET_KEY": "paper-secret",
-        "ALPACA_PAPER_BASE_URL": "https://paper-api.alpaca.markets",
-    })
-    @patch("ranker.alpaca_paper.requests.request")
-    def test_submit_oco_exit_uses_broker_held_target_and_stop(self, request):
-        response = Mock(status_code=200)
-        response.json.return_value = {"id": "paper-oco-1", "status": "accepted"}
-        request.return_value = response
-
-        result = AlpacaPaperClient().submit_oco_exit(
-            symbol="NVDA261016C00240000",
-            quantity=1,
-            target_price=Decimal("1.75"),
-            stop_price=Decimal("0.70"),
-            client_order_id="quantelle-5-exit-20260918093000",
-        )
-
-        self.assertEqual(result["id"], "paper-oco-1")
-        payload = request.call_args.kwargs["json"]
-        self.assertEqual(payload["order_class"], "oco")
-        self.assertEqual(payload["take_profit"], {"limit_price": "1.75"})
-        self.assertEqual(payload["stop_loss"], {"stop_price": "0.70"})
-        self.assertEqual(payload["position_intent"], "sell_to_close")

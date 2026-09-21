@@ -113,25 +113,6 @@ class AlpacaPaperClient:
             },
         )
 
-    def submit_oco_exit(self, *, symbol, quantity, target_price, stop_price, client_order_id):
-        """Place broker-held take-profit and stop-loss exits for one long position."""
-        return self._request(
-            "POST",
-            f"{self.base_url}/v2/orders",
-            json={
-                "symbol": symbol,
-                "qty": str(quantity),
-                "side": "sell",
-                "type": "limit",
-                "time_in_force": "day",
-                "order_class": "oco",
-                "take_profit": {"limit_price": str(target_price)},
-                "stop_loss": {"stop_price": str(stop_price)},
-                "client_order_id": client_order_id,
-                "position_intent": "sell_to_close",
-            },
-        )
-
     def stock_quote(self, symbol):
         payload = self._request(
             "GET",
