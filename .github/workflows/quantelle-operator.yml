@@ -68,7 +68,7 @@ jobs:
                   raise ValueError("note must contain 20 to 1000 characters")
 
               operator_request = urllib.request.Request(
-                  f"https://quantelle.io/api/trade-signals/{signal_id}/lifecycle/",
+                  f"https://quantelle.io/api/operator/trade-signals/{signal_id}/lifecycle/",
                   data=json.dumps({
                       "action": "cancel",
                       "expected_status": expected_status,
