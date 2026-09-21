@@ -53,6 +53,8 @@ from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
 from .analytics import AnalyticsEventThrottle, record_analytics_event
 from .models import AnalyticsEvent
 from .trade_quotes import get_paper_position, get_trade_signal_quote
+from .operator_auth import ResearchOperatorAuthentication
+from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1184,6 +1186,34 @@ class TradeSignalQuoteView(APIView):
         payload = get_trade_signal_quote(signal)
         payload["paper_position"] = get_paper_position(signal)
         return Response(payload)
+
+
+class TradeSignalLifecycleActionView(APIView):
+    """Narrow lifecycle API used by the unattended Daily Trade Research operator."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk, *args, **kwargs):
+        if request.data.get("action") != "cancel":
+            return Response({"detail": "Unsupported lifecycle action"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = cancel_pending_signal(
+                signal_id=pk,
+                note=request.data.get("note"),
+                expected_status=request.data.get("expected_status", TradeSignal.STATUS_PUBLISHED),
+            )
+        except TradeLifecycleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        notification = result.update.telegram_notification
+        return Response({
+            "signal_id": result.signal.pk,
+            "status": result.signal.status,
+            "event_id": result.update.pk,
+            "notification_id": notification.pk,
+            "notification_status": notification.status,
+            "already_applied": result.already_applied,
+        })
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

@@ -230,6 +230,10 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv(
     "TELEGRAM_NOTIFICATIONS_ENABLED", "false"
 ).lower() in ("1", "true", "yes")
+QUANTELLE_RESEARCH_OPERATOR_TOKEN = os.getenv("QUANTELLE_RESEARCH_OPERATOR_TOKEN", "")
+QUANTELLE_RESEARCH_OPERATOR_USERNAME = os.getenv(
+    "QUANTELLE_RESEARCH_OPERATOR_USERNAME", "quantelle-research-operator"
+)
 CELERY_BEAT_SCHEDULE["telegram-notification-outbox"] = {
     "task": "ranker.deliver_pending_telegram_notifications",
     "schedule": 15.0,
