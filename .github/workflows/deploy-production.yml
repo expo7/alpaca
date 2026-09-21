@@ -87,9 +87,6 @@ jobs:
           docker compose up -d --build web worker beat
           docker compose ps
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
-          docker compose exec -T web python manage.py cancel_trade_signal 8 \
-            --expected-status published \
-            --note "Cancelled before entry. INTC moved beyond the published plan: the Oct. 16 110 call was 15.55 bid / 15.75 ask, above the 7.90 do-not-chase ceiling. No position was opened and no loss was recorded."
           REMOTE
 
       - name: Verify public site
