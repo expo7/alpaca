@@ -1,0 +1,110 @@
+name: Quantelle operator action
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  lifecycle-action:
+    if: >-
+      github.event.issue.user.login == 'expo7' &&
+      github.event.issue.author_association == 'OWNER' &&
+      startsWith(github.event.issue.title, '[Quantelle Operator]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate and execute lifecycle action
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATOR_TOKEN: ${{ secrets.QUANTELLE_RESEARCH_OPERATOR_TOKEN }}
+          EVENT_PATH: ${{ github.event_path }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          event = json.load(open(os.environ["EVENT_PATH"], encoding="utf-8"))
+          issue = event["issue"]
+          issue_number = int(issue["number"])
+          github_api = f"https://api.github.com/repos/{os.environ['REPOSITORY']}"
+
+          def github_request(method, path, payload):
+              request = urllib.request.Request(
+                  github_api + path,
+                  data=json.dumps(payload).encode(),
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          try:
+              if not os.environ.get("OPERATOR_TOKEN"):
+                  raise ValueError("QUANTELLE_RESEARCH_OPERATOR_TOKEN is not configured")
+              payload = json.loads(issue.get("body") or "")
+              allowed_keys = {"action", "signal_id", "expected_status", "note"}
+              if set(payload) - allowed_keys:
+                  raise ValueError("Request contains unsupported fields")
+              if payload.get("action") != "cancel":
+                  raise ValueError("Only the cancel lifecycle action is supported")
+              signal_id = payload.get("signal_id")
+              if not isinstance(signal_id, int) or signal_id < 1:
+                  raise ValueError("signal_id must be a positive integer")
+              expected_status = payload.get("expected_status", "published")
+              if expected_status != "published":
+                  raise ValueError("expected_status must be published")
+              note = payload.get("note")
+              if not isinstance(note, str) or not 20 <= len(note.strip()) <= 1000:
+                  raise ValueError("note must contain 20 to 1000 characters")
+
+              operator_request = urllib.request.Request(
+                  f"https://quantelle.io/api/trade-signals/{signal_id}/lifecycle/",
+                  data=json.dumps({
+                      "action": "cancel",
+                      "expected_status": expected_status,
+                      "note": note.strip(),
+                  }).encode(),
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {os.environ['OPERATOR_TOKEN']}",
+                      "Content-Type": "application/json",
+                      "User-Agent": "quantelle-github-operator/1.0",
+                  },
+              )
+              with urllib.request.urlopen(operator_request, timeout=30) as response:
+                  result = json.load(response)
+
+              summary = (
+                  "Quantelle operator action completed.\n\n"
+                  f"- Signal: `{result['signal_id']}`\n"
+                  f"- Status: `{result['status']}`\n"
+                  f"- Event: `{result['event_id']}`\n"
+                  f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
+                  f"- Already applied: `{str(result['already_applied']).lower()}`"
+              )
+              github_request("POST", f"/issues/{issue_number}/comments", {"body": summary})
+              github_request("PATCH", f"/issues/{issue_number}", {"state": "closed"})
+          except Exception as exc:
+              if isinstance(exc, urllib.error.HTTPError):
+                  detail = exc.read().decode(errors="replace")[:1000]
+                  message = f"HTTP {exc.code}: {detail}"
+              else:
+                  message = str(exc)
+              github_request(
+                  "POST",
+                  f"/issues/{issue_number}/comments",
+                  {"body": f"Quantelle operator action failed: `{message}`"},
+              )
+              raise
+          PY
