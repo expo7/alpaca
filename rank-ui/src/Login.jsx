@@ -79,58 +79,51 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
-      <div className="w-full max-w-lg">
-        {/* Brand */}
-        <div className="mb-4 text-center">
-          <div className="inline-flex items-center gap-3">
-            <div className="h-9 w-9 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-900/30">
-              <span className="text-sm font-bold">Q</span>
-            </div>
-            <div className="flex flex-col text-left">
-              <span className="text-sm font-semibold tracking-wide">{APP_NAME}</span>
-              <span className="text-xs text-slate-400">{APP_TAGLINE}</span>
-            </div>
-          </div>
+    <section className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-indigo-950/20 sm:p-6">
+      <div className="mb-5 border-b border-slate-800 pb-4">
+        <span className="block text-[0.78rem] font-black tracking-[0.14em] text-white">
+          {APP_NAME.toUpperCase()}
+        </span>
+        <span className="mt-1 block text-xs text-slate-500">{APP_TAGLINE}</span>
+      </div>
+
+      <h1 className="text-lg font-semibold">
+        {isSignup ? "Create account" : "Sign in"}
+      </h1>
+      <p className="mt-1 text-sm text-slate-400">
+        {isSignup ? "Start saving the research that matters to you." : "Continue with your Quantelle account."}
+      </p>
+
+      <div className="mt-4 flex gap-2 text-xs">
+        <button
+          type="button"
+          onClick={() => switchMode("login")}
+          className={`rounded-md border px-3 py-1.5 transition ${!isSignup
+            ? "border-indigo-500 bg-indigo-600 text-white"
+            : "border-slate-700 text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            }`}
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode("signup")}
+          className={`rounded-md border px-3 py-1.5 transition ${isSignup
+            ? "border-indigo-500 bg-indigo-600 text-white"
+            : "border-slate-700 text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            }`}
+        >
+          Create account
+        </button>
+      </div>
+
+      {err && (
+        <div className="mt-3 rounded-xl border border-rose-900 bg-rose-950/30 p-2 text-xs text-rose-300">
+          {err}
         </div>
+      )}
 
-        {/* Card */}
-        <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <h1 className="text-lg font-semibold text-center">
-            {isSignup ? "Create account" : "Sign in"}
-          </h1>
-
-          <div className="flex justify-center gap-3 text-xs mt-2">
-            <button
-              type="button"
-              onClick={() => switchMode("login")}
-              className={`px-3 py-1 rounded-full border ${!isSignup
-                ? "bg-indigo-600 border-indigo-500"
-                : "border-slate-700 text-slate-400"
-                }`}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode("signup")}
-              className={`px-3 py-1 rounded-full border ${isSignup
-                ? "bg-indigo-600 border-indigo-500"
-                : "border-slate-700 text-slate-400"
-                }`}
-            >
-              Create account
-            </button>
-          </div>
-
-          {err && (
-            <div className="text-xs text-rose-300 bg-rose-950/30 border border-rose-900 rounded-xl p-2 mt-3">
-              {err}
-            </div>
-          )}
-
-          {/* Form */}
-          <form onSubmit={onSubmit} className="space-y-3 mt-4">
+      <form onSubmit={onSubmit} className="mt-5 space-y-3">
             <div className="grid gap-3">
               <div>
                 <label className="block text-xs text-slate-400 mb-1">
@@ -204,17 +197,14 @@ export default function Login() {
                   ? "Create account"
                   : "Sign in"}
             </button>
-          </form>
+      </form>
 
-          {/* Value props — compact */}
-          <ul className="mt-4 text-xs text-slate-400 space-y-1 list-disc pl-4">
-            <li>See today's market outlook.</li>
-            <li>Get a clear daily recommendation.</li>
-            <li>Focus on top-ranked opportunities.</li>
-            <li>Track your saved watchlist daily.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+      <ul className="mt-5 list-disc space-y-1 pl-4 text-xs text-slate-400">
+        <li>See today&apos;s market outlook.</li>
+        <li>Get a clear daily recommendation.</li>
+        <li>Focus on top-ranked opportunities.</li>
+        <li>Track your saved watchlist daily.</li>
+      </ul>
+    </section>
   );
 }

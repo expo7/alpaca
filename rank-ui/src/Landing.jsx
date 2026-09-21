@@ -1,5 +1,5 @@
 import Login from "./Login.jsx";
-import { APP_NAME } from "./brand";
+import { APP_NAME, APP_TAGLINE } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
 
 const workflow = [
@@ -13,15 +13,16 @@ export default function Landing() {
         <div className="min-h-screen bg-slate-950 text-slate-100">
             <header className="border-b border-slate-800/80 bg-slate-950/90">
                 <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-                    <a href="/" className="flex items-center gap-3">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold">Q</span>
-                        <span>
-                            <span className="block font-semibold tracking-wide">{APP_NAME}</span>
-                            <span className="block text-xs text-slate-500">Daily market decisions</span>
+                    <a href="/" className="flex min-w-0 flex-col">
+                        <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
+                            {APP_NAME.toUpperCase()}
+                        </span>
+                        <span className="hidden text-xs text-slate-500 sm:block">
+                            {APP_TAGLINE}
                         </span>
                     </a>
                     <nav className="flex items-center gap-3 text-sm">
-                        <a href="/signals" className="text-slate-300 hover:text-white">Trade Record</a>
+                        <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
                         <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
                         <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
                     </nav>
@@ -101,7 +102,7 @@ export default function Landing() {
                             <h2 className="mt-2 text-3xl font-bold">Save the names worth watching.</h2>
                             <p className="mt-3 leading-7 text-slate-400">The market plan and opportunities are public. Create a free account to build a watchlist and follow the ratings that matter to you.</p>
                         </div>
-                        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-xl">
+                        <div className="lg:justify-self-end lg:w-full lg:max-w-md">
                             <Login />
                         </div>
                     </div>

@@ -20,6 +20,7 @@ describe("Landing page", () => {
     );
     expect(screen.getByText(/Five focused ideas/i)).toBeInTheDocument();
     expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^QUANTELLE$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /Sign in/i }).length).toBeGreaterThan(0);
   });
 });

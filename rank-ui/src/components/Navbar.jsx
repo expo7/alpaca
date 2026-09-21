@@ -1,10 +1,5 @@
-// ==============================
-// File: src/components/Navbar.jsx
-// Responsive top navigation using page + onNavigate, no react-router
-// ==============================
-
-import Logo from "./Logo.jsx";
-import { APP_NAME } from "../brand";
+import { useState } from "react";
+import { APP_NAME, APP_TAGLINE } from "../brand";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
@@ -24,7 +19,7 @@ const tabs = [
 
 const V1_TABS = [
   { id: "dashboard", label: "Today" },
-  { id: "signals", label: "Trade Record" },
+  { id: "signals", label: "Live Options" },
   { id: "billing", label: "Pro" },
   { id: "opportunities", label: "Opportunities" },
   { id: "articles", label: "Articles" },
@@ -38,91 +33,110 @@ export default function Navbar({
   onLogout,
   v1Mode = false,
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const baseTabs = v1Mode ? V1_TABS : tabs;
   const visibleTabs = user?.is_staff || user?.is_superuser
     ? [...baseTabs, { id: "analytics", label: "Analytics" }]
     : baseTabs;
 
-  const renderTabs = (mobile = false) => visibleTabs.map((tab) => (
+  function navigate(tabId) {
+    onNavigate(tabId);
+    setMenuOpen(false);
+  }
+
+  const renderTabs = (className) => visibleTabs.map((tab) => (
     <button
       key={tab.id}
       type="button"
-      onClick={() => onNavigate(tab.id)}
-      className={`rounded-full border whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950
-        ${mobile ? "px-3 py-1.5" : "px-3 py-1.5"}
-        ${active === tab.id
-          ? "bg-indigo-600 border-indigo-500 text-white shadow-sm shadow-indigo-950/40"
-          : "bg-slate-900/70 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600 hover:text-white"
-        }`}
+      onClick={() => navigate(tab.id)}
+      className={`${className} ${
+        active === tab.id
+          ? "bg-indigo-500/15 text-indigo-200"
+          : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+      }`}
     >
       {tab.label}
     </button>
   ));
 
   return (
-    <header className="navbar border-b border-slate-800/90 bg-slate-950/90 backdrop-blur w-full">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-3 xl:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
-        {/* Brand */}
-        <div className="flex items-center gap-3 min-w-0 col-start-1 row-start-1">
-          <Logo className="w-8 h-8 shrink-0" />
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm font-semibold tracking-wide text-slate-100">
-              {APP_NAME}
-            </span>
-            <span className="text-xs text-slate-400 truncate">
-              Tech + fundamentals, one rating.
-            </span>
-          </div>
-        </div>
+    <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        <div className="flex min-h-16 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
+                {APP_NAME.toUpperCase()}
+              </span>
+              <span className="hidden text-xs text-slate-500 min-[1350px]:block">
+                {APP_TAGLINE}
+              </span>
+            </div>
 
-        {/* Navigation: its own centered row on medium screens, one row on wide screens */}
-        <nav
-          className="hidden md:flex col-span-2 row-start-2 items-center justify-center gap-2 text-sm xl:col-span-1 xl:col-start-2 xl:row-start-1"
-          aria-label="Primary navigation"
-        >
-          {renderTabs()}
-        </nav>
-
-        {/* Account */}
-        <div className="flex items-center justify-self-end gap-3 text-xs col-start-2 row-start-1 xl:col-start-3">
-          {isAuthed ? (
-            <>
-              {user && (
-                <div className="hidden sm:flex flex-col items-end leading-tight">
-                  <span className="text-slate-200 font-medium">
-                    {user.username || user.email || "User"}
-                  </span>
-                  {user.email && (
-                    <span className="text-slate-500 max-w-48 truncate">{user.email}</span>
-                  )}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={onLogout}
-                className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-              >
-                Log out
-              </button>
-            </>
-          ) : (
-            <a
-              href="/"
-              className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            <nav
+              aria-label="Primary navigation"
+              className="hidden min-[1350px]:flex min-[1350px]:items-center min-[1350px]:gap-1"
             >
-              Sign in / Create account
-            </a>
-          )}
+              {renderTabs("rounded-md px-2 py-2 text-xs transition")}
+            </nav>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 text-xs sm:gap-3">
+            {isAuthed ? (
+              <>
+                {user && (
+                  <div className="hidden flex-col items-end leading-tight min-[1350px]:flex">
+                    <span className="font-medium text-slate-200">
+                      {user.username || user.email || "User"}
+                    </span>
+                    {user.email && (
+                      <span className="text-slate-500">{user.email}</span>
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <a
+                href="/"
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+              >
+                Sign in / Create account
+              </a>
+            )}
+            <button
+              type="button"
+              aria-controls="navbar-menu"
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+              onClick={() => setMenuOpen((isOpen) => !isOpen)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 min-[1350px]:hidden"
+            >
+              <span aria-hidden="true" className="text-lg leading-none">
+                {menuOpen ? "×" : "☰"}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Mobile navigation remains horizontally scrollable rather than wrapping */}
-      <nav
-        className="md:hidden border-t border-slate-800/90 px-4 py-2 flex gap-2 overflow-x-auto text-xs"
-        aria-label="Primary navigation"
-      >
-        {renderTabs(true)}
-      </nav>
+      {menuOpen && (
+        <nav
+          id="navbar-menu"
+          aria-label="Navigation menu"
+          className="border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur sm:px-6 min-[1350px]:hidden"
+        >
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-1 sm:grid-cols-3">
+            {renderTabs("rounded-md px-3 py-2 text-left text-xs transition")}
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

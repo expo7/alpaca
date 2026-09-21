@@ -111,4 +111,17 @@ describe("App routing and navigation smoke tests", () => {
     expect(screen.queryByRole("button", { name: "Why" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Set alert/i })).not.toBeInTheDocument();
   });
+
+  test("shows a development-only navbar preview without creating authentication", async () => {
+    window.history.replaceState({}, "", "/dashboard?local-navbar-preview=1");
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({ results: [] }))));
+
+    renderAppWithAuth();
+
+    expect(await screen.findByRole("button", { name: /^Log out$/i })).toBeInTheDocument();
+    expect(localStorage.getItem("access")).toBeNull();
+    expect(localStorage.getItem("auth_user")).toBeNull();
+
+    window.history.replaceState({}, "", "/");
+  });
 });

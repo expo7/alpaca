@@ -1,5 +1,5 @@
 import SiteFooter from "../components/SiteFooter";
-import { APP_NAME } from "../brand";
+import { APP_NAME, APP_TAGLINE } from "../brand";
 
 const updated = "September 9, 2026";
 
@@ -50,7 +50,10 @@ export default function PolicyPage({ type }) {
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800/80 bg-slate-950/90">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <a href="/" className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold">Q</span><span className="font-semibold tracking-wide">{APP_NAME}</span></a>
+          <a href="/" className="flex min-w-0 flex-col">
+            <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">{APP_NAME.toUpperCase()}</span>
+            <span className="hidden text-xs text-slate-500 sm:block">{APP_TAGLINE}</span>
+          </a>
           <a href="/dashboard" className="rounded-full border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-900">Open Quantelle</a>
         </div>
       </header>

@@ -83,6 +83,11 @@ const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "billing", "opportunit
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
+const LOCAL_NAVBAR_PREVIEW_USER = {
+  username: "Preview User",
+  is_staff: false,
+  is_superuser: false,
+};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -123,6 +128,10 @@ function IndicatorCell({
 export default function App() {
   const { token, user, logout } = useAuth();
   const isAuthed = Boolean(token);
+  const [isLocalNavbarPreview] = useState(() => (
+    import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get("local-navbar-preview") === "1"
+  ));
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
 
   useEffect(() => {
@@ -959,9 +968,9 @@ export default function App() {
     <div className="app-shell">
       {/* NAVBAR */}
       <Navbar
-        isAuthed={isAuthed}
-        user={user}
-        onLogout={logout}
+        isAuthed={isLocalNavbarPreview || isAuthed}
+        user={isLocalNavbarPreview ? LOCAL_NAVBAR_PREVIEW_USER : user}
+        onLogout={isLocalNavbarPreview ? () => {} : logout}
         active={page}
         onNavigate={navigateToPage}
         v1Mode={V1_MODE}

@@ -14,6 +14,7 @@ describe("public policy pages", () => {
   it("renders support contact information", () => {
     render(<PolicyPage type="support" />);
     expect(screen.getByRole("heading", { name: "How can we help?" })).toBeInTheDocument();
+    expect(screen.getByText(/^QUANTELLE$/i)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "support@quantelle.io" })[0]).toHaveAttribute("href", "mailto:support@quantelle.io");
   });
 
