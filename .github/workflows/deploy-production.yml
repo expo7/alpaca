@@ -85,7 +85,7 @@ jobs:
           npm run build
           cd /opt/alpaca
           docker compose build web worker beat execution_guardian
-          docker compose run --rm web python manage.py migrate --noinput
+          docker compose run --rm -T web python manage.py migrate --noinput
           docker compose up -d web worker beat execution_guardian
           docker compose ps
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
