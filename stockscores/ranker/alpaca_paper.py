@@ -113,6 +113,28 @@ class AlpacaPaperClient:
             },
         )
 
+    def submit_market_order(self, *, symbol, quantity, side, client_order_id):
+        """Submit a simple day market order for an option position.
+
+        Alpaca does not support OCO order classes for options, but it does
+        support simple market orders.  The executor uses this only to close a
+        long paper option after its published stop has already been crossed.
+        """
+        intent = "buy_to_open" if side == "buy" else "sell_to_close"
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": side,
+                "type": "market",
+                "time_in_force": "day",
+                "client_order_id": client_order_id,
+                "position_intent": intent,
+            },
+        )
+
     def stock_quote(self, symbol):
         payload = self._request(
             "GET",

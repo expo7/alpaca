@@ -214,13 +214,26 @@ def _process_open_signal(signal, client, now):
         signal.save(update_fields=update_fields)
         return "position_open"
 
-    order = client.submit_limit_order(
-        symbol=signal.contract_symbol,
-        quantity=signal.paper_quantity,
-        side="sell",
-        limit_price=_money(bid),
-        client_order_id=f"quantelle-{signal.pk}-exit",
-    )
+    if reason == "stop":
+        # A limit at the observed bid can be left behind by a fast decline,
+        # leaving the position open after its risk boundary was crossed. Once
+        # the published stop is breached, prioritize closing the paper option.
+        order = client.submit_market_order(
+            symbol=signal.contract_symbol,
+            quantity=signal.paper_quantity,
+            side="sell",
+            client_order_id=f"quantelle-{signal.pk}-stop-exit",
+        )
+        order_description = "market"
+    else:
+        order = client.submit_limit_order(
+            symbol=signal.contract_symbol,
+            quantity=signal.paper_quantity,
+            side="sell",
+            limit_price=_money(bid),
+            client_order_id=f"quantelle-{signal.pk}-target-exit",
+        )
+        order_description = f"limit at ${_money(bid)}"
     signal.paper_exit_order_id = order["id"]
     signal.paper_exit_reason = reason
     signal.paper_order_status = order.get("status", "submitted")[:32]
@@ -230,7 +243,12 @@ def _process_open_signal(signal, client, now):
         "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
         "paper_last_checked_at", "paper_last_error", "updated_at",
     ])
-    _record_update(signal, "exit_submitted", f"Submitted Alpaca paper sell limit at ${_money(bid)} ({reason}).", price=_money(bid))
+    _record_update(
+        signal,
+        "exit_submitted",
+        f"Submitted Alpaca paper sell {order_description} ({reason}; trigger bid ${_money(bid)}).",
+        price=_money(bid),
+    )
     return "exit_submitted"
 
 
