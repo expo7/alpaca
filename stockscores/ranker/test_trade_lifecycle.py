@@ -216,3 +216,24 @@ class TradePublicationOperatorApiTests(TestCase):
         response = self.client.post(self.url, self.payload, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("initial_stop", response.data)
+
+    @patch("ranker.trade_lifecycle.apply_publication_snapshot")
+    def test_test_mode_executes_and_notifies_without_becoming_public(self, snapshot):
+        snapshot.side_effect = self.snapshot
+        self.payload["request_id"] = "github-issue-test-100"
+        self.payload["test_mode"] = True
+
+        response = self.client.post(self.url, self.payload, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["test_mode"])
+        signal = TradeSignal.objects.get(operator_request_id="github-issue-test-100")
+        self.assertTrue(signal.is_test)
+        self.assertTrue(signal.paper_execution_enabled)
+        self.assertEqual(signal.paper_quantity, 1)
+        self.assertEqual(TelegramNotification.objects.filter(update__signal=signal).count(), 1)
+        public_client = APIClient()
+        public_response = public_client.get(reverse("trade-signal-list"))
+        self.assertNotIn(signal.pk, [item["id"] for item in public_response.data])
+        quote_response = public_client.get(reverse("trade-signal-quote", args=[signal.pk]))
+        self.assertEqual(quote_response.status_code, 404)
