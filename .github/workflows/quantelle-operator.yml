@@ -78,7 +78,7 @@ jobs:
                       "risk_level", "trigger_direction", "underlying_trigger_price", "trigger_confirmation",
                       "do_not_chase_price", "entry_deadline", "official_fill_method", "entry_low", "entry_high",
                       "initial_stop", "target_1", "target_2", "target_3", "thesis", "invalidation",
-                      "evidence_tags", "paper_quantity",
+                      "evidence_tags", "paper_quantity", "test_mode",
                   }
                   if set(payload) - allowed_keys:
                       raise ValueError("Publication request contains unsupported fields")
@@ -108,6 +108,7 @@ jobs:
                   f"- Status: `{result['status']}`\n"
                   f"- Contract: `{result.get('contract_symbol', 'n/a')}`\n"
                   f"- Paper execution: `{str(result.get('paper_execution_enabled', 'n/a')).lower()}`\n"
+                  f"- Test mode: `{str(result.get('test_mode', False)).lower()}`\n"
                   f"- Event: `{result['event_id']}`\n"
                   f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
                   f"- Already applied: `{str(result['already_applied']).lower()}`"
