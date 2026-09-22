@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_trade_lifecycle ranker.test_telegram ranker.test_paper_executor
+        run: python manage.py test ranker.test_trade_lifecycle ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
 
       - name: Configure production SSH
         env:
@@ -84,7 +84,7 @@ jobs:
           npm ci
           npm run build
           cd /opt/alpaca
-          docker compose up -d --build web worker beat
+          docker compose up -d --build web worker beat execution_guardian
           docker compose ps
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
           REMOTE
