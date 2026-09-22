@@ -14,6 +14,13 @@ app.conf.beat_schedule.setdefault(
         "schedule": 15.0,
     },
 )
+app.conf.beat_schedule.setdefault(
+    "ranker-paper-trade-execution-guardian",
+    {
+        "task": "ranker.tasks.run_execution_guardian",
+        "schedule": 60.0,
+    },
+)
 
 
 @app.task(bind=True)
