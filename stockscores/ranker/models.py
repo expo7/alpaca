@@ -527,6 +527,11 @@ class TradeSignal(models.Model):
         default=False,
         help_text="Allow the globally enabled Alpaca paper executor to manage this signal.",
     )
+    is_test = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Operator test trade: execute and notify, but never expose in public records.",
+    )
     paper_quantity = models.PositiveIntegerField(default=1)
     paper_entry_order_id = models.CharField(max_length=64, blank=True, default="")
     paper_exit_order_id = models.CharField(max_length=64, blank=True, default="")
@@ -554,7 +559,7 @@ class TradeSignal(models.Model):
         "thesis", "invalidation", "evidence_tags", "published_at",
         "publication_underlying_price", "publication_option_bid", "publication_option_ask",
         "publication_option_midpoint", "publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest",
-        "publication_quote_at", "publication_quote_source", "operator_request_id",
+        "publication_quote_at", "publication_quote_source", "operator_request_id", "is_test",
     )
 
     @property
