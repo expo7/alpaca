@@ -10,7 +10,10 @@ from django.utils.dateparse import parse_datetime
 
 from .backtest import BacktestResult, run_basket_backtest
 from .alpaca_paper import AlpacaPaperClient, PaperTradingError, load_paper_config
-from .models import Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, TradeSignal, TradeSignalUpdate
+from .models import (
+    Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, TradeExecutorHealth,
+    TradeSignal, TradeSignalUpdate,
+)
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 
 SCHEDULE_OFFSETS = {
@@ -20,6 +23,8 @@ SCHEDULE_OFFSETS = {
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
 }
+
+EXECUTOR_STALE_AFTER = timedelta(seconds=45)
 
 
 def _money(value):
@@ -39,6 +44,118 @@ def _record_update(signal, event_type, note, *, price=None, return_pct=None):
         price=price,
         return_pct=return_pct,
     )
+
+
+def _record_guardian_transition(degraded, message):
+    """Best-effort customer-visible alert without coupling it to exit safety."""
+    try:
+        for signal in TradeSignal.objects.filter(
+            paper_execution_enabled=True,
+            status=TradeSignal.STATUS_OPEN,
+        ):
+            _record_update(
+                signal,
+                "execution_warning" if degraded else "note",
+                message,
+            )
+    except Exception:
+        # Guardian observability must never replace or break monitored exits.
+        return
+
+
+def _guardian_begin(now):
+    """Return whether new entries are allowed, then persist this run's start.
+
+    Database/guardian failures fail closed for *entries*. Open positions are
+    intentionally processed regardless so the original monitored-exit path
+    remains the fallback.
+    """
+    try:
+        with transaction.atomic():
+            health, _ = TradeExecutorHealth.objects.select_for_update().get_or_create(singleton_id=1)
+            entries_allowed = bool(
+                health.status == TradeExecutorHealth.STATUS_HEALTHY
+                and not health.entries_paused
+                and health.consecutive_failures == 0
+                and health.last_completed_at
+                and health.last_completed_at >= now - EXECUTOR_STALE_AFTER
+            )
+            health.last_started_at = now
+            health.save(update_fields=["last_started_at", "updated_at"])
+            return entries_allowed
+    except Exception:
+        return False
+
+
+def _guardian_set(status_value, *, error="", completed=False):
+    """Persist guardian state without making the executor depend on it."""
+    now = timezone.now()
+    transition = None
+    try:
+        with transaction.atomic():
+            health, _ = TradeExecutorHealth.objects.select_for_update().get_or_create(singleton_id=1)
+            was_degraded = health.status == TradeExecutorHealth.STATUS_DEGRADED
+            is_degraded = status_value == TradeExecutorHealth.STATUS_DEGRADED
+            health.status = status_value
+            health.entries_paused = status_value != TradeExecutorHealth.STATUS_HEALTHY
+            if completed:
+                health.last_completed_at = now
+            if is_degraded:
+                health.consecutive_failures += 1
+                health.last_error = str(error)[:500]
+                if not was_degraded:
+                    health.degraded_at = now
+                    transition = (True, f"Execution protection degraded; new entries are paused while monitored exits remain active. {health.last_error}".strip())
+            elif status_value == TradeExecutorHealth.STATUS_HEALTHY:
+                health.last_success_at = now
+                health.consecutive_failures = 0
+                health.last_error = ""
+                if was_degraded:
+                    health.recovered_at = now
+                    transition = (False, "Execution protection recovered; monitored exits stayed active and new entries are enabled again.")
+            elif error:
+                health.last_error = str(error)[:500]
+            health.save()
+    except Exception:
+        return
+    if transition:
+        _record_guardian_transition(*transition)
+
+
+@shared_task(name="ranker.tasks.run_execution_guardian")
+def run_execution_guardian():
+    """Detect a stale executor and fail closed for entries, never exits."""
+    config = load_paper_config()
+    if not config.enabled:
+        _guardian_set(TradeExecutorHealth.STATUS_DISABLED, error="Paper execution is globally disabled")
+        return {"status": "disabled"}
+    try:
+        client = AlpacaPaperClient()
+        if not client.clock().get("is_open"):
+            _guardian_set(TradeExecutorHealth.STATUS_MARKET_CLOSED)
+            return {"status": "market_closed"}
+        now = timezone.now()
+        health = TradeExecutorHealth.objects.filter(singleton_id=1).first()
+        active_run = bool(
+            health and health.last_started_at
+            and health.last_started_at >= now - timedelta(seconds=30)
+        )
+        fresh_completion = bool(
+            health and health.last_completed_at
+            and health.last_completed_at >= now - EXECUTOR_STALE_AFTER
+        )
+        if not active_run and not fresh_completion:
+            _guardian_set(
+                TradeExecutorHealth.STATUS_DEGRADED,
+                error="Executor heartbeat is stale or missing",
+            )
+            return {"status": "degraded", "reason": "stale_heartbeat"}
+        if health and health.status == TradeExecutorHealth.STATUS_DEGRADED:
+            return {"status": "degraded", "reason": health.last_error}
+        return {"status": "healthy"}
+    except Exception as exc:
+        _guardian_set(TradeExecutorHealth.STATUS_DEGRADED, error=f"Guardian check failed: {exc}")
+        return {"status": "degraded", "reason": str(exc)[:500]}
 
 
 def _reconcile_entry(signal, client):
@@ -256,15 +373,18 @@ def _process_open_signal(signal, client, now):
 def run_paper_trade_executor():
     config = load_paper_config()
     if not config.enabled:
+        _guardian_set(TradeExecutorHealth.STATUS_DISABLED, error="Paper execution is globally disabled")
         return {"status": "disabled"}
     if not cache.add("ranker-paper-trade-executor-lock", "1", timeout=14):
         return {"status": "locked"}
     results = {}
+    now = timezone.now()
+    entries_allowed = _guardian_begin(now)
     try:
         client = AlpacaPaperClient()
         if not client.clock().get("is_open"):
+            _guardian_set(TradeExecutorHealth.STATUS_MARKET_CLOSED, completed=True)
             return {"status": "market_closed"}
-        now = timezone.now()
         signals = TradeSignal.objects.filter(
             paper_execution_enabled=True,
             status__in=[TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN],
@@ -272,7 +392,10 @@ def run_paper_trade_executor():
         for signal in signals:
             try:
                 if signal.status == TradeSignal.STATUS_PUBLISHED:
-                    results[str(signal.pk)] = _process_published_signal(signal, client, now, config)
+                    if entries_allowed:
+                        results[str(signal.pk)] = _process_published_signal(signal, client, now, config)
+                    else:
+                        results[str(signal.pk)] = "entry_guardian_paused"
                 else:
                     results[str(signal.pk)] = _process_open_signal(signal, client, now)
             except (PaperTradingError, KeyError, ValueError) as exc:
@@ -288,7 +411,18 @@ def run_paper_trade_executor():
                         f"Paper execution error: {error_message}",
                     )
                 results[str(signal.pk)] = "error"
+        if "error" in results.values():
+            _guardian_set(
+                TradeExecutorHealth.STATUS_DEGRADED,
+                error="One or more trade signals failed executor evaluation",
+                completed=True,
+            )
+        else:
+            _guardian_set(TradeExecutorHealth.STATUS_HEALTHY, completed=True)
         return {"status": "ok", "signals": results}
+    except Exception as exc:
+        _guardian_set(TradeExecutorHealth.STATUS_DEGRADED, error=f"Executor run failed: {exc}")
+        raise
     finally:
         cache.delete("ranker-paper-trade-executor-lock")
 
