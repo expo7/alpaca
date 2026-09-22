@@ -537,6 +537,7 @@ class TradeSignal(models.Model):
     paper_last_error = models.CharField(max_length=255, blank=True, default="")
     paper_exit_reason = models.CharField(max_length=32, blank=True, default="")
     trigger_first_seen_at = models.DateTimeField(null=True, blank=True)
+    operator_request_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
     published_at = models.DateTimeField(null=True, blank=True, db_index=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -553,7 +554,7 @@ class TradeSignal(models.Model):
         "thesis", "invalidation", "evidence_tags", "published_at",
         "publication_underlying_price", "publication_option_bid", "publication_option_ask",
         "publication_option_midpoint", "publication_option_spread_pct", "publication_option_volume", "publication_option_open_interest",
-        "publication_quote_at", "publication_quote_source",
+        "publication_quote_at", "publication_quote_source", "operator_request_id",
     )
 
     @property

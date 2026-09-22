@@ -24,6 +24,8 @@ from .models import UserPreference
 from django.utils.text import slugify
 from itertools import product
 from datetime import datetime
+from decimal import Decimal
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -599,3 +601,61 @@ class TradeSignalSerializer(serializers.ModelSerializer):
             "publication_quote_source", "published_at", "closed_at", "updates",
             "paper_execution_enabled", "paper_quantity", "paper_order_status", "paper_filled_at",
         ]
+
+
+class OperatorTradePublicationSerializer(serializers.Serializer):
+    request_id = serializers.RegexField(r"^[A-Za-z0-9._:-]+$", max_length=64)
+    symbol = serializers.RegexField(r"^[A-Za-z][A-Za-z0-9.-]{0,15}$", max_length=16)
+    company_name = serializers.CharField(max_length=160, allow_blank=True, required=False, default="")
+    instrument_type = serializers.ChoiceField(choices=("call", "put"))
+    strike = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    expiration = serializers.DateField()
+    risk_level = serializers.ChoiceField(choices=("low", "moderate", "high"))
+    trigger_direction = serializers.ChoiceField(choices=("above", "below"))
+    underlying_trigger_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    trigger_confirmation = serializers.CharField(min_length=20, max_length=255)
+    do_not_chase_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    entry_deadline = serializers.DateField()
+    official_fill_method = serializers.ChoiceField(choices=("ask",), default="ask")
+    entry_low = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    entry_high = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    initial_stop = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    target_1 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    target_2 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"), required=False, allow_null=True)
+    target_3 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"), required=False, allow_null=True)
+    thesis = serializers.CharField(min_length=40, max_length=5000)
+    invalidation = serializers.CharField(min_length=20, max_length=3000)
+    evidence_tags = serializers.ListField(
+        child=serializers.CharField(min_length=2, max_length=48),
+        min_length=2,
+        max_length=8,
+    )
+    paper_quantity = serializers.IntegerField(min_value=1, max_value=1, default=1)
+
+    def validate(self, attrs):
+        today = timezone.localdate()
+        if attrs["expiration"] <= today:
+            raise serializers.ValidationError({"expiration": "Expiration must be in the future."})
+        if not today <= attrs["entry_deadline"] <= attrs["expiration"]:
+            raise serializers.ValidationError({"entry_deadline": "Entry deadline must be between today and expiration."})
+        if attrs["entry_high"] < attrs["entry_low"]:
+            raise serializers.ValidationError({"entry_high": "Entry high cannot be below entry low."})
+        if attrs["do_not_chase_price"] < attrs["entry_high"]:
+            raise serializers.ValidationError({"do_not_chase_price": "Do-not-chase price cannot be below entry high."})
+        if attrs["initial_stop"] >= attrs["entry_low"]:
+            raise serializers.ValidationError({"initial_stop": "Initial stop must be below the entry range."})
+        targets = [attrs["target_1"], attrs.get("target_2"), attrs.get("target_3")]
+        present_targets = [target for target in targets if target is not None]
+        targets_not_strictly_increasing = any(
+            later <= earlier for earlier, later in zip(present_targets, present_targets[1:])
+        )
+        if targets_not_strictly_increasing or present_targets[0] <= attrs["entry_high"]:
+            raise serializers.ValidationError({"target_1": "Targets must increase above the entry range."})
+        attrs["symbol"] = attrs["symbol"].upper()
+        attrs["trigger_confirmation"] = attrs["trigger_confirmation"].strip()
+        attrs["thesis"] = attrs["thesis"].strip()
+        attrs["invalidation"] = attrs["invalidation"].strip()
+        attrs["evidence_tags"] = list(dict.fromkeys(tag.strip() for tag in attrs["evidence_tags"]))
+        if len(attrs["evidence_tags"]) < 2:
+            raise serializers.ValidationError({"evidence_tags": "Provide at least two distinct evidence tags."})
+        return attrs

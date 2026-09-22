@@ -43,7 +43,8 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(response.data[0]["symbol"], "MU")
         self.assertEqual(response.data[0]["instrument"], "MU 110.00C 9/18/26")
         self.assertEqual(response.data[0]["contract_symbol"], "MU260918C00110000")
-        self.assertEqual(response.data[0]["updates"][0]["note"], "First target reached.")
+        target_updates = [update for update in response.data[0]["updates"] if update["event_type"] == "target"]
+        self.assertEqual(target_updates[0]["note"], "First target reached.")
 
     def test_publishing_sets_an_immutable_initial_timestamp(self):
         signal = self._signal(status=TradeSignal.STATUS_DRAFT)

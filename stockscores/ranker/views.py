@@ -13,7 +13,7 @@ from .serializers import (
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
     ArticleSerializer,
-    TradeSignalSerializer,
+    TradeSignalSerializer, OperatorTradePublicationSerializer,
 )
 from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeSignal
 from .services import rank_symbols, compute_and_store
@@ -54,7 +54,7 @@ from .analytics import AnalyticsEventThrottle, record_analytics_event
 from .models import AnalyticsEvent
 from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .operator_auth import ResearchOperatorAuthentication
-from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal
+from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1214,6 +1214,33 @@ class TradeSignalLifecycleActionView(APIView):
             "notification_status": notification.status,
             "already_applied": result.already_applied,
         })
+
+
+class TradeSignalPublicationView(APIView):
+    """Publish a validated setup for public tracking and Alpaca paper execution."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = OperatorTradePublicationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = publish_trade_signal(validated_data=serializer.validated_data)
+        except TradeLifecycleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        notification = result.update.telegram_notification
+        return Response({
+            "signal_id": result.signal.pk,
+            "status": result.signal.status,
+            "contract_symbol": result.signal.contract_symbol,
+            "paper_execution_enabled": result.signal.paper_execution_enabled,
+            "paper_quantity": result.signal.paper_quantity,
+            "event_id": result.update.pk,
+            "notification_id": notification.pk,
+            "notification_status": notification.status,
+            "already_applied": result.already_applied,
+        }, status=status.HTTP_200_OK if result.already_applied else status.HTTP_201_CREATED)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
