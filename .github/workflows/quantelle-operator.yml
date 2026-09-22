@@ -52,28 +52,46 @@ jobs:
               if not os.environ.get("OPERATOR_TOKEN"):
                   raise ValueError("QUANTELLE_RESEARCH_OPERATOR_TOKEN is not configured")
               payload = json.loads(issue.get("body") or "")
-              allowed_keys = {"action", "signal_id", "expected_status", "note"}
-              if set(payload) - allowed_keys:
-                  raise ValueError("Request contains unsupported fields")
-              if payload.get("action") != "cancel":
-                  raise ValueError("Only the cancel lifecycle action is supported")
-              signal_id = payload.get("signal_id")
-              if not isinstance(signal_id, int) or signal_id < 1:
-                  raise ValueError("signal_id must be a positive integer")
-              expected_status = payload.get("expected_status", "published")
-              if expected_status != "published":
-                  raise ValueError("expected_status must be published")
-              note = payload.get("note")
-              if not isinstance(note, str) or not 20 <= len(note.strip()) <= 1000:
-                  raise ValueError("note must contain 20 to 1000 characters")
-
-              operator_request = urllib.request.Request(
-                  f"https://quantelle.io/api/operator/trade-signals/{signal_id}/lifecycle/",
-                  data=json.dumps({
+              action = payload.get("action")
+              if action == "cancel":
+                  allowed_keys = {"action", "signal_id", "expected_status", "note"}
+                  if set(payload) - allowed_keys:
+                      raise ValueError("Cancellation request contains unsupported fields")
+                  signal_id = payload.get("signal_id")
+                  if not isinstance(signal_id, int) or signal_id < 1:
+                      raise ValueError("signal_id must be a positive integer")
+                  expected_status = payload.get("expected_status", "published")
+                  if expected_status != "published":
+                      raise ValueError("expected_status must be published")
+                  note = payload.get("note")
+                  if not isinstance(note, str) or not 20 <= len(note.strip()) <= 1000:
+                      raise ValueError("note must contain 20 to 1000 characters")
+                  operator_url = f"https://quantelle.io/api/operator/trade-signals/{signal_id}/lifecycle/"
+                  operator_payload = {
                       "action": "cancel",
                       "expected_status": expected_status,
                       "note": note.strip(),
-                  }).encode(),
+                  }
+              elif action == "publish":
+                  allowed_keys = {
+                      "action", "symbol", "company_name", "instrument_type", "strike", "expiration",
+                      "risk_level", "trigger_direction", "underlying_trigger_price", "trigger_confirmation",
+                      "do_not_chase_price", "entry_deadline", "official_fill_method", "entry_low", "entry_high",
+                      "initial_stop", "target_1", "target_2", "target_3", "thesis", "invalidation",
+                      "evidence_tags", "paper_quantity",
+                  }
+                  if set(payload) - allowed_keys:
+                      raise ValueError("Publication request contains unsupported fields")
+                  operator_url = "https://quantelle.io/api/operator/trade-signals/publish/"
+                  operator_payload = dict(payload)
+                  operator_payload.pop("action")
+                  operator_payload["request_id"] = f"github-issue-{issue_number}"
+              else:
+                  raise ValueError("Only publish and cancel lifecycle actions are supported")
+
+              operator_request = urllib.request.Request(
+                  operator_url,
+                  data=json.dumps(operator_payload).encode(),
                   method="POST",
                   headers={
                       "Authorization": f"Bearer {os.environ['OPERATOR_TOKEN']}",
@@ -88,6 +106,8 @@ jobs:
                   "Quantelle operator action completed.\n\n"
                   f"- Signal: `{result['signal_id']}`\n"
                   f"- Status: `{result['status']}`\n"
+                  f"- Contract: `{result.get('contract_symbol', 'n/a')}`\n"
+                  f"- Paper execution: `{str(result.get('paper_execution_enabled', 'n/a')).lower()}`\n"
                   f"- Event: `{result['event_id']}`\n"
                   f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
                   f"- Already applied: `{str(result['already_applied']).lower()}`"
