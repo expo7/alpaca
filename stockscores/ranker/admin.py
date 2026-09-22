@@ -35,8 +35,8 @@ class TradeSignalUpdateInline(admin.TabularInline):
 
 @admin.register(TradeSignal)
 class TradeSignalAdmin(admin.ModelAdmin):
-	list_display = ("display_instrument", "status", "risk_level", "entry_low", "target_1", "published_at", "realized_return_pct")
-	list_filter = ("status", "instrument_type", "risk_level", "published_at")
+	list_display = ("display_instrument", "status", "is_test", "risk_level", "entry_low", "target_1", "published_at", "realized_return_pct")
+	list_filter = ("status", "is_test", "instrument_type", "risk_level", "published_at")
 	search_fields = ("symbol", "company_name", "thesis")
 	readonly_fields = (
 		"published_at", "created_at", "updated_at", "contract_symbol",
@@ -65,7 +65,7 @@ class TradeSignalAdmin(admin.ModelAdmin):
 		}),
 		("Alpaca paper execution", {
 			"fields": (
-				("paper_execution_enabled", "paper_quantity"),
+				("paper_execution_enabled", "paper_quantity", "is_test"),
 				("paper_entry_order_id", "paper_exit_order_id", "paper_order_status"),
 				("paper_submitted_at", "paper_filled_at", "paper_last_checked_at"),
 				("trigger_first_seen_at", "paper_exit_reason"),
