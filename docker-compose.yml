@@ -38,6 +38,18 @@ services:
       - db
       - redis
 
+  execution_guardian:
+    restart: unless-stopped
+    build: .
+    command: python manage.py execution_guardian --interval 30
+    env_file:
+      - .env.docker
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
   db:
     restart: unless-stopped
     image: postgres:15-alpine
