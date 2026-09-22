@@ -606,6 +606,51 @@ class TradeSignal(models.Model):
         return f"{self.display_instrument} · {self.status}"
 
 
+class TradeExecutorHealth(models.Model):
+    """Persistent health state for the published-trade paper executor.
+
+    The guardian may pause *new entries*, but it never disables processing of
+    open positions.  That keeps the original monitored-exit path available
+    during guardian failures or recovery.
+    """
+
+    STATUS_WARMING = "warming"
+    STATUS_HEALTHY = "healthy"
+    STATUS_DEGRADED = "degraded"
+    STATUS_MARKET_CLOSED = "market_closed"
+    STATUS_DISABLED = "disabled"
+    STATUS_CHOICES = [
+        (STATUS_WARMING, "Warming up"),
+        (STATUS_HEALTHY, "Healthy"),
+        (STATUS_DEGRADED, "Degraded"),
+        (STATUS_MARKET_CLOSED, "Market closed"),
+        (STATUS_DISABLED, "Disabled"),
+    ]
+
+    singleton_id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_WARMING)
+    entries_paused = models.BooleanField(default=True)
+    last_started_at = models.DateTimeField(null=True, blank=True)
+    last_completed_at = models.DateTimeField(null=True, blank=True)
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    degraded_at = models.DateTimeField(null=True, blank=True)
+    recovered_at = models.DateTimeField(null=True, blank=True)
+    consecutive_failures = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Trade executor health"
+        verbose_name_plural = "Trade executor health"
+
+    def save(self, *args, **kwargs):
+        self.singleton_id = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Trade executor · {self.get_status_display()}"
+
+
 class TradeSignalUpdate(models.Model):
     EVENT_CHOICES = [
         ("published", "Setup published"),

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AnalyticsEvent, Article, BillingProfile, TradeSignal, TradeSignalUpdate
+from .models import AnalyticsEvent, Article, BillingProfile, TradeExecutorHealth, TradeSignal, TradeSignalUpdate
 from .trade_quotes import apply_publication_snapshot
 
 
@@ -105,6 +105,25 @@ class TradeSignalUpdateAdmin(admin.ModelAdmin):
 
 	def get_readonly_fields(self, request, obj=None):
 		return () if obj is None else ("signal", "occurred_at", "event_type", "price", "return_pct", "note")
+
+
+@admin.register(TradeExecutorHealth)
+class TradeExecutorHealthAdmin(admin.ModelAdmin):
+	list_display = (
+		"status", "entries_paused", "last_started_at", "last_completed_at",
+		"last_success_at", "consecutive_failures", "updated_at",
+	)
+	readonly_fields = (
+		"singleton_id", "status", "entries_paused", "last_started_at",
+		"last_completed_at", "last_success_at", "degraded_at", "recovered_at",
+		"consecutive_failures", "last_error", "updated_at",
+	)
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False
 
 
 @admin.register(BillingProfile)

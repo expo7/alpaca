@@ -6,8 +6,8 @@ from unittest.mock import Mock, patch
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import TradeSignal, TradeSignalUpdate
-from .tasks import run_paper_trade_executor
+from .models import TradeExecutorHealth, TradeSignal, TradeSignalUpdate
+from .tasks import run_execution_guardian, run_paper_trade_executor
 
 
 EXECUTOR_SETTINGS = {
@@ -19,6 +19,14 @@ EXECUTOR_SETTINGS = {
 
 
 class PaperExecutorTests(TestCase):
+    def setUp(self):
+        TradeExecutorHealth.objects.create(
+            status=TradeExecutorHealth.STATUS_HEALTHY,
+            entries_paused=False,
+            last_completed_at=timezone.now(),
+            last_success_at=timezone.now(),
+        )
+
     def signal(self, **overrides):
         values = {
             "symbol": "NVDA",
@@ -50,6 +58,70 @@ class PaperExecutorTests(TestCase):
         result = run_paper_trade_executor()
         self.assertEqual(result["status"], "disabled")
         client_class.assert_not_called()
+
+        health = TradeExecutorHealth.objects.get(singleton_id=1)
+        self.assertEqual(health.status, TradeExecutorHealth.STATUS_DISABLED)
+        self.assertTrue(health.entries_paused)
+
+    @patch.dict(os.environ, EXECUTOR_SETTINGS)
+    @patch("ranker.tasks.AlpacaPaperClient")
+    def test_degraded_guardian_blocks_new_entries_but_keeps_open_exit_path(self, client_class):
+        pending = self.signal()
+        open_signal = self.signal(
+            symbol="AMD",
+            strike=Decimal("200"),
+            status=TradeSignal.STATUS_OPEN,
+            actual_entry=Decimal("6.88"),
+            paper_entry_order_id="paper-entry-open",
+            initial_stop=Decimal("4.25"),
+            current_stop=Decimal("4.25"),
+        )
+        health = TradeExecutorHealth.objects.get(singleton_id=1)
+        health.status = TradeExecutorHealth.STATUS_DEGRADED
+        health.entries_paused = True
+        health.consecutive_failures = 1
+        health.last_error = "stale heartbeat"
+        health.save()
+
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "submit_market_order", "order"])
+        client.clock.return_value = {"is_open": True}
+        client.option_quote.return_value = {
+            "bid": Decimal("4.10"),
+            "ask": Decimal("4.30"),
+            "midpoint": Decimal("4.20"),
+            "spread_pct": Decimal("4.76"),
+        }
+        client.submit_market_order.return_value = {"id": "paper-stop-exit-guardian", "status": "accepted"}
+        client_class.return_value = client
+
+        result = run_paper_trade_executor()
+
+        pending.refresh_from_db()
+        open_signal.refresh_from_db()
+        self.assertEqual(result["signals"][str(pending.pk)], "entry_guardian_paused")
+        self.assertEqual(pending.paper_entry_order_id, "")
+        self.assertEqual(result["signals"][str(open_signal.pk)], "exit_submitted")
+        self.assertEqual(open_signal.paper_exit_order_id, "paper-stop-exit-guardian")
+        client.submit_market_order.assert_called_once()
+
+    @patch.dict(os.environ, EXECUTOR_SETTINGS)
+    @patch("ranker.tasks.AlpacaPaperClient")
+    def test_guardian_marks_stale_executor_degraded(self, client_class):
+        health = TradeExecutorHealth.objects.get(singleton_id=1)
+        health.last_started_at = timezone.now() - timedelta(minutes=2)
+        health.last_completed_at = timezone.now() - timedelta(minutes=2)
+        health.save()
+        client = Mock(spec=["clock"])
+        client.clock.return_value = {"is_open": True}
+        client_class.return_value = client
+
+        result = run_execution_guardian()
+
+        health.refresh_from_db()
+        self.assertEqual(result["status"], "degraded")
+        self.assertTrue(health.entries_paused)
+        self.assertEqual(health.status, TradeExecutorHealth.STATUS_DEGRADED)
+        self.assertIn("stale", health.last_error.lower())
 
     @patch.dict(os.environ, EXECUTOR_SETTINGS)
     @patch("ranker.tasks.AlpacaPaperClient")
