@@ -719,6 +719,73 @@ class TelegramNotification(models.Model):
         return f"Telegram · {self.update} · {self.status}"
 
 
+class TradeLifecycleCertification(models.Model):
+    """Latest read-only cross-system certification for one trade lifecycle."""
+
+    STATUS_PENDING = "pending"
+    STATUS_CERTIFIED = "certified"
+    STATUS_DISCREPANCY = "discrepancy"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_CERTIFIED, "Certified"),
+        (STATUS_DISCREPANCY, "Discrepancy"),
+        (STATUS_ERROR, "Audit error"),
+    ]
+
+    signal = models.OneToOneField(
+        TradeSignal,
+        on_delete=models.CASCADE,
+        related_name="lifecycle_certification",
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    lifecycle_certified = models.BooleanField(default=False, db_index=True)
+    checked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    certified_at = models.DateTimeField(null=True, blank=True)
+    checkpoints = models.JSONField(default=dict, blank=True)
+    discrepancy_codes = models.JSONField(default=list, blank=True)
+    discrepancy_details = models.JSONField(default=list, blank=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-checked_at", "-id"]
+
+    def __str__(self):
+        return f"Certification · {self.signal} · {self.status}"
+
+
+class OperationalTelegramAlert(models.Model):
+    """Idempotent operational Telegram warning, separate from public trade history."""
+
+    STATUS_PENDING = "pending"
+    STATUS_SENDING = "sending"
+    STATUS_SENT = "sent"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SENDING, "Sending"),
+        (STATUS_SENT, "Sent"),
+    ]
+
+    idempotency_key = models.CharField(max_length=160, unique=True)
+    signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="operational_alerts")
+    message = models.TextField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"Operational alert · {self.signal} · {self.status}"
+
+
 class BillingProfile(models.Model):
     """Stripe identifiers and the webhook-derived subscription state for one user."""
 

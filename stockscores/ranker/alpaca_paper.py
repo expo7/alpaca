@@ -96,6 +96,18 @@ class AlpacaPaperClient:
         """Return Alpaca's current paper position for an exact asset symbol."""
         return self._request("GET", f"{self.base_url}/v2/positions/{symbol}")
 
+    def orders(self):
+        """Return recent paper orders for read-only reconciliation."""
+        return self._request(
+            "GET",
+            f"{self.base_url}/v2/orders",
+            params={"status": "all", "limit": 500, "direction": "desc", "nested": "true"},
+        )
+
+    def positions(self):
+        """Return all current paper positions for read-only reconciliation."""
+        return self._request("GET", f"{self.base_url}/v2/positions")
+
     def submit_limit_order(self, *, symbol, quantity, side, limit_price, client_order_id):
         intent = "buy_to_open" if side == "buy" else "sell_to_close"
         return self._request(

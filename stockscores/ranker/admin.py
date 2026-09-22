@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AnalyticsEvent, Article, BillingProfile, TradeExecutorHealth, TradeSignal, TradeSignalUpdate
+from .models import AnalyticsEvent, Article, BillingProfile, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .trade_quotes import apply_publication_snapshot
 
 
@@ -118,6 +118,19 @@ class TradeExecutorHealthAdmin(admin.ModelAdmin):
 		"last_completed_at", "last_success_at", "degraded_at", "recovered_at",
 		"consecutive_failures", "last_error", "updated_at",
 	)
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False
+
+
+@admin.register(TradeLifecycleCertification)
+class TradeLifecycleCertificationAdmin(admin.ModelAdmin):
+	list_display = ("signal", "status", "lifecycle_certified", "checked_at", "certified_at", "retry_count")
+	list_filter = ("status", "lifecycle_certified", "checked_at")
+	readonly_fields = ("signal", "status", "lifecycle_certified", "checked_at", "certified_at", "checkpoints", "discrepancy_codes", "discrepancy_details", "retry_count", "created_at", "updated_at")
 
 	def has_add_permission(self, request):
 		return False

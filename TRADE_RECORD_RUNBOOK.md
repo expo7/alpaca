@@ -33,3 +33,29 @@ Once published, the original plan is locked. Corrections and decisions must be a
 - If the automatic publication quote is unavailable, record that fact rather than reconstructing a favorable historical quote later.
 
 The system is ready to record trades; it does not yet select or execute them automatically.
+
+## Lifecycle certification auditor
+
+The server audits unresolved and recently completed paper-trade lifecycles every two minutes. It also schedules an immediate audit after lifecycle transitions and a final delayed audit two minutes after closure. The auditor is observational: it never places, replaces, cancels, or closes an order and never changes a trade's lifecycle state.
+
+Each report reconciles the Quantelle database, Alpaca paper orders and positions, executor state, Guardian heartbeat/protection, Telegram delivery, and the public record. A trade is certified only after every required checkpoint passes. Disagreements are persisted and create one idempotent operational Telegram warning per signal and discrepancy-code set; retries do not create alert spam.
+
+Retrieve the latest reports through the narrow research-operator credential:
+
+```text
+GET /api/operator/lifecycle-certifications/?limit=25
+GET /api/operator/lifecycle-certifications/?signal_id=<id>
+```
+
+The equivalent read-only server command is:
+
+```bash
+python manage.py lifecycle_certification_report --limit 25
+```
+
+Operational checks:
+
+- Beat schedule key: `trade-lifecycle-certification-auditor`; interval: 120 seconds.
+- Task: `ranker.tasks.run_lifecycle_certification_auditor`.
+- A stale/degraded Guardian, broker mismatch, missing Telegram event, duplicate lifecycle artifact, or Alpaca/API failure leaves the lifecycle unchanged and the certification false.
+- `pending` is expected for unresolved trades whose future checkpoints have not occurred.

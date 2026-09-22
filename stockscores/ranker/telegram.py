@@ -8,7 +8,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from .models import TelegramNotification
+from .models import OperationalTelegramAlert, TelegramNotification
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -175,4 +175,51 @@ def deliver_pending_telegram_notifications(limit=25):
     notification_ids.extend(stale_ids)
     for notification_id in notification_ids:
         deliver_telegram_notification.delay(notification_id)
-    return {"status": "ok", "queued": len(notification_ids)}
+    operational_ids = list(
+        OperationalTelegramAlert.objects.filter(status=OperationalTelegramAlert.STATUS_PENDING)
+        .order_by("created_at").values_list("id", flat=True)[:limit]
+    )
+    for alert_id in operational_ids:
+        deliver_operational_telegram_alert.delay(alert_id)
+    return {"status": "ok", "queued": len(notification_ids), "operational_queued": len(operational_ids)}
+
+
+@shared_task(bind=True, name="ranker.deliver_operational_telegram_alert", max_retries=5)
+def deliver_operational_telegram_alert(self, alert_id):
+    if not _telegram_configured():
+        return {"status": "disabled"}
+    with transaction.atomic():
+        alert = OperationalTelegramAlert.objects.select_for_update().get(pk=alert_id)
+        if alert.status == OperationalTelegramAlert.STATUS_SENT:
+            return {"status": "already_sent"}
+        if alert.status == OperationalTelegramAlert.STATUS_SENDING:
+            return {"status": "already_sending"}
+        alert.status = OperationalTelegramAlert.STATUS_SENDING
+        alert.attempt_count += 1
+        alert.last_error = ""
+        alert.save(update_fields=["status", "attempt_count", "last_error", "updated_at"])
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": settings.TELEGRAM_CHAT_ID, "text": alert.message, "disable_web_page_preview": True},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            raise RuntimeError(payload.get("description") or "Telegram rejected the message")
+    except Exception as exc:
+        OperationalTelegramAlert.objects.filter(pk=alert_id).update(
+            status=OperationalTelegramAlert.STATUS_PENDING,
+            last_error=str(exc)[:500],
+            updated_at=timezone.now(),
+        )
+        raise self.retry(exc=exc, countdown=min(300, 2 ** min(alert.attempt_count, 8)))
+    OperationalTelegramAlert.objects.filter(pk=alert_id).update(
+        status=OperationalTelegramAlert.STATUS_SENT,
+        telegram_message_id=payload.get("result", {}).get("message_id"),
+        sent_at=timezone.now(),
+        last_error="",
+        updated_at=timezone.now(),
+    )
+    return {"status": "sent", "message_id": payload.get("result", {}).get("message_id")}

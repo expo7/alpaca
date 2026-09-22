@@ -238,6 +238,10 @@ CELERY_BEAT_SCHEDULE["telegram-notification-outbox"] = {
     "task": "ranker.deliver_pending_telegram_notifications",
     "schedule": 15.0,
 }
+CELERY_BEAT_SCHEDULE["trade-lifecycle-certification-auditor"] = {
+    "task": "ranker.tasks.run_lifecycle_certification_auditor",
+    "schedule": 120.0,
+}
 
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")
 HTTPS_PROXY = os.getenv("HTTPS_PROXY", "")

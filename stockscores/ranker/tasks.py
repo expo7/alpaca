@@ -15,6 +15,7 @@ from .models import (
     TradeSignal, TradeSignalUpdate,
 )
 from .serializers import StrategySpecSerializer, BotConfigSerializer
+from .lifecycle_audit import audit_lifecycles, audit_trade_signal
 
 SCHEDULE_OFFSETS = {
     "1m": timedelta(minutes=1),
@@ -25,6 +26,20 @@ SCHEDULE_OFFSETS = {
 }
 
 EXECUTOR_STALE_AFTER = timedelta(seconds=45)
+
+
+@shared_task(name="ranker.tasks.run_lifecycle_certification_auditor")
+def run_lifecycle_certification_auditor():
+    return audit_lifecycles()
+
+
+@shared_task(name="ranker.tasks.audit_trade_lifecycle")
+def audit_trade_lifecycle(signal_id):
+    signal = TradeSignal.objects.filter(pk=signal_id).first()
+    if not signal:
+        return {"status": "missing", "signal_id": signal_id}
+    record = audit_trade_signal(signal)
+    return {"status": record.status, "signal_id": signal_id}
 
 
 def _money(value):

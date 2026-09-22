@@ -15,7 +15,7 @@ from .serializers import (
     ArticleSerializer,
     TradeSignalSerializer, OperatorTradePublicationSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeSignal
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeLifecycleCertification, TradeSignal
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -55,6 +55,7 @@ from .models import AnalyticsEvent
 from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .operator_auth import ResearchOperatorAuthentication
 from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
+from .lifecycle_audit import certification_payload
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1242,6 +1243,30 @@ class TradeSignalPublicationView(APIView):
             "notification_status": notification.status,
             "already_applied": result.already_applied,
         }, status=status.HTTP_200_OK if result.already_applied else status.HTTP_201_CREATED)
+
+
+class LifecycleCertificationReportView(APIView):
+    """Authenticated, read-only latest lifecycle certification report."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        reports = (
+            TradeLifecycleCertification.objects.select_related("signal")
+            .order_by("-checked_at", "-id")
+        )
+        signal_id = request.query_params.get("signal_id")
+        if signal_id:
+            try:
+                reports = reports.filter(signal_id=int(signal_id))
+            except (TypeError, ValueError):
+                return Response({"detail": "signal_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            limit = min(max(int(request.query_params.get("limit", 25)), 1), 100)
+        except (TypeError, ValueError):
+            return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"count": reports.count(), "results": [certification_payload(item) for item in reports[:limit]]})
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
