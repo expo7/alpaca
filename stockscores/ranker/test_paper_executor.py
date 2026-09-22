@@ -80,7 +80,7 @@ class PaperExecutorTests(TestCase):
     @patch("ranker.tasks.AlpacaPaperClient")
     def test_filled_entry_becomes_open_and_is_recorded(self, client_class):
         signal = self.signal(paper_entry_order_id="paper-entry-1", paper_order_status="accepted")
-        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "submit_market_order", "order"])
         client.clock.return_value = {"is_open": True}
         client.order.return_value = {
             "status": "filled",
@@ -105,7 +105,7 @@ class PaperExecutorTests(TestCase):
             paper_entry_order_id="paper-entry-1",
             paper_last_error="Broker OCO unsupported: legacy rejection",
         )
-        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "submit_market_order", "order"])
         client.clock.return_value = {"is_open": True}
         client.option_quote.return_value = {
             "bid": Decimal("6.90"),
@@ -133,7 +133,7 @@ class PaperExecutorTests(TestCase):
             actual_entry=Decimal("6.88"),
             paper_entry_order_id="paper-entry-1",
         )
-        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "order"])
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "submit_market_order", "order"])
         client.clock.return_value = {"is_open": True}
         client.option_quote.return_value = {
             "bid": Decimal("13.10"),
@@ -155,7 +155,47 @@ class PaperExecutorTests(TestCase):
             quantity=1,
             side="sell",
             limit_price=Decimal("13.10"),
-            client_order_id=f"quantelle-{signal.pk}-exit",
+            client_order_id=f"quantelle-{signal.pk}-target-exit",
+        )
+
+    @patch.dict(os.environ, EXECUTOR_SETTINGS)
+    @patch("ranker.tasks.AlpacaPaperClient")
+    def test_monitored_stop_submits_market_close_to_avoid_stranded_limit(self, client_class):
+        signal = self.signal(
+            status=TradeSignal.STATUS_OPEN,
+            actual_entry=Decimal("6.88"),
+            paper_entry_order_id="paper-entry-1",
+        )
+        client = Mock(spec=["clock", "option_quote", "submit_limit_order", "submit_market_order", "order"])
+        client.clock.return_value = {"is_open": True}
+        client.option_quote.return_value = {
+            "bid": Decimal("4.10"),
+            "ask": Decimal("4.30"),
+            "midpoint": Decimal("4.20"),
+            "spread_pct": Decimal("4.76"),
+        }
+        client.submit_market_order.return_value = {"id": "paper-stop-exit-1", "status": "accepted"}
+        client_class.return_value = client
+
+        result = run_paper_trade_executor()
+
+        signal.refresh_from_db()
+        self.assertEqual(result["signals"][str(signal.pk)], "exit_submitted")
+        self.assertEqual(signal.paper_exit_order_id, "paper-stop-exit-1")
+        self.assertEqual(signal.paper_exit_reason, "stop")
+        client.submit_market_order.assert_called_once_with(
+            symbol="NVDA261016C00240000",
+            quantity=1,
+            side="sell",
+            client_order_id=f"quantelle-{signal.pk}-stop-exit",
+        )
+        client.submit_limit_order.assert_not_called()
+        self.assertTrue(
+            TradeSignalUpdate.objects.filter(
+                signal=signal,
+                event_type="exit_submitted",
+                note__contains="sell market",
+            ).exists()
         )
 
     @patch.dict(os.environ, EXECUTOR_SETTINGS)
