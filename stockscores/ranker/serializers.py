@@ -631,6 +631,7 @@ class OperatorTradePublicationSerializer(serializers.Serializer):
         max_length=8,
     )
     paper_quantity = serializers.IntegerField(min_value=1, max_value=1, default=1)
+    test_mode = serializers.BooleanField(required=False, default=False, write_only=True)
 
     def validate(self, attrs):
         today = timezone.localdate()

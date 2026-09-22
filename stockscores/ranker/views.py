@@ -1142,7 +1142,7 @@ class TradeSignalListView(APIView):
 
     def get(self, request, *args, **kwargs):
         signals = (
-            TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT)
+            TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False)
             .prefetch_related("updates")
             .order_by("-published_at", "-created_at")
         )
@@ -1176,7 +1176,7 @@ class TradeSignalQuoteView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pk, *args, **kwargs):
-        signal = TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(pk=pk).first()
+        signal = TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False, pk=pk).first()
         if not signal:
             return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
         active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
@@ -1236,6 +1236,7 @@ class TradeSignalPublicationView(APIView):
             "contract_symbol": result.signal.contract_symbol,
             "paper_execution_enabled": result.signal.paper_execution_enabled,
             "paper_quantity": result.signal.paper_quantity,
+            "test_mode": result.signal.is_test,
             "event_id": result.update.pk,
             "notification_id": notification.pk,
             "notification_status": notification.status,

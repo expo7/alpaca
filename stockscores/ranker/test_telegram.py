@@ -69,6 +69,16 @@ class TelegramNotificationTests(TestCase):
         self.assertIn(f"https://quantelle.io/signals#trade-{signal.pk}", message)
         self.assertIn("View this trade on Quantelle", message)
 
+    def test_test_trade_is_labeled_and_has_no_public_link(self):
+        signal = self.signal(status=TradeSignal.STATUS_PUBLISHED, is_test=True)
+        update = TradeSignalUpdate.objects.get(signal=signal, event_type="published")
+
+        message = format_trade_update(update)
+
+        self.assertIn("TEST TRADE", message)
+        self.assertIn("NOT A PUBLIC QUANTELLE SIGNAL", message)
+        self.assertNotIn("quantelle.io/signals", message)
+
     @override_settings(
         TELEGRAM_NOTIFICATIONS_ENABLED=True,
         TELEGRAM_BOT_TOKEN="test-token",

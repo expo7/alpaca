@@ -29,6 +29,7 @@ class TradeSignalApiTests(APITestCase):
     def test_public_feed_excludes_drafts_and_includes_completed_updates(self):
         published = self._signal(status=TradeSignal.STATUS_CLOSED)
         self._signal(symbol="AAPL", status=TradeSignal.STATUS_DRAFT)
+        self._signal(symbol="TEST", status=TradeSignal.STATUS_CLOSED, is_test=True)
         TradeSignalUpdate.objects.create(
             signal=published,
             event_type="target",

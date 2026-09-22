@@ -47,6 +47,8 @@ def format_trade_update(update):
         f"<b>{emoji} {html.escape(heading)} · {html.escape(signal.display_instrument)}</b>",
         _line("Status", signal.get_status_display()),
     ]
+    if signal.is_test:
+        lines.insert(0, "<b>🧪 TEST TRADE — NOT A PUBLIC QUANTELLE SIGNAL</b>")
     if update.price is not None:
         price_label = "Fill" if update.event_type == "triggered" else "Price"
         lines.append(_line(price_label, _money(update.price)))
@@ -75,8 +77,9 @@ def format_trade_update(update):
     lines.extend([
         _line("Time", occurred),
         html.escape(update.note),
-        f'<a href="https://quantelle.io/signals#trade-{signal.pk}">View this trade on Quantelle</a>',
     ])
+    if not signal.is_test:
+        lines.append(f'<a href="https://quantelle.io/signals#trade-{signal.pk}">View this trade on Quantelle</a>')
     return "\n".join(line for line in lines if line)
 
 

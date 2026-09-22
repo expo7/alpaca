@@ -40,9 +40,11 @@ def publish_trade_signal(*, validated_data):
     values = dict(validated_data)
     values.pop("request_id")
     values.pop("paper_quantity", None)
+    is_test = values.pop("test_mode", False)
     signal = TradeSignal(
         **values,
         operator_request_id=request_id,
+        is_test=is_test,
         status=TradeSignal.STATUS_PUBLISHED,
         current_stop=values["initial_stop"],
         paper_execution_enabled=True,
