@@ -590,7 +590,8 @@ class TradeSignalSerializer(serializers.ModelSerializer):
     certification_state = serializers.SerializerMethodField()
 
     def get_protection(self, signal):
-        if signal.status != TradeSignal.STATUS_OPEN or not signal.paper_exit_order_id:
+        if (signal.status != TradeSignal.STATUS_OPEN or not signal.paper_exit_order_id
+                or signal.paper_exit_reason not in ("broker_stop", "broker_target")):
             return None
         from datetime import timedelta
         from django.utils import timezone

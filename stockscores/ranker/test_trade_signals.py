@@ -4,9 +4,10 @@ from unittest.mock import patch
 
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import TradeSignal, TradeSignalUpdate
+from .models import TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .trade_quotes import get_paper_position
 
 
@@ -66,6 +67,20 @@ class TradeSignalApiTests(APITestCase):
         self.client.force_authenticate(staff)
         restricted = self.client.get(reverse("trade-signal-list"))
         self.assertIn("Guardian check failed: internal diagnostic", [update["note"] for update in restricted.data[0]["updates"]])
+
+    def test_open_card_only_claims_verified_protection_after_fresh_audit(self):
+        signal = self._signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1",
+                              paper_exit_reason="broker_stop", current_stop=Decimal("9.80"))
+        record = TradeLifecycleCertification.objects.create(
+            signal=signal, checked_at=timezone.now(),
+            checkpoints={"broker_held_protection": {"result": "pass"}},
+        )
+        protection = self.client.get(reverse("trade-signal-list")).data[0]["protection"]
+        self.assertTrue(protection["verified"])
+        self.assertEqual(protection["price"], "9.80")
+        record.checkpoints = {"broker_held_protection": {"result": "fail"}}
+        record.save(update_fields=["checkpoints"])
+        self.assertFalse(self.client.get(reverse("trade-signal-list")).data[0]["protection"]["verified"])
 
     def test_publishing_sets_an_immutable_initial_timestamp(self):
         signal = self._signal(status=TradeSignal.STATUS_DRAFT)
