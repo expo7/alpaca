@@ -139,8 +139,14 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
         checkpoints["broker_order_accepted"] = {"result": "error", "detail": broker_error}
         checkpoints["entry_filled"] = {"result": "error", "detail": broker_error}
     elif signal.status in {TradeSignal.STATUS_CANCELLED, TradeSignal.STATUS_EXPIRED} and signal.actual_entry is None:
-        _not_applicable(checkpoints, "broker_order_accepted", "Unfilled setup requires no accepted entry order.")
-        _not_applicable(checkpoints, "entry_filled", "Setup ended before an entry filled.")
+        if entry_order and entry_order.get("status") == "filled":
+            _checkpoint(checkpoints, codes, details, "broker_order_accepted", True,
+                        "BROKER_ENTRY_MISMATCH", "Recorded entry order exists at Alpaca.")
+            _checkpoint(checkpoints, codes, details, "entry_filled", False,
+                        "ENTRY_FILL_MISMATCH", "Broker entry filled, but Quantelle recorded an unfilled terminal setup.")
+        else:
+            _not_applicable(checkpoints, "broker_order_accepted", "Unfilled setup requires no accepted entry order.")
+            _not_applicable(checkpoints, "entry_filled", "Setup ended before an entry filled.")
         if position is not None:
             _checkpoint(checkpoints, codes, details, "unfilled_broker_position_absent", False,
                         "UNEXPECTED_BROKER_POSITION", "Unfilled terminal setup has a broker position.")

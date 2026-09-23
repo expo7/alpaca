@@ -102,6 +102,12 @@ class LifecycleCertificationTests(TestCase):
         report = audit_trade_signal(signal, client=object(), orders=[], positions=[{"symbol": signal.contract_symbol}])
         self.assertIn("UNEXPECTED_BROKER_POSITION", report.discrepancy_codes)
 
+    def test_unfilled_terminal_setup_detects_broker_fill(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_CANCELLED, paper_entry_order_id="entry-1")
+        orders, _ = self.broker(signal)
+        report = audit_trade_signal(signal, client=object(), orders=orders, positions=[])
+        self.assertIn("ENTRY_FILL_MISMATCH", report.discrepancy_codes)
+
     def test_open_position_requires_one_matching_broker_held_gtc_stop(self):
         signal = self.make_signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1", paper_exit_reason="broker_stop")
         self.set_guardian()
