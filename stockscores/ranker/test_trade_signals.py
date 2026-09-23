@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -67,6 +68,18 @@ class TradeSignalApiTests(APITestCase):
         self.client.force_authenticate(staff)
         restricted = self.client.get(reverse("trade-signal-list"))
         self.assertIn("Guardian check failed: internal diagnostic", [update["note"] for update in restricted.data[0]["updates"]])
+
+    @override_settings(QUANTELLE_RESEARCH_OPERATOR_TOKEN="test-research-operator-token-more-than-32-characters")
+    def test_operator_incident_report_requires_token_and_preserves_diagnostics(self):
+        signal = self._signal(status=TradeSignal.STATUS_OPEN)
+        TradeSignalUpdate.objects.create(signal=signal, event_type="execution_warning",
+                                         audience="staff", note="Internal DNS diagnostic")
+        url = reverse("operator-incident-report")
+        self.assertIn(self.client.get(url).status_code, (401, 403))
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer test-research-operator-token-more-than-32-characters")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["incidents"][0]["note"], "Internal DNS diagnostic")
 
     def test_open_card_only_claims_verified_protection_after_fresh_audit(self):
         signal = self._signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1",

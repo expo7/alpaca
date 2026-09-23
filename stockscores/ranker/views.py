@@ -15,7 +15,7 @@ from .serializers import (
     ArticleSerializer,
     TradeSignalSerializer, OperatorTradePublicationSerializer, OperatorResearchRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, ResearchRun, TradeLifecycleCertification, TradeSignal
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, OperationalTelegramAlert, ResearchRun, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -1301,6 +1301,35 @@ class ResearchRunReportView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response({**run_payload(run), "already_applied": already_applied},
                         status=status.HTTP_200_OK if already_applied else status.HTTP_201_CREATED)
+
+
+class OperatorIncidentReportView(APIView):
+    """Read-only internal incident history on the existing restricted token path."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            limit = min(max(int(request.query_params.get("limit", 50)), 1), 100)
+        except (TypeError, ValueError):
+            return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        updates = TradeSignalUpdate.objects.filter(audience=TradeSignalUpdate.AUDIENCE_STAFF).select_related("signal").order_by("-occurred_at", "-id")[:limit]
+        alerts = OperationalTelegramAlert.objects.select_related("signal").order_by("-created_at", "-id")[:limit]
+        health = TradeExecutorHealth.objects.filter(singleton_id=1).first()
+        return Response({
+            "guardian": None if health is None else {
+                "status": health.status, "entries_paused": health.entries_paused,
+                "last_completed_at": health.last_completed_at, "last_error": health.last_error,
+            },
+            "incidents": [{"id": update.pk, "signal_id": update.signal_id,
+                           "symbol": update.signal.symbol, "event_type": update.event_type,
+                           "note": update.note, "occurred_at": update.occurred_at} for update in updates],
+            "alerts": [{"id": alert.pk, "signal_id": alert.signal_id,
+                        "message": alert.message, "status": alert.status,
+                        "last_error": alert.last_error, "created_at": alert.created_at,
+                        "sent_at": alert.sent_at} for alert in alerts],
+        })
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
