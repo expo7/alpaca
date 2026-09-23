@@ -61,6 +61,18 @@ def run_payload(run, now=None):
     }
 
 
+def research_health(now=None):
+    """Compute freshness even if the watchdog itself has missed a tick."""
+    now = now or timezone.now()
+    latest = ResearchRun.objects.exclude(request_id__isnull=True).order_by("-expected_run_at").first()
+    if latest is None:
+        return {"status": "awaiting_first_report", "next_expected_run_at": next_slot(now), "last_reported_at": None}
+    expected = next_slot(latest.expected_run_at)
+    status = ("overdue" if now > expected + GRACE else
+              "failed" if latest.outcome == "failure" else "fresh")
+    return {"status": status, "next_expected_run_at": expected, "last_reported_at": latest.completed_at}
+
+
 def _alert(run, kind):
     OperationalTelegramAlert.objects.get_or_create(
         idempotency_key=f"research-run:{kind}:{run.expected_run_at:%Y%m%dT%H%MZ}",

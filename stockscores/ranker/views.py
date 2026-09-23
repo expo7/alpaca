@@ -56,7 +56,7 @@ from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .operator_auth import ResearchOperatorAuthentication
 from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
 from .lifecycle_audit import certification_payload
-from .research_runs import next_slot, report_run, run_payload
+from .research_runs import research_health, report_run, run_payload
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1290,8 +1290,7 @@ class ResearchRunReportView(APIView):
 
     def get(self, request, *args, **kwargs):
         runs = ResearchRun.objects.order_by("-expected_run_at")[:25]
-        return Response({"next_expected_run_at": next_slot(timezone.now()),
-                         "results": [run_payload(run) for run in runs]})
+        return Response({"health": research_health(), "results": [run_payload(run) for run in runs]})
 
     def post(self, request, *args, **kwargs):
         serializer = OperatorResearchRunSerializer(data=request.data)

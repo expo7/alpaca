@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import OperationalTelegramAlert, ResearchRun
-from .research_runs import GRACE, monitor_research_runs, next_slot, run_state, scheduled_slots
+from .research_runs import GRACE, monitor_research_runs, next_slot, research_health, run_state, scheduled_slots
 
 
 @override_settings(QUANTELLE_RESEARCH_OPERATOR_TOKEN="test-research-operator-token-more-than-32-characters")
@@ -65,6 +65,7 @@ class ResearchRunTests(APITestCase):
         self.assertEqual(run_state(ResearchRun.objects.get(expected_run_at=next_expected), at), "overdue")
         self.assertEqual(OperationalTelegramAlert.objects.count(), 1)
         self.assertIsNone(OperationalTelegramAlert.objects.get().signal_id)
+        self.assertEqual(research_health(at)["status"], "overdue")
 
     def test_monitor_waits_for_first_authenticated_report(self):
         self.assertEqual(monitor_research_runs()["status"], "awaiting_first_report")
