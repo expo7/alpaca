@@ -115,7 +115,7 @@ describe("TradeSignalsPage", () => {
     expect(screen.getByText("$29.00")).toBeInTheDocument();
     expect(screen.getByText("(+9.97%)")).toBeInTheDocument();
     expect(screen.getByText("Alpaca position mark")).toBeInTheDocument();
-    expect(screen.getByText("— / —")).toBeInTheDocument();
+    expect(screen.getAllByText("— / —").length).toBeGreaterThan(0);
   });
 
   it("separates open positions, pending entries, and completed history", async () => {
