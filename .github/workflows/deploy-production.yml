@@ -86,6 +86,23 @@ jobs:
             git status --short
             exit 1
           fi
+          python3 - <<'PY'
+          from pathlib import Path
+          values = {}
+          for line in Path('.env.docker').read_text().splitlines():
+              if '=' in line and not line.lstrip().startswith('#'):
+                  key, value = line.split('=', 1)
+                  values[key.strip()] = value.strip().strip('"\'')
+          ops = values.get('TELEGRAM_OPERATIONS_CHAT_ID', '')
+          customer = values.get('TELEGRAM_CHAT_ID', '')
+          if not ops or ops == customer:
+              raise SystemExit('Configure a distinct staff operations Telegram chat before deploying.')
+          if values.get('TELEGRAM_NOTIFICATIONS_ENABLED', '').lower() not in ('true', '1', 'yes'):
+              raise SystemExit('Telegram notifications must be enabled for staff incident delivery.')
+          if len(values.get('QUANTELLE_RESEARCH_OPERATOR_TOKEN', '')) < 32:
+              raise SystemExit('The restricted operator token is not configured.')
+          print('Staff alert destination and restricted operator credential configured.')
+          PY
           git fetch origin production
           git switch -C production FETCH_HEAD
 
@@ -115,8 +132,11 @@ jobs:
           docker compose ps
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('trade-lifecycle-certification-auditor'); assert job and job['schedule'] == 120.0; print(job)" < /dev/null
+          docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('research-run-heartbeat'); assert job and job['schedule'] == 300.0; print(job)" < /dev/null
+          docker compose exec -T web python manage.py shell -c "from django.conf import settings; import requests; r=requests.get('http://127.0.0.1:8000/api/operator/research-runs/', headers={'Authorization': 'Bearer '+settings.QUANTELLE_RESEARCH_OPERATOR_TOKEN}, timeout=10); assert r.status_code == 200, r.status_code; print(r.json()['health'])" < /dev/null
           docker compose exec -T web python manage.py shell -c "from ranker.tasks import run_lifecycle_certification_auditor; print(run_lifecycle_certification_auditor())" < /dev/null
           docker compose exec -T web python manage.py lifecycle_certification_report --limit 5 < /dev/null
+          docker compose exec -T web python manage.py shell -c "from ranker.models import TradeSignal; from ranker.lifecycle_audit import audit_trade_signal; open_signals=TradeSignal.objects.filter(status=TradeSignal.STATUS_OPEN, paper_execution_enabled=True); results=[(s.pk, audit_trade_signal(s).checkpoints['broker_held_protection']['result']) for s in open_signals]; print('Open broker protection:', results); assert all(value == 'pass' for _, value in results)" < /dev/null
           REMOTE
 
       - name: Verify public site
