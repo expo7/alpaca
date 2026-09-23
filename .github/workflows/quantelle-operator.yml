@@ -86,8 +86,21 @@ jobs:
                   operator_payload = dict(payload)
                   operator_payload.pop("action")
                   operator_payload["request_id"] = f"github-issue-{issue_number}"
+              elif action == "report_run":
+                  if not issue.get("title", "").startswith("[Quantelle Operator] Report Run"):
+                      raise ValueError("Research reports require the Report Run issue title")
+                  required_keys = {
+                      "action", "expected_run_at", "started_at", "completed_at", "session_type",
+                      "outcome", "market_regime", "candidates_reviewed", "operator_action",
+                      "verified_result", "error_summary",
+                  }
+                  if set(payload) != required_keys:
+                      raise ValueError("Research report fields must match the narrow report_run schema")
+                  operator_url = "https://quantelle.io/api/operator/research-runs/"
+                  operator_payload = dict(payload)
+                  operator_payload["request_id"] = f"github-issue-{issue_number}"
               else:
-                  raise ValueError("Only publish and cancel lifecycle actions are supported")
+                  raise ValueError("Only publish, cancel, and report_run actions are supported")
 
               operator_request = urllib.request.Request(
                   operator_url,
@@ -102,17 +115,27 @@ jobs:
               with urllib.request.urlopen(operator_request, timeout=30) as response:
                   result = json.load(response)
 
-              summary = (
-                  "Quantelle operator action completed.\n\n"
-                  f"- Signal: `{result['signal_id']}`\n"
-                  f"- Status: `{result['status']}`\n"
-                  f"- Contract: `{result.get('contract_symbol', 'n/a')}`\n"
-                  f"- Paper execution: `{str(result.get('paper_execution_enabled', 'n/a')).lower()}`\n"
-                  f"- Test mode: `{str(result.get('test_mode', False)).lower()}`\n"
-                  f"- Event: `{result['event_id']}`\n"
-                  f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
-                  f"- Already applied: `{str(result['already_applied']).lower()}`"
-              )
+              if action == "report_run":
+                  summary = (
+                      "Quantelle research run recorded.\n\n"
+                      f"- Expected: `{result['expected_run_at']}`\n"
+                      f"- Outcome: `{result['outcome']}`\n"
+                      f"- Health: `{result['status']}`\n"
+                      f"- Next expected: `{result['next_expected_run_at']}`\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              else:
+                  summary = (
+                      "Quantelle operator action completed.\n\n"
+                      f"- Signal: `{result['signal_id']}`\n"
+                      f"- Status: `{result['status']}`\n"
+                      f"- Contract: `{result.get('contract_symbol', 'n/a')}`\n"
+                      f"- Paper execution: `{str(result.get('paper_execution_enabled', 'n/a')).lower()}`\n"
+                      f"- Test mode: `{str(result.get('test_mode', False)).lower()}`\n"
+                      f"- Event: `{result['event_id']}`\n"
+                      f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
               github_request("POST", f"/issues/{issue_number}/comments", {"body": summary})
               github_request("PATCH", f"/issues/{issue_number}", {"state": "closed"})
           except Exception as exc:
