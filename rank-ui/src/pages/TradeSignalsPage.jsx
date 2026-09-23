@@ -76,7 +76,7 @@ function CurrentQuote({ signal, token = "" }) {
         <div><div className="text-xs text-slate-500">{signal.symbol} last</div><div className="mt-1 font-semibold text-white">{money(quote?.underlying_price)}</div></div>
         {signal.instrument_type !== "stock" && <>
           <div><div className="text-xs text-slate-500">Option bid / ask</div><div className="mt-1 font-semibold text-white">{money(quote?.option_bid)} / {money(quote?.option_ask)}</div></div>
-          <div><div className="text-xs text-slate-500">Midpoint</div><div className="mt-1 font-semibold text-white">{money(quote?.option_midpoint)}{optionChange !== null && <span className={`ml-1.5 text-xs ${optionChange >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{percent(optionChange)}</span>}</div></div>
+          <div><div className="text-xs text-slate-500">{quote?.option_price_label || "Midpoint"}</div><div className="mt-1 font-semibold text-white">{money(quote?.option_midpoint)}{optionChange !== null && <span className={`ml-1.5 text-xs ${optionChange >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{percent(optionChange)}</span>}</div></div>
           <div><div className="text-xs text-slate-500">Spread / OI</div><div className="mt-1 font-semibold text-white">{quote?.spread_pct != null ? `${Number(quote.spread_pct).toFixed(1)}%` : "—"} / {quote?.option_open_interest ?? "—"}</div></div>
         </>}
       </div>

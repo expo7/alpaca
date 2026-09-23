@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
+        run: python manage.py test ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
 
       - name: Configure production SSH
         env:

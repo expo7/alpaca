@@ -110,3 +110,33 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(position["unrealized_pl"], 29.0)
         self.assertEqual(position["unrealized_pl_pct"], 9.97)
         client_class.return_value.position.assert_called_once_with(signal.contract_symbol)
+
+    @patch("ranker.views.get_paper_position")
+    @patch("ranker.views.get_trade_signal_quote")
+    def test_closed_market_quote_uses_alpaca_position_mark(self, get_quote, get_position):
+        signal = self._signal(
+            status=TradeSignal.STATUS_OPEN,
+            paper_execution_enabled=True,
+            paper_entry_order_id="paper-order-1",
+        )
+        get_quote.return_value = {
+            "available": True,
+            "status": "market_closed",
+            "status_label": "Market closed · last available",
+            "option_bid": None,
+            "option_ask": None,
+            "option_midpoint": None,
+            "option_last": 3.10,
+        }
+        get_position.return_value = {
+            "available": True,
+            "current_price": 3.20,
+            "unrealized_pl": 29.0,
+        }
+
+        response = self.client.get(reverse("trade-signal-quote", args=[signal.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["option_midpoint"], 3.20)
+        self.assertEqual(response.data["option_price_label"], "Alpaca position mark")
+        self.assertTrue(response.data["option_price_is_fallback"])

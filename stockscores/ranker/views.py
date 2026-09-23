@@ -1185,7 +1185,18 @@ class TradeSignalQuoteView(APIView):
         if gate_enabled and active and not user_has_pro_access(request.user):
             return Response({"detail": "Quantelle Pro is required."}, status=status.HTTP_403_FORBIDDEN)
         payload = get_trade_signal_quote(signal)
-        payload["paper_position"] = get_paper_position(signal)
+        position = get_paper_position(signal)
+        payload["paper_position"] = position
+        payload["option_price_label"] = "Midpoint"
+        if signal.instrument_type != "stock" and not payload.get("option_midpoint"):
+            position_mark = position.get("current_price") if position and position.get("available") else None
+            fallback_mark = position_mark or payload.get("option_last")
+            if fallback_mark and float(fallback_mark) > 0:
+                payload["option_midpoint"] = fallback_mark
+                payload["option_price_label"] = (
+                    "Alpaca position mark" if position_mark else "Last option trade"
+                )
+                payload["option_price_is_fallback"] = True
         return Response(payload)
 
 

@@ -92,8 +92,12 @@ describe("TradeSignalsPage", () => {
       }] })
       .mockResolvedValueOnce({ ok: true, json: async () => ({
         available: true,
-        status_label: "Delayed quote",
+        status_label: "Market closed · last available",
         underlying_price: 221.10,
+        option_bid: null,
+        option_ask: null,
+        option_midpoint: 3.20,
+        option_price_label: "Alpaca position mark",
         paper_position: {
           available: true,
           quantity: 1,
@@ -110,6 +114,8 @@ describe("TradeSignalsPage", () => {
     expect(await screen.findByText("Alpaca paper position")).toBeInTheDocument();
     expect(screen.getByText("$29.00")).toBeInTheDocument();
     expect(screen.getByText("(+9.97%)")).toBeInTheDocument();
+    expect(screen.getByText("Alpaca position mark")).toBeInTheDocument();
+    expect(screen.getByText("— / —")).toBeInTheDocument();
   });
 
   it("separates open positions, pending entries, and completed history", async () => {

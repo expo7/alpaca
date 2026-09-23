@@ -98,7 +98,15 @@ def get_trade_signal_quote(signal, use_cache=True):
             row = matches.iloc[0]
             bid = _number(row.get("bid"))
             ask = _number(row.get("ask"))
-            midpoint = round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+            # Closed option chains commonly return 0/0. Those values mean
+            # "no current market", not that the contract is worthless.
+            bid = bid if bid is not None and bid > 0 else None
+            ask = ask if ask is not None and ask > 0 else None
+            midpoint = (
+                round((bid + ask) / 2, 4)
+                if bid is not None and ask is not None and ask >= bid
+                else None
+            )
             spread_pct = round(((ask - bid) / midpoint) * 100, 2) if midpoint and ask >= bid else None
             result.update(
                 option_bid=bid,
