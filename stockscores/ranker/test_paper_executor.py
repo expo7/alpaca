@@ -52,6 +52,17 @@ class PaperExecutorTests(TestCase):
         values.update(overrides)
         return TradeSignal.objects.create(**values)
 
+    @patch.dict(os.environ, EXECUTOR_SETTINGS)
+    @patch("ranker.tasks.AlpacaPaperClient")
+    def test_expired_unfilled_setup_persists_terminal_timestamp(self, client_class):
+        signal = self.signal(entry_deadline=timezone.localdate() - timedelta(days=1))
+        client_class.return_value.clock.return_value = {"is_open": True}
+        result = run_paper_trade_executor()
+        signal.refresh_from_db()
+        self.assertEqual(result["signals"][str(signal.pk)], "expired")
+        self.assertEqual(signal.status, TradeSignal.STATUS_EXPIRED)
+        self.assertIsNotNone(signal.closed_at)
+
     @patch.dict(os.environ, {"ALPACA_PAPER_EXECUTION_ENABLED": "false"})
     @patch("ranker.tasks.AlpacaPaperClient")
     def test_global_switch_prevents_client_creation(self, client_class):

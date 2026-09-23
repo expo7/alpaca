@@ -227,6 +227,7 @@ CELERY_BEAT_SCHEDULE = {
 # outbox task is isolated from paper execution and may safely retry failures.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_OPERATIONS_CHAT_ID = os.getenv("TELEGRAM_OPERATIONS_CHAT_ID", "")
 TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv(
     "TELEGRAM_NOTIFICATIONS_ENABLED", "false"
 ).lower() in ("1", "true", "yes")
@@ -241,6 +242,10 @@ CELERY_BEAT_SCHEDULE["telegram-notification-outbox"] = {
 CELERY_BEAT_SCHEDULE["trade-lifecycle-certification-auditor"] = {
     "task": "ranker.tasks.run_lifecycle_certification_auditor",
     "schedule": 120.0,
+}
+CELERY_BEAT_SCHEDULE["research-run-heartbeat"] = {
+    "task": "ranker.tasks.monitor_research_run_heartbeat",
+    "schedule": 300.0,
 }
 
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")

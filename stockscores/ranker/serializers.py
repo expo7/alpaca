@@ -23,7 +23,7 @@ from rest_framework import serializers
 from .models import UserPreference
 from django.utils.text import slugify
 from itertools import product
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from django.utils import timezone
 
@@ -592,7 +592,16 @@ class TradeSignalSerializer(serializers.ModelSerializer):
     def get_protection(self, signal):
         if signal.status != TradeSignal.STATUS_OPEN or not signal.paper_exit_order_id:
             return None
-        return {"type": signal.paper_exit_reason, "price": str(signal.target_1 if signal.paper_exit_reason == "broker_target" else signal.current_stop or signal.initial_stop)}
+        from datetime import timedelta
+        from django.utils import timezone
+        record = getattr(signal, "lifecycle_certification", None)
+        verified = bool(
+            record and record.checked_at and record.checked_at >= timezone.now() - timedelta(minutes=3)
+            and record.checkpoints.get("broker_held_protection", {}).get("result") == "pass"
+        )
+        return {"type": signal.paper_exit_reason,
+                "price": str(signal.target_1 if signal.paper_exit_reason == "broker_target" else signal.current_stop or signal.initial_stop),
+                "verified": verified, "verified_at": record.checked_at if verified else None}
 
     def get_certification_state(self, signal):
         if signal.status in (TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN):
@@ -621,6 +630,43 @@ class TradeSignalSerializer(serializers.ModelSerializer):
             "paper_execution_enabled", "paper_quantity", "paper_order_status", "paper_filled_at",
             "protection", "certification_state",
         ]
+
+
+class OperatorResearchRunSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=("report_run",))
+    request_id = serializers.RegexField(r"^github-issue-[1-9][0-9]{0,11}$", max_length=64)
+    expected_run_at = serializers.DateTimeField()
+    started_at = serializers.DateTimeField()
+    completed_at = serializers.DateTimeField()
+    session_type = serializers.ChoiceField(choices=("premarket", "regular", "aftermarket", "market_closed"))
+    outcome = serializers.ChoiceField(choices=("publication", "cancellation", "watchlist_no_trade", "failure"))
+    market_regime = serializers.CharField(min_length=3, max_length=80)
+    candidates_reviewed = serializers.IntegerField(min_value=0, max_value=200)
+    operator_action = serializers.ChoiceField(choices=("none", "publish", "cancel", "multiple", "failed"))
+    verified_result = serializers.CharField(max_length=500, allow_blank=True)
+    error_summary = serializers.CharField(max_length=500, allow_blank=True)
+
+    def validate(self, attrs):
+        from django.utils import timezone
+        from .research_runs import is_scheduled_slot
+
+        expected, started, completed = (attrs[key] for key in ("expected_run_at", "started_at", "completed_at"))
+        now = timezone.now()
+        errors = {}
+        if not is_scheduled_slot(expected) or expected > now + timedelta(minutes=5) or expected < now - timedelta(days=7):
+            errors["expected_run_at"] = "Use an actual scheduled weekday slot within the last seven days."
+        if started < expected - timedelta(hours=6) or started > expected + timedelta(hours=6):
+            errors["started_at"] = "Start must be within six hours of the scheduled slot."
+        if completed < started or completed > now + timedelta(minutes=5):
+            errors["completed_at"] = "Completion must follow start and cannot be in the future."
+        if attrs["outcome"] == "failure" and not attrs["error_summary"].strip():
+            errors["error_summary"] = "Summarize the failure."
+        if attrs["operator_action"] != "none" and not attrs["verified_result"].strip():
+            errors["verified_result"] = "Record the verified operator result."
+        if errors:
+            raise serializers.ValidationError(errors)
+        attrs.pop("action")
+        return attrs
 
 
 class OperatorTradePublicationSerializer(serializers.Serializer):

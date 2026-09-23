@@ -13,9 +13,9 @@ from .serializers import (
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
     ArticleSerializer,
-    TradeSignalSerializer, OperatorTradePublicationSerializer,
+    TradeSignalSerializer, OperatorTradePublicationSerializer, OperatorResearchRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeLifecycleCertification, TradeSignal
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, ResearchRun, TradeLifecycleCertification, TradeSignal
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -56,6 +56,7 @@ from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .operator_auth import ResearchOperatorAuthentication
 from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
 from .lifecycle_audit import certification_payload
+from .research_runs import next_slot, report_run, run_payload
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1144,6 +1145,7 @@ class TradeSignalListView(APIView):
     def get(self, request, *args, **kwargs):
         signals = (
             TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False)
+            .select_related("lifecycle_certification")
             .prefetch_related("updates")
             .order_by("-published_at", "-created_at")
         )
@@ -1278,6 +1280,28 @@ class LifecycleCertificationReportView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"count": reports.count(), "results": [certification_payload(item) for item in reports[:limit]]})
+
+
+class ResearchRunReportView(APIView):
+    """Read or submit narrow research heartbeat metadata through the operator token."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        runs = ResearchRun.objects.order_by("-expected_run_at")[:25]
+        return Response({"next_expected_run_at": next_slot(timezone.now()),
+                         "results": [run_payload(run) for run in runs]})
+
+    def post(self, request, *args, **kwargs):
+        serializer = OperatorResearchRunSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            run, already_applied = report_run(serializer.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({**run_payload(run), "already_applied": already_applied},
+                        status=status.HTTP_200_OK if already_applied else status.HTTP_201_CREATED)
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

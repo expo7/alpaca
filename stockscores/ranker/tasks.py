@@ -16,6 +16,7 @@ from .models import (
 )
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 from .lifecycle_audit import audit_lifecycles, audit_trade_signal
+from .research_runs import monitor_research_runs
 
 SCHEDULE_OFFSETS = {
     "1m": timedelta(minutes=1),
@@ -34,6 +35,11 @@ EXIT_ORDER_TERMINAL_STATUSES = {"canceled", "done_for_day", "expired", "rejected
 @shared_task(name="ranker.tasks.run_lifecycle_certification_auditor")
 def run_lifecycle_certification_auditor():
     return audit_lifecycles()
+
+
+@shared_task(name="ranker.tasks.monitor_research_run_heartbeat")
+def monitor_research_run_heartbeat():
+    return monitor_research_runs()
 
 
 @shared_task(name="ranker.tasks.audit_trade_lifecycle")
@@ -279,7 +285,7 @@ def _process_published_signal(signal, client, now, config):
     if signal.entry_deadline and now.date() > signal.entry_deadline:
         signal.status = TradeSignal.STATUS_EXPIRED
         signal.paper_last_error = "Entry deadline passed before activation"
-        signal.save(update_fields=["status", "paper_last_error", "updated_at"])
+        signal.save(update_fields=["status", "closed_at", "paper_last_error", "updated_at"])
         _record_update(signal, "cancelled", "Alpaca paper setup expired before an entry was triggered.")
         return "expired"
     if signal.instrument_type not in {"call", "put"}:

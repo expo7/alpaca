@@ -39,6 +39,8 @@ class LifecycleCertificationTests(TestCase):
             TradeSignalUpdate.objects.create(signal=signal, event_type="triggered", note="Filled")
         if status == TradeSignal.STATUS_CLOSED:
             TradeSignalUpdate.objects.create(signal=signal, event_type="closed", note="Closed")
+        if status in {TradeSignal.STATUS_CANCELLED, TradeSignal.STATUS_EXPIRED}:
+            TradeSignalUpdate.objects.create(signal=signal, event_type="cancelled", note="Ended unfilled")
         for notification in TelegramNotification.objects.filter(update__signal=signal):
             notification.status = TelegramNotification.STATUS_SENT
             notification.sent_at = now
@@ -50,7 +52,11 @@ class LifecycleCertificationTests(TestCase):
         if signal.paper_entry_order_id:
             orders.append({"id": signal.paper_entry_order_id, "status": entry_status, "client_order_id": f"quantelle-{signal.pk}-entry"})
         if signal.paper_exit_order_id:
-            orders.append({"id": signal.paper_exit_order_id, "status": exit_status, "client_order_id": f"quantelle-{signal.pk}-target-exit"})
+            order = {"id": signal.paper_exit_order_id, "status": exit_status, "client_order_id": f"quantelle-{signal.pk}-target-exit"}
+            if signal.status == TradeSignal.STATUS_OPEN:
+                order.update({"status": "new", "type": "stop", "side": "sell", "time_in_force": "gtc",
+                              "qty": "1", "symbol": signal.contract_symbol, "stop_price": str(signal.current_stop or signal.initial_stop)})
+            orders.append(order)
         positions = [{"symbol": signal.contract_symbol, "qty": "1"}] if position else []
         return orders, positions
 
@@ -78,11 +84,51 @@ class LifecycleCertificationTests(TestCase):
         self.set_guardian()
         pending_report = audit_trade_signal(pending, client=object(), orders=[], positions=[])
         self.assertEqual(pending_report.status, TradeLifecycleCertification.STATUS_PENDING)
-        open_signal = self.make_signal(status=TradeSignal.STATUS_OPEN)
+        open_signal = self.make_signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1", paper_exit_reason="broker_stop")
         orders, positions = self.broker(open_signal)
         open_report = audit_trade_signal(open_signal, client=object(), orders=orders, positions=positions)
         self.assertEqual(open_report.status, TradeLifecycleCertification.STATUS_PENDING)
         self.assertEqual(open_report.checkpoints["stop_target_monitoring_active"]["result"], "pass")
+
+    def test_cancelled_unfilled_setup_does_not_require_a_fill_or_broker_order(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_CANCELLED)
+        report = audit_trade_signal(signal, client=object(), orders=[], positions=[])
+        self.assertTrue(report.lifecycle_certified)
+        self.assertEqual(report.checkpoints["entry_filled"]["result"], "not_applicable")
+        self.assertEqual(report.checkpoints["broker_order_accepted"]["result"], "not_applicable")
+
+    def test_unfilled_terminal_setup_with_unexpected_position_fails(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_EXPIRED)
+        report = audit_trade_signal(signal, client=object(), orders=[], positions=[{"symbol": signal.contract_symbol}])
+        self.assertIn("UNEXPECTED_BROKER_POSITION", report.discrepancy_codes)
+
+    def test_open_position_requires_one_matching_broker_held_gtc_stop(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1", paper_exit_reason="broker_stop")
+        self.set_guardian()
+        orders, positions = self.broker(signal)
+        orders[-1].update({"type": "stop", "side": "sell", "time_in_force": "gtc", "qty": "1", "symbol": signal.contract_symbol, "stop_price": "3.00"})
+        report = audit_trade_signal(signal, client=object(), orders=orders, positions=positions)
+        self.assertEqual(report.checkpoints["broker_held_protection"]["result"], "pass")
+        self.assertEqual(report.status, TradeLifecycleCertification.STATUS_PENDING)
+        orders.append({**orders[-1], "id": "duplicate-stop"})
+        report = audit_trade_signal(signal, client=object(), orders=orders, positions=positions)
+        self.assertIn("BROKER_PROTECTION_MISMATCH", report.discrepancy_codes)
+
+    def test_open_position_with_wrong_broker_stop_fails(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1", paper_exit_reason="broker_stop")
+        self.set_guardian()
+        orders, positions = self.broker(signal)
+        orders[-1].update({"type": "stop", "side": "sell", "time_in_force": "gtc", "qty": "1", "symbol": signal.contract_symbol, "stop_price": "2.50"})
+        report = audit_trade_signal(signal, client=object(), orders=orders, positions=positions)
+        self.assertIn("BROKER_PROTECTION_MISMATCH", report.discrepancy_codes)
+
+    def test_open_position_accepts_one_matching_gtc_target_limit(self):
+        signal = self.make_signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="target-1", paper_exit_reason="broker_target")
+        self.set_guardian()
+        orders, positions = self.broker(signal)
+        orders[-1].update({"type": "limit", "limit_price": "6.00", "stop_price": None})
+        report = audit_trade_signal(signal, client=object(), orders=orders, positions=positions)
+        self.assertEqual(report.checkpoints["broker_held_protection"]["result"], "pass")
 
     def test_broker_database_disagreement_is_persisted_and_alerted_once(self):
         signal = self.make_signal()

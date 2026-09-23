@@ -168,7 +168,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
           <div><div className="text-xs text-slate-400">Average fill</div><strong>{money(signal.actual_entry)}</strong></div>
           <div><div className="text-xs text-slate-400">Current stop</div><strong>{money(signal.current_stop || signal.initial_stop)}</strong></div>
           <div><div className="text-xs text-slate-400">Target 1</div><strong>{money(signal.target_1)}</strong></div>
-          <div><div className="text-xs text-slate-400">Broker protection</div><strong>{signal.protection ? `${signal.protection.type === "broker_target" ? "Target limit" : "Stop"} ${money(signal.protection.price)}` : "Checking"}</strong></div>
+          <div><div className="text-xs text-slate-400">{signal.protection?.verified ? "Verified broker protection" : "Recorded protection · verification pending"}</div><strong>{signal.protection ? `${signal.protection.type === "broker_target" ? "Target limit" : "Stop"} ${money(signal.protection.price)}` : "No broker order recorded"}</strong></div>
         </div>}
         {signal.underlying_trigger_price && (
           <details open={isPending} className="mt-5 rounded-xl border border-indigo-500/35 bg-indigo-950/25 p-4">
