@@ -26,6 +26,9 @@ SCHEDULE_OFFSETS = {
 }
 
 EXECUTOR_STALE_AFTER = timedelta(seconds=45)
+BROKER_TARGET_SWITCH_PROGRESS = Decimal("0.75")
+BROKER_STOP_SWITCH_PROGRESS = Decimal("0.60")
+EXIT_ORDER_TERMINAL_STATUSES = {"canceled", "done_for_day", "expired", "rejected", "replaced"}
 
 
 @shared_task(name="ranker.tasks.run_lifecycle_certification_auditor")
@@ -215,6 +218,10 @@ def _reconcile_exit(signal, client):
         exit_reason = signal.paper_exit_reason
         if exit_reason == "oco":
             exit_reason = "stop" if filled_order.get("stop_price") else "target_1"
+        elif exit_reason == "broker_stop":
+            exit_reason = "stop"
+        elif exit_reason == "broker_target":
+            exit_reason = "target_1"
         entry = signal.actual_entry or Decimal("0")
         return_pct = _money(((fill - entry) / entry) * 100) if entry else None
         signal.final_exit = fill
@@ -236,7 +243,7 @@ def _reconcile_exit(signal, client):
             return_pct=return_pct,
         )
         return "exit_filled"
-    if status_value in {"canceled", "done_for_day", "expired", "rejected", "replaced"}:
+    if status_value in EXIT_ORDER_TERMINAL_STATUSES:
         old_order_id = signal.paper_exit_order_id
         was_oco = signal.paper_exit_reason == "oco"
         prior_error = signal.paper_last_error
@@ -248,7 +255,10 @@ def _reconcile_exit(signal, client):
         elif oco_was_unsupported:
             signal.paper_last_error = prior_error
         else:
-            signal.paper_last_error = f"Exit protection {old_order_id} ended with status: {status_value}; replacement required"
+            signal.paper_last_error = (
+                f"Exit protection {old_order_id} ended with status: {status_value}; replacement required"
+                if status_value == "rejected" else ""
+            )
         signal.save(update_fields=[
             "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
             "paper_last_checked_at", "paper_last_error", "updated_at",
@@ -256,7 +266,6 @@ def _reconcile_exit(signal, client):
         if was_oco and status_value == "rejected":
             _record_update(signal, "execution_warning", "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.")
             return "exit_protection_unsupported"
-        _record_update(signal, "execution_warning", f"Alpaca exit protection ended with status {status_value}; Quantelle will replace it.")
         return "exit_protection_replacement_required"
     signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "paper_last_error", "updated_at"])
     return status_value or "exit_pending"
@@ -324,50 +333,43 @@ def _process_published_signal(signal, client, now, config):
     return "entry_submitted"
 
 
-def _process_open_signal(signal, client, now):
-    if signal.paper_exit_order_id:
-        return _reconcile_exit(signal, client)
-    stop = signal.current_stop or signal.initial_stop
-    # Alpaca rejects broker-held OCO exits for these single-leg option
-    # positions, so Quantelle monitors the quote and submits one closing order
-    # only when the published stop or first target is reached.
-    quote = client.option_quote(signal.contract_symbol)
-    bid = quote["bid"]
-    if bid <= stop:
-        reason = "stop"
-    elif bid >= signal.target_1:
-        reason = "target_1"
-    else:
-        signal.paper_last_checked_at = now
-        update_fields = ["paper_last_checked_at", "updated_at"]
-        if signal.paper_last_error.startswith("Broker OCO unsupported:"):
-            signal.paper_last_error = ""
-            update_fields.append("paper_last_error")
-        signal.save(update_fields=update_fields)
-        return "position_open"
+def _exit_progress(bid, stop, target):
+    width = target - stop
+    if width <= 0:
+        return Decimal("0")
+    return (bid - stop) / width
 
-    if reason == "stop":
-        # A limit at the observed bid can be left behind by a fast decline,
-        # leaving the position open after its risk boundary was crossed. Once
-        # the published stop is breached, prioritize closing the paper option.
-        order = client.submit_market_order(
-            symbol=signal.contract_symbol,
-            quantity=signal.paper_quantity,
-            side="sell",
-            client_order_id=f"quantelle-{signal.pk}-stop-exit",
-        )
-        order_description = "market"
-    else:
+
+def _desired_broker_exit(signal, bid):
+    """Choose one broker-held order with hysteresis to prevent order churn."""
+    stop = signal.current_stop or signal.initial_stop
+    progress = _exit_progress(bid, stop, signal.target_1)
+    if signal.paper_exit_reason == "broker_target":
+        return "broker_stop" if progress < BROKER_STOP_SWITCH_PROGRESS else "broker_target"
+    return "broker_target" if progress >= BROKER_TARGET_SWITCH_PROGRESS else "broker_stop"
+
+
+def _submit_broker_exit(signal, client, desired, now):
+    generation = int(now.timestamp())
+    if desired == "broker_target":
         order = client.submit_limit_order(
             symbol=signal.contract_symbol,
             quantity=signal.paper_quantity,
             side="sell",
-            limit_price=_money(bid),
-            client_order_id=f"quantelle-{signal.pk}-target-exit",
+            limit_price=_money(signal.target_1),
+            client_order_id=f"quantelle-{signal.pk}-target-{generation}",
+            time_in_force="gtc",
         )
-        order_description = f"limit at ${_money(bid)}"
+    else:
+        stop = _money(signal.current_stop or signal.initial_stop)
+        order = client.submit_stop_order(
+            symbol=signal.contract_symbol,
+            quantity=signal.paper_quantity,
+            stop_price=stop,
+            client_order_id=f"quantelle-{signal.pk}-stop-{generation}",
+        )
     signal.paper_exit_order_id = order["id"]
-    signal.paper_exit_reason = reason
+    signal.paper_exit_reason = desired
     signal.paper_order_status = order.get("status", "submitted")[:32]
     signal.paper_last_checked_at = now
     signal.paper_last_error = ""
@@ -375,13 +377,53 @@ def _process_open_signal(signal, client, now):
         "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
         "paper_last_checked_at", "paper_last_error", "updated_at",
     ])
-    _record_update(
-        signal,
-        "exit_submitted",
-        f"Submitted Alpaca paper sell {order_description} ({reason}; trigger bid ${_money(bid)}).",
-        price=_money(bid),
-    )
-    return "exit_submitted"
+    return "broker_exit_protection_submitted"
+
+
+def _process_open_signal(signal, client, now):
+    if signal.paper_exit_order_id:
+        reconciliation = _reconcile_exit(signal, client)
+        signal.refresh_from_db()
+        if reconciliation == "exit_filled":
+            return reconciliation
+
+    quote = client.option_quote(signal.contract_symbol)
+    bid = quote["bid"]
+    stop = signal.current_stop or signal.initial_stop
+
+    if signal.paper_exit_order_id:
+        if signal.paper_order_status in {"pending_cancel", "pending_replace"}:
+            return "broker_exit_switch_pending"
+        desired = _desired_broker_exit(signal, bid)
+        if desired == signal.paper_exit_reason:
+            return "broker_exit_protection_active"
+        client.cancel_order(signal.paper_exit_order_id)
+        signal.paper_order_status = "pending_cancel"
+        signal.paper_last_checked_at = now
+        signal.save(update_fields=["paper_order_status", "paper_last_checked_at", "updated_at"])
+        return "broker_exit_switch_pending"
+
+    # Preserve the original monitored exit as a fail-safe if broker protection
+    # is absent when a boundary has already been crossed.
+    if bid <= stop:
+        order = client.submit_market_order(
+            symbol=signal.contract_symbol,
+            quantity=signal.paper_quantity,
+            side="sell",
+            client_order_id=f"quantelle-{signal.pk}-stop-fallback-{int(now.timestamp())}",
+        )
+        signal.paper_exit_order_id = order["id"]
+        signal.paper_exit_reason = "stop"
+        signal.paper_order_status = order.get("status", "submitted")[:32]
+        signal.paper_last_checked_at = now
+        signal.paper_last_error = ""
+        signal.save(update_fields=[
+            "paper_exit_order_id", "paper_exit_reason", "paper_order_status",
+            "paper_last_checked_at", "paper_last_error", "updated_at",
+        ])
+        return "monitored_stop_fallback_submitted"
+
+    return _submit_broker_exit(signal, client, _desired_broker_exit(signal, bid), now)
 
 
 @shared_task

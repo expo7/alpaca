@@ -32,7 +32,21 @@ Once published, the original plan is locked. Corrections and decisions must be a
 - Review the public card immediately after publication.
 - If the automatic publication quote is unavailable, record that fact rather than reconstructing a favorable historical quote later.
 
-The system is ready to record trades; it does not yet select or execute them automatically.
+## Paper execution and broker-held exit protection
+
+The paper executor evaluates published and open signals every 15 seconds during the market session. Entry and exit decisions remain Quantelle decisions; Alpaca paper trading is the only authorized brokerage destination.
+
+Alpaca does not support OCO/bracket order classes for these single-leg option exits and will not accept two competing sell-to-close orders for the same one-contract position. Quantelle therefore maintains exactly one broker-held `GTC` exit order per open position:
+
+- A sell-to-close stop is the default protection.
+- At 75% progress from the current stop to the first target, the executor switches to a `GTC` take-profit limit.
+- If price falls below 60% progress while the target order is working, it switches back to the stop. This hysteresis prevents repeated order churn.
+- A switch is always cancel, confirm terminal cancellation, then submit the replacement. Never submit the second sell order while the first is open or pending cancellation.
+- If no broker order is present and the stop has already been crossed, the original monitored market-exit path remains the fail-safe.
+
+Working-order placement, cancellation, replacement, and reconciliation are execution mechanics and must not create customer Telegram lifecycle events. Customers continue to receive actual lifecycle events such as fills, strategy stop changes, targets, cancellations, and completed exits. Operational discrepancies remain eligible for the separate idempotent operational warning path.
+
+At the start of an incident review, verify that every open paper option has at most one Quantelle sell-to-close order and that its recorded order ID, type, price, quantity, and status match Alpaca. Never repair a disagreement by placing a second exit before the first order is confirmed terminal.
 
 ## Lifecycle certification auditor
 

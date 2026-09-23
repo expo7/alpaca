@@ -72,6 +72,8 @@ class AlpacaPaperClient:
         if response.status_code >= 400:
             detail = response.text[:200]
             raise PaperTradingError(f"Alpaca returned {response.status_code}: {detail}")
+        if response.status_code == 204 or not response.content:
+            return {}
         return response.json()
 
     def _require_fresh_quote(self, timestamp):
@@ -92,6 +94,10 @@ class AlpacaPaperClient:
         params = {"nested": "true"} if nested else None
         return self._request("GET", f"{self.base_url}/v2/orders/{order_id}", params=params)
 
+    def cancel_order(self, order_id):
+        """Request cancellation; callers must confirm the terminal status."""
+        return self._request("DELETE", f"{self.base_url}/v2/orders/{order_id}")
+
     def position(self, symbol):
         """Return Alpaca's current paper position for an exact asset symbol."""
         return self._request("GET", f"{self.base_url}/v2/positions/{symbol}")
@@ -108,7 +114,7 @@ class AlpacaPaperClient:
         """Return all current paper positions for read-only reconciliation."""
         return self._request("GET", f"{self.base_url}/v2/positions")
 
-    def submit_limit_order(self, *, symbol, quantity, side, limit_price, client_order_id):
+    def submit_limit_order(self, *, symbol, quantity, side, limit_price, client_order_id, time_in_force="day"):
         intent = "buy_to_open" if side == "buy" else "sell_to_close"
         return self._request(
             "POST",
@@ -118,10 +124,27 @@ class AlpacaPaperClient:
                 "qty": str(quantity),
                 "side": side,
                 "type": "limit",
-                "time_in_force": "day",
+                "time_in_force": time_in_force,
                 "limit_price": str(limit_price),
                 "client_order_id": client_order_id,
                 "position_intent": intent,
+            },
+        )
+
+    def submit_stop_order(self, *, symbol, quantity, stop_price, client_order_id):
+        """Leave one broker-held GTC stop protecting a long option position."""
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": "sell",
+                "type": "stop",
+                "time_in_force": "gtc",
+                "stop_price": str(stop_price),
+                "client_order_id": client_order_id,
+                "position_intent": "sell_to_close",
             },
         )
 
