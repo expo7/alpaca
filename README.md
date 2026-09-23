@@ -10,6 +10,8 @@
 - Uses background jobs for strategy execution, portfolio snapshots, and leaderboards.
 - Sends configured trade-event notifications through Telegram, linking back to the relevant trade card.
 
+Operational Guardian, broker, and research-run incidents are retained in staff records and use a separate `TELEGRAM_OPERATIONS_CHAT_ID` when configured. Do not set it to the customer `TELEGRAM_CHAT_ID`: the customer channel receives trade-specific lifecycle events, while infrastructure details stay internal. The research-run heartbeat begins checking for missed weekday slots after its first authenticated report; a missing report can indicate task availability, usage limits, connector trouble, or platform failure and does not by itself identify the cause.
+
 The aim is an auditable record of decisions and outcomes, including trades that never fill or are cancelled. Features and signal availability can change as the product develops.
 
 ## Architecture

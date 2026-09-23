@@ -4,10 +4,18 @@ from unittest.mock import Mock, patch
 from django.test import TestCase, override_settings
 
 from .models import OperationalTelegramAlert, TelegramNotification, TradeSignal, TradeSignalUpdate
-from .telegram import deliver_operational_telegram_alert, deliver_telegram_notification, format_trade_update
+from .telegram import deliver_operational_telegram_alert, deliver_pending_telegram_notifications, deliver_telegram_notification, format_trade_update
 
 
 class TelegramNotificationTests(TestCase):
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="", TELEGRAM_OPERATIONS_CHAT_ID="staff")
+    @patch("ranker.telegram.deliver_operational_telegram_alert.delay")
+    def test_staff_outbox_runs_without_customer_channel(self, enqueue):
+        alert = OperationalTelegramAlert.objects.create(signal=self.signal(), idempotency_key="staff-only", message="Internal")
+        result = deliver_pending_telegram_notifications()
+        self.assertEqual(result["operational_queued"], 1)
+        enqueue.assert_called_once_with(alert.pk)
+
     @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="customer", TELEGRAM_OPERATIONS_CHAT_ID="")
     @patch("ranker.telegram.requests.post")
     def test_operational_alert_never_falls_back_to_customer_channel(self, post):

@@ -153,7 +153,7 @@ def deliver_telegram_notification(self, notification_id):
 
 @shared_task(name="ranker.deliver_pending_telegram_notifications")
 def deliver_pending_telegram_notifications(limit=25):
-    if not _telegram_configured():
+    if not _telegram_configured() and not _operations_configured():
         return {"status": "disabled", "queued": 0}
 
     stale_before = timezone.now() - timedelta(minutes=5)
@@ -164,7 +164,7 @@ def deliver_pending_telegram_notifications(limit=25):
         )
         .order_by("created_at")
         .values_list("id", flat=True)[:limit]
-    )
+    ) if _telegram_configured() else []
     stale_ids = list(
         TelegramNotification.objects.filter(
             status=TelegramNotification.STATUS_SENDING,
@@ -174,7 +174,7 @@ def deliver_pending_telegram_notifications(limit=25):
         .exclude(id__in=notification_ids)
         .order_by("updated_at")
         .values_list("id", flat=True)[: max(0, limit - len(notification_ids))]
-    )
+    ) if _telegram_configured() else []
     if stale_ids:
         TelegramNotification.objects.filter(id__in=stale_ids).update(
             status=TelegramNotification.STATUS_PENDING,
