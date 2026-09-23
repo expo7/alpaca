@@ -17,7 +17,7 @@ jobs:
   verify-and-deploy:
     name: Verify and deploy Quantelle
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out production
@@ -65,6 +65,14 @@ jobs:
           printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Package and upload tested frontend
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          tar -C rank-ui -czf /tmp/quantelle-rank-ui-dist.tgz dist
+          scp -i ~/.ssh/quantelle_deploy /tmp/quantelle-rank-ui-dist.tgz "$PROD_USER@$PROD_HOST:/tmp/quantelle-rank-ui-dist.tgz"
+
       - name: Deploy production branch
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
@@ -80,11 +88,28 @@ jobs:
           fi
           git fetch origin production
           git switch -C production FETCH_HEAD
-          cd rank-ui
-          npm ci
-          npm run build
-          cd /opt/alpaca
-          docker compose build web worker beat execution_guardian
+
+          frontend_stage="$(mktemp -d /opt/alpaca/rank-ui/.dist-stage.XXXXXX)"
+          cleanup_frontend_stage() {
+            rm -rf "$frontend_stage"
+            rm -f /tmp/quantelle-rank-ui-dist.tgz
+          }
+          trap cleanup_frontend_stage EXIT
+          tar -xzf /tmp/quantelle-rank-ui-dist.tgz -C "$frontend_stage"
+          test -f "$frontend_stage/dist/index.html"
+          rm -rf /opt/alpaca/rank-ui/dist.previous
+          if [ -d /opt/alpaca/rank-ui/dist ]; then
+            mv /opt/alpaca/rank-ui/dist /opt/alpaca/rank-ui/dist.previous
+          fi
+          if ! mv "$frontend_stage/dist" /opt/alpaca/rank-ui/dist; then
+            if [ -d /opt/alpaca/rank-ui/dist.previous ]; then
+              mv /opt/alpaca/rank-ui/dist.previous /opt/alpaca/rank-ui/dist
+            fi
+            exit 1
+          fi
+          rm -rf /opt/alpaca/rank-ui/dist.previous
+
+          docker compose build web
           docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
           docker compose up -d web worker beat execution_guardian
           docker compose ps

@@ -6,6 +6,7 @@ db.sqlite3
 *.sqlite3
 node_modules
 rank-ui/node_modules
+rank-ui/dist
 .git
 .env
 .env.*

@@ -1,6 +1,7 @@
 services:
   web:
     restart: unless-stopped
+    image: quantelle-app:production
     build: .
     command: sh -c "python manage.py migrate && gunicorn stockscores.wsgi:application --bind 0.0.0.0:8000"
     env_file:
@@ -16,6 +17,7 @@ services:
 
   worker:
     restart: unless-stopped
+    image: quantelle-app:production
     build: .
     command: celery -A stockscores worker -l info
     env_file:
@@ -28,6 +30,7 @@ services:
 
   beat:
     restart: unless-stopped
+    image: quantelle-app:production
     build: .
     command: celery -A stockscores beat -l info
     env_file:
@@ -40,6 +43,7 @@ services:
 
   execution_guardian:
     restart: unless-stopped
+    image: quantelle-app:production
     build: .
     command: python manage.py execution_guardian --interval 30
     env_file:
