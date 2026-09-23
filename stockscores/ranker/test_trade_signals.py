@@ -47,6 +47,26 @@ class TradeSignalApiTests(APITestCase):
         target_updates = [update for update in response.data[0]["updates"] if update["event_type"] == "target"]
         self.assertEqual(target_updates[0]["note"], "First target reached.")
 
+    def test_guardian_incident_is_staff_only_and_not_in_customer_outbox(self):
+        from django.contrib.auth import get_user_model
+
+        signal = self._signal(status=TradeSignal.STATUS_OPEN)
+        incident = TradeSignalUpdate.objects.create(
+            signal=signal, event_type="execution_warning", audience="staff",
+            note="Guardian check failed: internal diagnostic",
+        )
+        TradeSignalUpdate.objects.create(signal=signal, event_type="note", note="Trade thesis remains intact.")
+        self.assertFalse(hasattr(incident, "telegram_notification"))
+        public = self.client.get(reverse("trade-signal-list"))
+        public_notes = [update["note"] for update in public.data[0]["updates"]]
+        self.assertIn("Trade thesis remains intact.", public_notes)
+        self.assertNotIn("Guardian check failed: internal diagnostic", public_notes)
+
+        staff = get_user_model().objects.create_user(username="operator-staff", password="test-password", is_staff=True)
+        self.client.force_authenticate(staff)
+        restricted = self.client.get(reverse("trade-signal-list"))
+        self.assertIn("Guardian check failed: internal diagnostic", [update["note"] for update in restricted.data[0]["updates"]])
+
     def test_publishing_sets_an_immutable_initial_timestamp(self):
         signal = self._signal(status=TradeSignal.STATUS_DRAFT)
         self.assertIsNone(signal.published_at)

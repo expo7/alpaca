@@ -102,6 +102,8 @@ def deliver_telegram_notification(self, notification_id):
             .select_related("update__signal")
             .get(pk=notification_id)
         )
+        if notification.update.audience != "customer":
+            return {"status": "staff_only"}
         if notification.status == TelegramNotification.STATUS_SENT:
             return {"status": "already_sent"}
         if notification.status == TelegramNotification.STATUS_SENDING:
@@ -154,6 +156,7 @@ def deliver_pending_telegram_notifications(limit=25):
     notification_ids = list(
         TelegramNotification.objects.filter(
             status=TelegramNotification.STATUS_PENDING,
+            update__audience="customer",
         )
         .order_by("created_at")
         .values_list("id", flat=True)[:limit]
@@ -161,6 +164,7 @@ def deliver_pending_telegram_notifications(limit=25):
     stale_ids = list(
         TelegramNotification.objects.filter(
             status=TelegramNotification.STATUS_SENDING,
+            update__audience="customer",
             updated_at__lt=stale_before,
         )
         .exclude(id__in=notification_ids)

@@ -6,6 +6,25 @@ import TradeSignalsPage from "../pages/TradeSignalsPage.jsx";
 describe("TradeSignalsPage", () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it("keeps staff incidents out of the latest customer update and folds an open entry plan", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+      id: 88, symbol: "QCOM", instrument: "QCOM call", status: "open", status_label: "Open",
+      risk_level: "moderate", instrument_type: "call", entry_low: "8.00", initial_stop: "6.25",
+      current_stop: "6.25", target_1: "12.00", actual_entry: "8.50", protection: { type: "broker_stop", price: "6.25" },
+      underlying_trigger_price: "150.00", trigger_direction: "above", trigger_confirmation: "Two five minute closes",
+      do_not_chase_price: "9.00", entry_deadline: "2026-09-25", thesis: "Breakout thesis",
+      published_at: "2026-09-22T14:00:00Z", updates: [
+        { id: 1, audience: "customer", note: "Entry filled.", occurred_at: "2026-09-22T15:00:00Z" },
+        { id: 2, audience: "staff", note: "Guardian DNS diagnostic", occurred_at: "2026-09-22T16:00:00Z" },
+      ],
+    }] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("Entry filled.")).toBeInTheDocument();
+    expect(screen.queryByText("Guardian DNS diagnostic")).not.toBeInTheDocument();
+    expect(screen.getByText("Original entry plan")).toBeInTheDocument();
+    expect(screen.getByText("Stop $6.25")).toBeInTheDocument();
+  });
+
   it("shows the empty state before the first publication", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
     render(<TradeSignalsPage />);

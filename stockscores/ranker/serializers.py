@@ -578,14 +578,33 @@ class TradeSignalUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TradeSignalUpdate
-        fields = ["id", "event_type", "event_label", "note", "price", "return_pct", "occurred_at"]
+        fields = ["id", "event_type", "event_label", "audience", "note", "price", "return_pct", "occurred_at"]
 
 
 class TradeSignalSerializer(serializers.ModelSerializer):
     instrument = serializers.CharField(source="display_instrument", read_only=True)
     contract_symbol = serializers.CharField(read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
-    updates = TradeSignalUpdateSerializer(many=True, read_only=True)
+    updates = serializers.SerializerMethodField()
+    protection = serializers.SerializerMethodField()
+    certification_state = serializers.SerializerMethodField()
+
+    def get_protection(self, signal):
+        if signal.status != TradeSignal.STATUS_OPEN or not signal.paper_exit_order_id:
+            return None
+        return {"type": signal.paper_exit_reason, "price": str(signal.target_1 if signal.paper_exit_reason == "broker_target" else signal.current_stop or signal.initial_stop)}
+
+    def get_certification_state(self, signal):
+        if signal.status in (TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN):
+            return None
+        record = getattr(signal, "lifecycle_certification", None)
+        return record.status if record else "pending"
+
+    def get_updates(self, signal):
+        updates = signal.updates.all()
+        if not self.context.get("include_staff_updates"):
+            updates = [update for update in updates if update.audience == TradeSignalUpdate.AUDIENCE_CUSTOMER]
+        return TradeSignalUpdateSerializer(updates, many=True).data
 
     class Meta:
         model = TradeSignal
@@ -600,6 +619,7 @@ class TradeSignalSerializer(serializers.ModelSerializer):
             "publication_option_volume", "publication_option_open_interest", "publication_quote_at",
             "publication_quote_source", "published_at", "closed_at", "updates",
             "paper_execution_enabled", "paper_quantity", "paper_order_status", "paper_filled_at",
+            "protection", "certification_state",
         ]
 
 

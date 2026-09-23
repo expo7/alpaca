@@ -123,7 +123,10 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
   const entry = signal.entry_high && signal.entry_high !== signal.entry_low
     ? `${money(signal.entry_low)}–${money(signal.entry_high)}`
     : money(signal.entry_low);
-  const latest = signal.updates?.[signal.updates.length - 1];
+  const customerUpdates = (signal.updates || []).filter((update) => update.audience !== "staff");
+  const latest = customerUpdates[customerUpdates.length - 1];
+  const isPending = signal.status === "published";
+  const isOpen = signal.status === "open";
   const returnValue = signal.realized_return_pct ?? signal.max_return_pct;
   const positive = Number(returnValue) >= 0;
   const entryReference = signal.actual_entry
@@ -161,9 +164,16 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
           </div>
         </div>
 
+        {isOpen && <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-sky-800/60 bg-sky-950/25 p-4 text-sm sm:grid-cols-4">
+          <div><div className="text-xs text-slate-400">Average fill</div><strong>{money(signal.actual_entry)}</strong></div>
+          <div><div className="text-xs text-slate-400">Current stop</div><strong>{money(signal.current_stop || signal.initial_stop)}</strong></div>
+          <div><div className="text-xs text-slate-400">Target 1</div><strong>{money(signal.target_1)}</strong></div>
+          <div><div className="text-xs text-slate-400">Broker protection</div><strong>{signal.protection ? `${signal.protection.type === "broker_target" ? "Target limit" : "Stop"} ${money(signal.protection.price)}` : "Checking"}</strong></div>
+        </div>}
         {signal.underlying_trigger_price && (
-          <div className="mt-5 rounded-xl border border-indigo-500/35 bg-indigo-950/25 p-4">
-            <div className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-300">Entry trigger</div>
+          <details open={isPending} className="mt-5 rounded-xl border border-indigo-500/35 bg-indigo-950/25 p-4">
+            <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.16em] text-indigo-300">{isPending ? "Entry trigger" : "Original entry plan"}</summary>
+            {!isPending && <div className="mt-3 text-sm text-slate-400">Entry range {entry} · Invalidation: {signal.invalidation || "—"}</div>}
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-lg font-bold text-white">{signal.symbol} {signal.trigger_direction === "below" ? "below" : "above"} {money(signal.underlying_trigger_price)}</span>
               {signal.trigger_confirmation && <span className="text-sm text-slate-300">{signal.trigger_confirmation}</span>}
@@ -173,12 +183,12 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
               {signal.entry_deadline && <span>Entry deadline <strong className="text-slate-200">{dateOnly(signal.entry_deadline)}</strong></span>}
               <span>Official fill: <strong className="text-slate-200">{signal.official_fill_method === "midpoint" ? "midpoint at activation" : "ask at activation"}</strong></span>
             </div>
-          </div>
+          </details>
         )}
 
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
           <div><div className="text-xs uppercase tracking-wide text-slate-500">{signal.instrument_type === "stock" ? "Share entry plan" : "Option entry plan"}</div><div className="mt-1 font-semibold text-white">{entry}</div>{signal.instrument_type !== "stock" && <div className="mt-0.5 text-xs text-slate-600">premium per share</div>}</div>
-          <div><div className="text-xs uppercase tracking-wide text-slate-500">Initial stop</div><PlanValue value={signal.initial_stop} entryReference={entryReference} tone="text-rose-300" /></div>
+          <div><div className="text-xs uppercase tracking-wide text-slate-500">{isOpen ? "Current stop" : "Initial stop"}</div><PlanValue value={isOpen ? signal.current_stop || signal.initial_stop : signal.initial_stop} entryReference={entryReference} tone="text-rose-300" /></div>
           <div><div className="text-xs uppercase tracking-wide text-slate-500">Target 1</div><PlanValue value={signal.target_1} entryReference={entryReference} tone="text-emerald-300" /></div>
           <div><div className="text-xs uppercase tracking-wide text-slate-500">Targets 2 / 3</div><div className="flex flex-wrap gap-x-2"><PlanValue value={signal.target_2} entryReference={entryReference} tone="text-emerald-300" /><PlanValue value={signal.target_3} entryReference={entryReference} tone="text-emerald-300" /></div></div>
         </div>
@@ -228,6 +238,8 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
             <span className={`text-xl font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>{percent(returnValue)}</span>
           </div>
         )}
+        {archived && <div className="mt-3 flex gap-6 text-sm text-slate-300"><span>Fill: {money(signal.actual_entry)}</span><span>Exit: {money(signal.final_exit)}</span></div>}
+        {archived && <div className="mt-2 text-xs text-slate-400">Lifecycle certification: {signal.certification_state || "Pending"}{signal.paper_exit_reason ? ` · Exit: ${signal.paper_exit_reason}` : ""}</div>}
       </div>
     </article>
   );

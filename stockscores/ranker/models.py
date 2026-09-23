@@ -652,6 +652,9 @@ class TradeExecutorHealth(models.Model):
 
 
 class TradeSignalUpdate(models.Model):
+    AUDIENCE_CUSTOMER = "customer"
+    AUDIENCE_STAFF = "staff"
+    AUDIENCE_CHOICES = [(AUDIENCE_CUSTOMER, "Customer"), (AUDIENCE_STAFF, "Staff")]
     EVENT_CHOICES = [
         ("published", "Setup published"),
         ("entry_submitted", "Entry order submitted"),
@@ -669,6 +672,7 @@ class TradeSignalUpdate(models.Model):
 
     signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="updates")
     event_type = models.CharField(max_length=20, choices=EVENT_CHOICES, default="note")
+    audience = models.CharField(max_length=8, choices=AUDIENCE_CHOICES, default=AUDIENCE_CUSTOMER, db_index=True)
     note = models.TextField()
     price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     return_pct = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)

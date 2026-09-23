@@ -84,7 +84,7 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
     now = now or timezone.now()
     checkpoints, codes, details = {}, [], []
     pending = signal.status in UNRESOLVED_STATUSES
-    updates = list(signal.updates.select_related("telegram_notification").all())
+    updates = list(signal.updates.filter(audience=TradeSignalUpdate.AUDIENCE_CUSTOMER).select_related("telegram_notification"))
     event_types = [update.event_type for update in updates]
 
     publication_ok = bool(signal.published_at and "published" in event_types)

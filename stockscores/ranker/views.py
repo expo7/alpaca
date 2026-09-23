@@ -1165,7 +1165,7 @@ class TradeSignalListView(APIView):
                     "is_locked": True,
                 })
                 continue
-            item = TradeSignalSerializer(signal).data
+            item = TradeSignalSerializer(signal, context={"include_staff_updates": bool(request.user and request.user.is_staff)}).data
             item["is_locked"] = False
             payload.append(item)
         return Response(payload)

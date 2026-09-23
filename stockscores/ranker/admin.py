@@ -95,8 +95,8 @@ class TradeSignalAdmin(admin.ModelAdmin):
 
 @admin.register(TradeSignalUpdate)
 class TradeSignalUpdateAdmin(admin.ModelAdmin):
-	list_display = ("occurred_at", "signal", "event_type", "price", "return_pct")
-	list_filter = ("event_type", "occurred_at")
+	list_display = ("occurred_at", "signal", "event_type", "audience", "price", "return_pct")
+	list_filter = ("event_type", "audience", "occurred_at")
 	search_fields = ("signal__symbol", "note")
 	ordering = ("-occurred_at",)
 
@@ -104,7 +104,7 @@ class TradeSignalUpdateAdmin(admin.ModelAdmin):
 		return False
 
 	def get_readonly_fields(self, request, obj=None):
-		return () if obj is None else ("signal", "occurred_at", "event_type", "price", "return_pct", "note")
+		return () if obj is None else ("signal", "occurred_at", "event_type", "audience", "price", "return_pct", "note")
 
 
 @admin.register(TradeExecutorHealth)
