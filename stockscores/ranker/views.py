@@ -13,9 +13,9 @@ from .serializers import (
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
     ArticleSerializer,
-    TradeSignalSerializer, OperatorTradePublicationSerializer,
+    TradeSignalSerializer, OperatorTradePublicationSerializer, OperatorResearchRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, TradeLifecycleCertification, TradeSignal
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, OperationalTelegramAlert, ResearchRun, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -56,6 +56,7 @@ from .trade_quotes import get_paper_position, get_trade_signal_quote
 from .operator_auth import ResearchOperatorAuthentication
 from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
 from .lifecycle_audit import certification_payload
+from .research_runs import research_health, report_run, run_payload
 from .billing import (
     BillingConfigurationError,
     billing_payload,
@@ -1144,6 +1145,7 @@ class TradeSignalListView(APIView):
     def get(self, request, *args, **kwargs):
         signals = (
             TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False)
+            .select_related("lifecycle_certification")
             .prefetch_related("updates")
             .order_by("-published_at", "-created_at")
         )
@@ -1165,7 +1167,7 @@ class TradeSignalListView(APIView):
                     "is_locked": True,
                 })
                 continue
-            item = TradeSignalSerializer(signal).data
+            item = TradeSignalSerializer(signal, context={"include_staff_updates": bool(request.user and request.user.is_staff)}).data
             item["is_locked"] = False
             payload.append(item)
         return Response(payload)
@@ -1278,6 +1280,56 @@ class LifecycleCertificationReportView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"count": reports.count(), "results": [certification_payload(item) for item in reports[:limit]]})
+
+
+class ResearchRunReportView(APIView):
+    """Read or submit narrow research heartbeat metadata through the operator token."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        runs = ResearchRun.objects.order_by("-expected_run_at")[:25]
+        return Response({"health": research_health(), "results": [run_payload(run) for run in runs]})
+
+    def post(self, request, *args, **kwargs):
+        serializer = OperatorResearchRunSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            run, already_applied = report_run(serializer.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({**run_payload(run), "already_applied": already_applied},
+                        status=status.HTTP_200_OK if already_applied else status.HTTP_201_CREATED)
+
+
+class OperatorIncidentReportView(APIView):
+    """Read-only internal incident history on the existing restricted token path."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            limit = min(max(int(request.query_params.get("limit", 50)), 1), 100)
+        except (TypeError, ValueError):
+            return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        updates = TradeSignalUpdate.objects.filter(audience=TradeSignalUpdate.AUDIENCE_STAFF).select_related("signal").order_by("-occurred_at", "-id")[:limit]
+        alerts = OperationalTelegramAlert.objects.select_related("signal").order_by("-created_at", "-id")[:limit]
+        health = TradeExecutorHealth.objects.filter(singleton_id=1).first()
+        return Response({
+            "guardian": None if health is None else {
+                "status": health.status, "entries_paused": health.entries_paused,
+                "last_completed_at": health.last_completed_at, "last_error": health.last_error,
+            },
+            "incidents": [{"id": update.pk, "signal_id": update.signal_id,
+                           "symbol": update.signal.symbol, "event_type": update.event_type,
+                           "note": update.note, "occurred_at": update.occurred_at} for update in updates],
+            "alerts": [{"id": alert.pk, "signal_id": alert.signal_id,
+                        "message": alert.message, "status": alert.status,
+                        "last_error": alert.last_error, "created_at": alert.created_at,
+                        "sent_at": alert.sent_at} for alert in alerts],
+        })
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):

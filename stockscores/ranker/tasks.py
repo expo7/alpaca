@@ -16,6 +16,7 @@ from .models import (
 )
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 from .lifecycle_audit import audit_lifecycles, audit_trade_signal
+from .research_runs import monitor_research_runs
 
 SCHEDULE_OFFSETS = {
     "1m": timedelta(minutes=1),
@@ -36,6 +37,11 @@ def run_lifecycle_certification_auditor():
     return audit_lifecycles()
 
 
+@shared_task(name="ranker.tasks.monitor_research_run_heartbeat")
+def monitor_research_run_heartbeat():
+    return monitor_research_runs()
+
+
 @shared_task(name="ranker.tasks.audit_trade_lifecycle")
 def audit_trade_lifecycle(signal_id):
     signal = TradeSignal.objects.filter(pk=signal_id).first()
@@ -54,10 +60,11 @@ def _filled_at(order):
     return value or timezone.now()
 
 
-def _record_update(signal, event_type, note, *, price=None, return_pct=None):
+def _record_update(signal, event_type, note, *, price=None, return_pct=None, audience=TradeSignalUpdate.AUDIENCE_CUSTOMER):
     TradeSignalUpdate.objects.create(
         signal=signal,
         event_type=event_type,
+        audience=audience,
         note=note,
         price=price,
         return_pct=return_pct,
@@ -65,7 +72,7 @@ def _record_update(signal, event_type, note, *, price=None, return_pct=None):
 
 
 def _record_guardian_transition(degraded, message):
-    """Best-effort customer-visible alert without coupling it to exit safety."""
+    """Persist guardian transitions for staff without coupling them to exit safety."""
     try:
         for signal in TradeSignal.objects.filter(
             paper_execution_enabled=True,
@@ -75,6 +82,7 @@ def _record_guardian_transition(degraded, message):
                 signal,
                 "execution_warning" if degraded else "note",
                 message,
+                audience=TradeSignalUpdate.AUDIENCE_STAFF,
             )
     except Exception:
         # Guardian observability must never replace or break monitored exits.
@@ -277,7 +285,7 @@ def _process_published_signal(signal, client, now, config):
     if signal.entry_deadline and now.date() > signal.entry_deadline:
         signal.status = TradeSignal.STATUS_EXPIRED
         signal.paper_last_error = "Entry deadline passed before activation"
-        signal.save(update_fields=["status", "paper_last_error", "updated_at"])
+        signal.save(update_fields=["status", "closed_at", "paper_last_error", "updated_at"])
         _record_update(signal, "cancelled", "Alpaca paper setup expired before an entry was triggered.")
         return "expired"
     if signal.instrument_type not in {"call", "put"}:
@@ -466,6 +474,7 @@ def run_paper_trade_executor():
                         signal,
                         "execution_warning",
                         f"Paper execution error: {error_message}",
+                        audience=TradeSignalUpdate.AUDIENCE_STAFF,
                     )
                 results[str(signal.pk)] = "error"
         if "error" in results.values():

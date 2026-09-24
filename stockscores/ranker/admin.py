@@ -1,6 +1,37 @@
 from django.contrib import admin
 
-from .models import AnalyticsEvent, Article, BillingProfile, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
+from .models import AnalyticsEvent, Article, BillingProfile, OperationalTelegramAlert, ResearchRun, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
+from .research_runs import run_state
+
+
+@admin.register(ResearchRun)
+class ResearchRunAdmin(admin.ModelAdmin):
+	list_display = ("expected_run_at", "session_type", "outcome", "run_status", "candidates_reviewed", "completed_at")
+	list_filter = ("outcome", "session_type", "expected_run_at")
+	readonly_fields = tuple(field.name for field in ResearchRun._meta.fields)
+
+	@admin.display(description="Health")
+	def run_status(self, obj):
+		return run_state(obj)
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False
+
+
+@admin.register(OperationalTelegramAlert)
+class OperationalTelegramAlertAdmin(admin.ModelAdmin):
+	list_display = ("created_at", "signal", "status", "attempt_count", "sent_at")
+	list_filter = ("status", "created_at")
+	readonly_fields = ("idempotency_key", "signal", "message", "status", "attempt_count", "last_error", "telegram_message_id", "sent_at", "created_at", "updated_at")
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False
 from .trade_quotes import apply_publication_snapshot
 
 
@@ -95,8 +126,8 @@ class TradeSignalAdmin(admin.ModelAdmin):
 
 @admin.register(TradeSignalUpdate)
 class TradeSignalUpdateAdmin(admin.ModelAdmin):
-	list_display = ("occurred_at", "signal", "event_type", "price", "return_pct")
-	list_filter = ("event_type", "occurred_at")
+	list_display = ("occurred_at", "signal", "event_type", "audience", "price", "return_pct")
+	list_filter = ("event_type", "audience", "occurred_at")
 	search_fields = ("signal__symbol", "note")
 	ordering = ("-occurred_at",)
 
@@ -104,7 +135,7 @@ class TradeSignalUpdateAdmin(admin.ModelAdmin):
 		return False
 
 	def get_readonly_fields(self, request, obj=None):
-		return () if obj is None else ("signal", "occurred_at", "event_type", "price", "return_pct", "note")
+		return () if obj is None else ("signal", "occurred_at", "event_type", "audience", "price", "return_pct", "note")
 
 
 @admin.register(TradeExecutorHealth)

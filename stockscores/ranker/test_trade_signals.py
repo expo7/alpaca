@@ -4,9 +4,11 @@ from unittest.mock import patch
 
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import TradeSignal, TradeSignalUpdate
+from .models import TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .trade_quotes import get_paper_position
 
 
@@ -46,6 +48,52 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(response.data[0]["contract_symbol"], "MU260918C00110000")
         target_updates = [update for update in response.data[0]["updates"] if update["event_type"] == "target"]
         self.assertEqual(target_updates[0]["note"], "First target reached.")
+
+    def test_guardian_incident_is_staff_only_and_not_in_customer_outbox(self):
+        from django.contrib.auth import get_user_model
+
+        signal = self._signal(status=TradeSignal.STATUS_OPEN)
+        incident = TradeSignalUpdate.objects.create(
+            signal=signal, event_type="execution_warning", audience="staff",
+            note="Guardian check failed: internal diagnostic",
+        )
+        TradeSignalUpdate.objects.create(signal=signal, event_type="note", note="Trade thesis remains intact.")
+        self.assertFalse(hasattr(incident, "telegram_notification"))
+        public = self.client.get(reverse("trade-signal-list"))
+        public_notes = [update["note"] for update in public.data[0]["updates"]]
+        self.assertIn("Trade thesis remains intact.", public_notes)
+        self.assertNotIn("Guardian check failed: internal diagnostic", public_notes)
+
+        staff = get_user_model().objects.create_user(username="operator-staff", password="test-password", is_staff=True)
+        self.client.force_authenticate(staff)
+        restricted = self.client.get(reverse("trade-signal-list"))
+        self.assertIn("Guardian check failed: internal diagnostic", [update["note"] for update in restricted.data[0]["updates"]])
+
+    @override_settings(QUANTELLE_RESEARCH_OPERATOR_TOKEN="test-research-operator-token-more-than-32-characters")
+    def test_operator_incident_report_requires_token_and_preserves_diagnostics(self):
+        signal = self._signal(status=TradeSignal.STATUS_OPEN)
+        TradeSignalUpdate.objects.create(signal=signal, event_type="execution_warning",
+                                         audience="staff", note="Internal DNS diagnostic")
+        url = reverse("operator-incident-report")
+        self.assertIn(self.client.get(url).status_code, (401, 403))
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer test-research-operator-token-more-than-32-characters")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["incidents"][0]["note"], "Internal DNS diagnostic")
+
+    def test_open_card_only_claims_verified_protection_after_fresh_audit(self):
+        signal = self._signal(status=TradeSignal.STATUS_OPEN, paper_exit_order_id="stop-1",
+                              paper_exit_reason="broker_stop", current_stop=Decimal("9.80"))
+        record = TradeLifecycleCertification.objects.create(
+            signal=signal, checked_at=timezone.now(),
+            checkpoints={"broker_held_protection": {"result": "pass"}},
+        )
+        protection = self.client.get(reverse("trade-signal-list")).data[0]["protection"]
+        self.assertTrue(protection["verified"])
+        self.assertEqual(protection["price"], "9.80")
+        record.checkpoints = {"broker_held_protection": {"result": "fail"}}
+        record.save(update_fields=["checkpoints"])
+        self.assertFalse(self.client.get(reverse("trade-signal-list")).data[0]["protection"]["verified"])
 
     def test_publishing_sets_an_immutable_initial_timestamp(self):
         signal = self._signal(status=TradeSignal.STATUS_DRAFT)

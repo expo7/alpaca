@@ -652,6 +652,9 @@ class TradeExecutorHealth(models.Model):
 
 
 class TradeSignalUpdate(models.Model):
+    AUDIENCE_CUSTOMER = "customer"
+    AUDIENCE_STAFF = "staff"
+    AUDIENCE_CHOICES = [(AUDIENCE_CUSTOMER, "Customer"), (AUDIENCE_STAFF, "Staff")]
     EVENT_CHOICES = [
         ("published", "Setup published"),
         ("entry_submitted", "Entry order submitted"),
@@ -669,6 +672,7 @@ class TradeSignalUpdate(models.Model):
 
     signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="updates")
     event_type = models.CharField(max_length=20, choices=EVENT_CHOICES, default="note")
+    audience = models.CharField(max_length=8, choices=AUDIENCE_CHOICES, default=AUDIENCE_CUSTOMER, db_index=True)
     note = models.TextField()
     price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     return_pct = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
@@ -769,7 +773,7 @@ class OperationalTelegramAlert(models.Model):
     ]
 
     idempotency_key = models.CharField(max_length=160, unique=True)
-    signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="operational_alerts")
+    signal = models.ForeignKey(TradeSignal, on_delete=models.CASCADE, related_name="operational_alerts", null=True, blank=True)
     message = models.TextField()
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
     attempt_count = models.PositiveIntegerField(default=0)
@@ -784,6 +788,39 @@ class OperationalTelegramAlert(models.Model):
 
     def __str__(self):
         return f"Operational alert · {self.signal} · {self.status}"
+
+
+class ResearchRun(models.Model):
+    """Restricted, idempotent heartbeat for the owner-authorized research task."""
+
+    SESSION_CHOICES = [(key, label) for key, label in (
+        ("premarket", "Premarket"), ("regular", "Regular session"), ("aftermarket", "Aftermarket"),
+        ("market_closed", "Market closed"),
+    )]
+    OUTCOME_CHOICES = [(key, label) for key, label in (
+        ("publication", "Publication"), ("cancellation", "Cancellation"),
+        ("watchlist_no_trade", "Watchlist / no trade"), ("failure", "Failure"),
+    )]
+    expected_run_at = models.DateTimeField(unique=True)
+    request_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    session_type = models.CharField(max_length=16, choices=SESSION_CHOICES, blank=True, default="")
+    outcome = models.CharField(max_length=24, choices=OUTCOME_CHOICES, blank=True, default="")
+    market_regime = models.CharField(max_length=80, blank=True, default="")
+    candidates_reviewed = models.PositiveSmallIntegerField(null=True, blank=True)
+    operator_action = models.CharField(max_length=120, blank=True, default="")
+    verified_result = models.CharField(max_length=500, blank=True, default="")
+    error_summary = models.CharField(max_length=500, blank=True, default="")
+    next_expected_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-expected_run_at"]
+
+    def __str__(self):
+        return f"Research run · {self.expected_run_at} · {self.outcome or 'missing'}"
 
 
 class BillingProfile(models.Model):

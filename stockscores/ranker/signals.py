@@ -55,7 +55,7 @@ def schedule_lifecycle_certification(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=TradeSignalUpdate)
 def create_telegram_outbox_entry(sender, instance, created, **kwargs):
-    if created:
+    if created and instance.audience == TradeSignalUpdate.AUDIENCE_CUSTOMER:
         TelegramNotification.objects.get_or_create(update=instance)
         from .tasks import audit_trade_lifecycle
         transaction.on_commit(lambda: audit_trade_lifecycle.apply_async(args=[instance.signal_id], countdown=3))

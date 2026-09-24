@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Count, Q
@@ -79,12 +80,37 @@ def _broker_snapshot(signal, client, orders, positions):
     return by_id, relevant, position
 
 
+def _active_order(order):
+    return order.get("status") in {"accepted", "new", "pending_new", "partially_filled", "held"}
+
+
+def _matches_protection(signal, order):
+    if not order or not _active_order(order):
+        return False
+    expected_type = {"broker_stop": "stop", "broker_target": "limit"}.get(signal.paper_exit_reason)
+    if not expected_type:
+        return False
+    price_key = "stop_price" if expected_type == "stop" else "limit_price"
+    expected_price = signal.current_stop or signal.initial_stop if expected_type == "stop" else signal.target_1
+    try:
+        return (
+            order.get("type") == expected_type
+            and order.get("time_in_force") == "gtc"
+            and order.get("side") == "sell"
+            and order.get("symbol") == signal.contract_symbol
+            and Decimal(str(order.get("qty"))) == Decimal(str(signal.paper_quantity))
+            and Decimal(str(order.get(price_key))) == expected_price
+        )
+    except (TypeError, ValueError, InvalidOperation):
+        return False
+
+
 def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=None):
     """Certify one lifecycle without mutating trading or lifecycle state."""
     now = now or timezone.now()
     checkpoints, codes, details = {}, [], []
     pending = signal.status in UNRESOLVED_STATUSES
-    updates = list(signal.updates.select_related("telegram_notification").all())
+    updates = list(signal.updates.filter(audience=TradeSignalUpdate.AUDIENCE_CUSTOMER).select_related("telegram_notification"))
     event_types = [update.event_type for update in updates]
 
     publication_ok = bool(signal.published_at and "published" in event_types)
@@ -112,6 +138,18 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
     if broker_error:
         checkpoints["broker_order_accepted"] = {"result": "error", "detail": broker_error}
         checkpoints["entry_filled"] = {"result": "error", "detail": broker_error}
+    elif signal.status in {TradeSignal.STATUS_CANCELLED, TradeSignal.STATUS_EXPIRED} and signal.actual_entry is None:
+        if entry_order and entry_order.get("status") == "filled":
+            _checkpoint(checkpoints, codes, details, "broker_order_accepted", True,
+                        "BROKER_ENTRY_MISMATCH", "Recorded entry order exists at Alpaca.")
+            _checkpoint(checkpoints, codes, details, "entry_filled", False,
+                        "ENTRY_FILL_MISMATCH", "Broker entry filled, but Quantelle recorded an unfilled terminal setup.")
+        else:
+            _not_applicable(checkpoints, "broker_order_accepted", "Unfilled setup requires no accepted entry order.")
+            _not_applicable(checkpoints, "entry_filled", "Setup ended before an entry filled.")
+        if position is not None:
+            _checkpoint(checkpoints, codes, details, "unfilled_broker_position_absent", False,
+                        "UNEXPECTED_BROKER_POSITION", "Unfilled terminal setup has a broker position.")
     elif signal.paper_entry_order_id:
         accepted = bool(entry_order and entry_order.get("status") not in {"rejected", "canceled", "expired"})
         _checkpoint(checkpoints, codes, details, "broker_order_accepted", accepted,
@@ -146,9 +184,23 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
         monitoring = guardian_ok and signal.paper_last_checked_at is not None
         _checkpoint(checkpoints, codes, details, "stop_target_monitoring_active", monitoring,
                     "MONITORING_INACTIVE", "Stop/target monitoring is active." if monitoring else "Stop/target monitoring cannot be confirmed active.")
+        if broker_error:
+            checkpoints["broker_held_protection"] = {"result": "error", "detail": "Broker protection could not be verified."}
+        else:
+            active_exits = [order for order in relevant_orders if order.get("side") == "sell" and _active_order(order)]
+            protection_ok = (
+                len(active_exits) == 1
+                and str(active_exits[0].get("id")) == signal.paper_exit_order_id
+                and _matches_protection(signal, active_exits[0])
+            )
+            _checkpoint(checkpoints, codes, details, "broker_held_protection", protection_ok,
+                        "BROKER_PROTECTION_MISMATCH",
+                        "Exactly one matching broker-held GTC protection order is active." if protection_ok else
+                        "A single matching broker-held GTC stop or target order could not be confirmed.")
     else:
         _not_applicable(checkpoints, "guardian_recognized_protected_position", "Required only while a position is open.")
         _not_applicable(checkpoints, "stop_target_monitoring_active", "Required only while a position is open.")
+        _not_applicable(checkpoints, "broker_held_protection", "Required only while a position is open.")
 
     if signal.status == TradeSignal.STATUS_CLOSED:
         exit_complete = bool(signal.paper_exit_order_id and exit_order and exit_order.get("status") == "filled")
@@ -212,7 +264,7 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
         record.checkpoints = checkpoints
         record.discrepancy_codes = sorted(set(codes))
         record.discrepancy_details = details
-        record.retry_count = 0 if certified else record.retry_count + 1
+        record.retry_count = record.retry_count + 1 if has_failures or has_error else 0
         record.save()
         _queue_warning(signal, record.discrepancy_codes, details)
     return record

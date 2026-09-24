@@ -3,11 +3,35 @@ from unittest.mock import Mock, patch
 
 from django.test import TestCase, override_settings
 
-from .models import TelegramNotification, TradeSignal, TradeSignalUpdate
-from .telegram import deliver_telegram_notification, format_trade_update
+from .models import OperationalTelegramAlert, TelegramNotification, TradeSignal, TradeSignalUpdate
+from .telegram import deliver_operational_telegram_alert, deliver_pending_telegram_notifications, deliver_telegram_notification, format_trade_update
 
 
 class TelegramNotificationTests(TestCase):
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="", TELEGRAM_OPERATIONS_CHAT_ID="staff")
+    @patch("ranker.telegram.deliver_operational_telegram_alert.delay")
+    def test_staff_outbox_runs_without_customer_channel(self, enqueue):
+        alert = OperationalTelegramAlert.objects.create(signal=self.signal(), idempotency_key="staff-only", message="Internal")
+        result = deliver_pending_telegram_notifications()
+        self.assertEqual(result["operational_queued"], 1)
+        enqueue.assert_called_once_with(alert.pk)
+
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="customer", TELEGRAM_OPERATIONS_CHAT_ID="")
+    @patch("ranker.telegram.requests.post")
+    def test_operational_alert_never_falls_back_to_customer_channel(self, post):
+        alert = OperationalTelegramAlert.objects.create(signal=self.signal(), idempotency_key="ops-only", message="Internal diagnosis")
+        self.assertEqual(deliver_operational_telegram_alert.run(alert.pk)["status"], "disabled")
+        post.assert_not_called()
+
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="customer", TELEGRAM_OPERATIONS_CHAT_ID="staff")
+    @patch("ranker.telegram.requests.post")
+    def test_operational_alert_uses_staff_channel(self, post):
+        alert = OperationalTelegramAlert.objects.create(signal=self.signal(), idempotency_key="ops-only", message="Internal diagnosis")
+        post.return_value.json.return_value = {"ok": True, "result": {"message_id": 42}}
+        result = deliver_operational_telegram_alert.run(alert.pk)
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(post.call_args.kwargs["json"]["chat_id"], "staff")
+
     def signal(self, **overrides):
         values = {
             "symbol": "AMZN",

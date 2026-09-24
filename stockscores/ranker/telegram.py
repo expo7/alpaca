@@ -91,6 +91,10 @@ def _telegram_configured():
     )
 
 
+def _operations_configured():
+    return bool(settings.TELEGRAM_NOTIFICATIONS_ENABLED and settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_OPERATIONS_CHAT_ID)
+
+
 @shared_task(bind=True, name="ranker.deliver_telegram_notification", max_retries=5)
 def deliver_telegram_notification(self, notification_id):
     if not _telegram_configured():
@@ -102,6 +106,8 @@ def deliver_telegram_notification(self, notification_id):
             .select_related("update__signal")
             .get(pk=notification_id)
         )
+        if notification.update.audience != "customer":
+            return {"status": "staff_only"}
         if notification.status == TelegramNotification.STATUS_SENT:
             return {"status": "already_sent"}
         if notification.status == TelegramNotification.STATUS_SENDING:
@@ -147,26 +153,28 @@ def deliver_telegram_notification(self, notification_id):
 
 @shared_task(name="ranker.deliver_pending_telegram_notifications")
 def deliver_pending_telegram_notifications(limit=25):
-    if not _telegram_configured():
+    if not _telegram_configured() and not _operations_configured():
         return {"status": "disabled", "queued": 0}
 
     stale_before = timezone.now() - timedelta(minutes=5)
     notification_ids = list(
         TelegramNotification.objects.filter(
             status=TelegramNotification.STATUS_PENDING,
+            update__audience="customer",
         )
         .order_by("created_at")
         .values_list("id", flat=True)[:limit]
-    )
+    ) if _telegram_configured() else []
     stale_ids = list(
         TelegramNotification.objects.filter(
             status=TelegramNotification.STATUS_SENDING,
+            update__audience="customer",
             updated_at__lt=stale_before,
         )
         .exclude(id__in=notification_ids)
         .order_by("updated_at")
         .values_list("id", flat=True)[: max(0, limit - len(notification_ids))]
-    )
+    ) if _telegram_configured() else []
     if stale_ids:
         TelegramNotification.objects.filter(id__in=stale_ids).update(
             status=TelegramNotification.STATUS_PENDING,
@@ -178,7 +186,7 @@ def deliver_pending_telegram_notifications(limit=25):
     operational_ids = list(
         OperationalTelegramAlert.objects.filter(status=OperationalTelegramAlert.STATUS_PENDING)
         .order_by("created_at").values_list("id", flat=True)[:limit]
-    )
+    ) if _operations_configured() else []
     for alert_id in operational_ids:
         deliver_operational_telegram_alert.delay(alert_id)
     return {"status": "ok", "queued": len(notification_ids), "operational_queued": len(operational_ids)}
@@ -186,7 +194,7 @@ def deliver_pending_telegram_notifications(limit=25):
 
 @shared_task(bind=True, name="ranker.deliver_operational_telegram_alert", max_retries=5)
 def deliver_operational_telegram_alert(self, alert_id):
-    if not _telegram_configured():
+    if not _operations_configured():
         return {"status": "disabled"}
     with transaction.atomic():
         alert = OperationalTelegramAlert.objects.select_for_update().get(pk=alert_id)
@@ -201,7 +209,7 @@ def deliver_operational_telegram_alert(self, alert_id):
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": settings.TELEGRAM_CHAT_ID, "text": alert.message, "disable_web_page_preview": True},
+            json={"chat_id": settings.TELEGRAM_OPERATIONS_CHAT_ID, "text": alert.message, "disable_web_page_preview": True},
             timeout=10,
         )
         response.raise_for_status()
