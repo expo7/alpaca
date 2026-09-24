@@ -25,6 +25,25 @@ describe("TradeSignalsPage", () => {
     expect(screen.getByText("Stop $6.25")).toBeInTheDocument();
   });
 
+  it("shows newer verified protection above an earlier customer warning without hiding the history", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+      id: 10, symbol: "QCOM", instrument: "QCOM call", status: "open", status_label: "Open",
+      instrument_type: "call", entry_low: "8.00", initial_stop: "6.25", current_stop: "6.25",
+      target_1: "14.00", actual_entry: "8.85", thesis: "Breakout thesis",
+      published_at: "2026-09-21T16:14:00Z",
+      protection: { type: "broker_stop", price: "6.25", verified: true, verified_at: "2026-09-24T19:21:00Z" },
+      updates: [{ id: 1, event_type: "execution_warning", audience: "customer",
+        note: "Alpaca rejected broker-held OCO protection; Quantelle switched to monitored exits.",
+        occurred_at: "2026-09-21T16:16:00Z" }],
+    }] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("Verified broker protection")).toBeInTheDocument();
+    expect(screen.getByText("Stop $6.25")).toBeInTheDocument();
+    expect(screen.getByText(/Checked Sep 24, 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Earlier trade update/)).toBeInTheDocument();
+    expect(screen.getByText(/Alpaca rejected broker-held OCO protection/)).toBeInTheDocument();
+  });
+
   it("shows the empty state before the first publication", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
     render(<TradeSignalsPage />);
