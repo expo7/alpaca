@@ -168,7 +168,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
           <div><div className="text-xs text-slate-400">Average fill</div><strong>{money(signal.actual_entry)}</strong></div>
           <div><div className="text-xs text-slate-400">Current stop</div><strong>{money(signal.current_stop || signal.initial_stop)}</strong></div>
           <div><div className="text-xs text-slate-400">Target 1</div><strong>{money(signal.target_1)}</strong></div>
-          <div><div className="text-xs text-slate-400">{signal.protection?.verified ? "Verified broker protection" : "Broker protection · verification pending"}</div><strong>{signal.protection ? `${signal.protection.type === "broker_target" ? "Target limit" : "Stop"} ${money(signal.protection.price)}` : "No protective order confirmed"}</strong></div>
+          <div><div className="text-xs text-slate-400">{signal.protection?.verified ? "Verified broker protection" : "Broker protection · verification pending"}</div><strong>{signal.protection ? `${signal.protection.type === "broker_target" ? "Target limit" : "Stop"} ${money(signal.protection.price)}` : "No protective order confirmed"}</strong>{signal.protection?.verified_at && <div className="mt-1 text-xs text-slate-400">Checked {dateTime(signal.protection.verified_at)}</div>}</div>
         </div>}
         {signal.underlying_trigger_price && (
           <details open={isPending} className="mt-5 rounded-xl border border-indigo-500/35 bg-indigo-950/25 p-4">
@@ -227,7 +227,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
 
         {latest && (
           <div className="mt-4 border-l-2 border-indigo-500 pl-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Latest update · {dateTime(latest.occurred_at)}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">{isOpen && signal.protection?.verified_at && new Date(signal.protection.verified_at) > new Date(latest.occurred_at) ? "Earlier trade update" : "Latest trade update"} · {dateTime(latest.occurred_at)}</div>
             <p className="mt-1 text-sm text-slate-200">{latest.note}</p>
           </div>
         )}
