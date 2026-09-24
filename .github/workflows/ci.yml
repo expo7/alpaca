@@ -63,9 +63,9 @@ jobs:
 
       - name: Run frontend tests (Vitest)
         working-directory: ./rank-ui
-        run: npm test -- --runInBand
+        run: npm test --
 
       # Optional: generate coverage on CI (you can turn this on later)
       # - name: Run tests with coverage
       #   working-directory: ./rank-ui
-      #   run: npm test -- --coverage --runInBand
+      #   run: npm test -- --coverage
