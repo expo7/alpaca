@@ -99,7 +99,7 @@ export default function Landing() {
                     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12 sm:px-6 md:flex-row md:items-center md:justify-between">
                         <div className="max-w-2xl">
                             <h2 className="text-2xl font-bold">See the complete record, including the misses.</h2>
-                            <p className="mt-2 leading-7 text-slate-400">Open positions, pending entries, closed trades, and cancelled setups are organized separately. Each card shows its current state and latest customer update; completed trades show the realized paper result.</p>
+                            <p className="mt-2 leading-7 text-slate-400">Active positions, waiting entries, and completed filled trades have separate views. Cancelled, expired, and unfilled setups remain in their own history. Completed paper trades show their realized results.</p>
                         </div>
                         <a href="/signals" className="self-start whitespace-nowrap rounded-xl border border-indigo-500/60 px-5 py-3 font-semibold text-indigo-200 hover:bg-indigo-950/50">View trade history</a>
                     </div>
