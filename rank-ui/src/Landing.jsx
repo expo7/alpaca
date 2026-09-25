@@ -3,8 +3,8 @@ import { APP_NAME } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
 
 const workflow = [
-    { number: "01", title: "A specific setup", copy: "See the option contract, entry trigger, price range, stop, targets, risk, and evidence before a trade begins." },
-    { number: "02", title: "Updates as it unfolds", copy: "Follow meaningful entry, protection, target, cancellation, and exit events through the trade record and Telegram alerts." },
+    { number: "01", title: "A specific setup", copy: "Published plans define the contract, entry trigger, stop, targets, risk, and evidence. Active details may require Pro access." },
+    { number: "02", title: "Updates as it unfolds", copy: "Subscribers receive meaningful lifecycle alerts in Telegram. Trade cards show the current state and latest customer update." },
     { number: "03", title: "An outcome that stays visible", copy: "Review open positions, pending entries, and completed history, including losses and setups that never filled." },
 ];
 
@@ -39,7 +39,7 @@ export default function Landing() {
                                 Trade ideas with a plan.<br /><span className="text-indigo-300">Outcomes you can check.</span>
                             </h1>
                             <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-                                Quantelle publishes specific options setups with entry conditions, risk levels, stops, and targets. Follow each idea from publication to its final paper-trade result.
+                                Quantelle publishes options plans with entry conditions, risk levels, stops, and targets. Explore the public record of pending, open, and completed paper setups; active details may require Pro access.
                             </p>
                             <div className="mt-7 flex flex-wrap gap-3">
                                 <a href="/signals" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
@@ -71,7 +71,7 @@ export default function Landing() {
                                 </div>
                             </div>
                             <div className="mt-3 rounded-xl border border-indigo-800/60 bg-indigo-950/25 p-4 text-sm leading-6 text-slate-300">
-                                Follow the <span className="font-semibold text-white">entry, protection, and exit</span> on a lasting public record. Completed setups show the realized paper result, including losses and unfilled ideas.
+                                Trade cards show the <span className="font-semibold text-white">current state and latest update</span>. Completed setups show the realized paper result, including losses; unfilled ideas remain visible.
                             </div>
                         </div>
                     </div>
@@ -98,7 +98,7 @@ export default function Landing() {
                     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12 sm:px-6 md:flex-row md:items-center md:justify-between">
                         <div className="max-w-2xl">
                             <h2 className="text-2xl font-bold">See the complete record, including the misses.</h2>
-                            <p className="mt-2 leading-7 text-slate-400">Open positions, pending entries, closed trades, and cancelled setups are organized separately. Paper results are labeled as paper results, with the trade history available on each card.</p>
+                            <p className="mt-2 leading-7 text-slate-400">Open positions, pending entries, closed trades, and cancelled setups are organized separately. Each card shows its current state and latest customer update; completed trades show the realized paper result.</p>
                         </div>
                         <a href="/signals" className="self-start whitespace-nowrap rounded-xl border border-indigo-500/60 px-5 py-3 font-semibold text-indigo-200 hover:bg-indigo-950/50">View trade history</a>
                     </div>
