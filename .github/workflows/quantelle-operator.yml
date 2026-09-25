@@ -96,6 +96,9 @@ jobs:
                   }
                   if set(payload) != required_keys:
                       raise ValueError("Research report fields must match the narrow report_run schema")
+                  regime = payload.get("market_regime")
+                  if not isinstance(regime, str) or not 1 <= len(regime.strip()) <= 80:
+                      raise ValueError("market_regime must be a concise label of 1 to 80 characters; keep longer analysis in the Research Ledger")
                   operator_url = "https://quantelle.io/api/operator/research-runs/"
                   operator_payload = dict(payload)
                   operator_payload["request_id"] = f"github-issue-{issue_number}"
