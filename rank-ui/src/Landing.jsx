@@ -1,11 +1,11 @@
 import Login from "./Login.jsx";
-import { APP_NAME, APP_TAGLINE } from "./brand";
+import { APP_NAME } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
 
 const workflow = [
-    { number: "01", title: "Read the market", copy: "See whether conditions favor offense, defense, or patience." },
-    { number: "02", title: "Focus on five", copy: "Start with a short list of ranked research ideas instead of an endless feed." },
-    { number: "03", title: "Verify the setup", copy: "Open the evidence behind each rating before deciding whether it belongs in your plan." },
+    { number: "01", title: "A specific setup", copy: "See the option contract, entry trigger, price range, stop, targets, risk, and evidence before a trade begins." },
+    { number: "02", title: "Updates as it unfolds", copy: "Follow meaningful entry, protection, target, cancellation, and exit events through the trade record and Telegram alerts." },
+    { number: "03", title: "An outcome that stays visible", copy: "Review open positions, pending entries, and completed history, including losses and setups that never filled." },
 ];
 
 export default function Landing() {
@@ -17,12 +17,10 @@ export default function Landing() {
                         <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
                             {APP_NAME.toUpperCase()}
                         </span>
-                        <span className="hidden text-xs text-slate-500 sm:block">
-                            {APP_TAGLINE}
-                        </span>
+                        <span className="hidden text-xs text-slate-500 sm:block">Options research with a public trade record</span>
                     </a>
-                    <nav className="flex items-center gap-3 text-sm">
-                        <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
+                    <nav aria-label="Main navigation" className="flex items-center gap-3 text-sm">
+                        <a href="/signals" className="text-slate-300 hover:text-white">Trade record</a>
                         <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
                         <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
                     </nav>
@@ -35,54 +33,55 @@ export default function Landing() {
                     <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
                         <div>
                             <div className="inline-flex rounded-full border border-emerald-800/70 bg-emerald-950/30 px-3 py-1 text-xs font-medium text-emerald-300">
-                                Market context + ranked opportunities
+                                Options research · Public trade record
                             </div>
                             <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-                                Five focused ideas.<br />One plan for today.
+                                Trade ideas with a plan.<br /><span className="text-indigo-300">Outcomes you can check.</span>
                             </h1>
                             <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-                                Quantelle turns market conditions, technical strength, and fundamentals into a short daily research list—so you know where to look and when to stay cautious.
+                                Quantelle publishes specific options setups with entry conditions, risk levels, stops, and targets. Follow each idea from publication to its final paper-trade result.
                             </p>
                             <div className="mt-7 flex flex-wrap gap-3">
                                 <a href="/signals" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
-                                    View the trade record
+                                    Explore the trade record
                                 </a>
-                                <a href="/dashboard" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
-                                    See today&apos;s market
+                                <a href="#how-it-works" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
+                                    How it works
                                 </a>
                             </div>
-                            <p className="mt-4 text-xs text-slate-500">Free research preview · No brokerage connection required · Not investment advice</p>
+                            <p className="mt-4 text-xs text-slate-500">Free public record · Alpaca paper execution · No brokerage connection required to browse</p>
                         </div>
 
                         <div className="rounded-3xl border border-slate-700/80 bg-slate-900/75 p-5 shadow-2xl shadow-indigo-950/30 backdrop-blur">
                             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                                 <div>
-                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Today&apos;s research brief</div>
-                                    <div className="mt-1 text-lg font-semibold">A decision before a ticker</div>
+                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Inside a Quantelle setup</div>
+                                    <div className="mt-1 text-lg font-semibold">A plan before an entry</div>
                                 </div>
-                                <span className="rounded-full border border-amber-700/70 bg-amber-950/40 px-3 py-1 text-xs font-semibold text-amber-300">SELECTIVE</span>
+                                <span className="rounded-full border border-sky-800 bg-sky-950/40 px-3 py-1 text-xs font-semibold text-sky-300">PAPER TRADE</span>
                             </div>
                             <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                 <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">Market first</div>
-                                    <div className="mt-2 font-medium">Set exposure before choosing ideas</div>
+                                    <div className="text-xs uppercase tracking-wide text-slate-500">Before entry</div>
+                                    <div className="mt-2 font-medium">Contract, trigger, and do-not-chase level</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">Then focus</div>
-                                    <div className="mt-2 font-medium">Review five ranked opportunities</div>
+                                    <div className="text-xs uppercase tracking-wide text-slate-500">Defined risk</div>
+                                    <div className="mt-2 font-medium">Stop, targets, and invalidation</div>
                                 </div>
                             </div>
                             <div className="mt-3 rounded-xl border border-indigo-800/60 bg-indigo-950/25 p-4 text-sm leading-6 text-slate-300">
-                                Every rating should answer two questions: <span className="font-semibold text-white">why this idea</span> and <span className="font-semibold text-white">why now</span>.
+                                Follow the <span className="font-semibold text-white">entry, protection, and exit</span> on a lasting public record. Completed setups show the realized paper result, including losses and unfilled ideas.
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+                <section id="how-it-works" className="mx-auto max-w-6xl scroll-mt-8 px-4 py-14 sm:px-6">
                     <div className="max-w-2xl">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">A tighter daily workflow</div>
-                        <h2 className="mt-2 text-3xl font-bold tracking-tight">Less dashboard. More decision.</h2>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">How Quantelle works</div>
+                        <h2 className="mt-2 text-3xl font-bold tracking-tight">From setup to outcome</h2>
+                        <p className="mt-3 leading-7 text-slate-400">A candidate becomes a published trade only when its conditions qualify. If an entry never triggers, that remains part of the record too.</p>
                     </div>
                     <div className="mt-8 grid gap-4 md:grid-cols-3">
                         {workflow.map((item) => (
@@ -95,12 +94,22 @@ export default function Landing() {
                     </div>
                 </section>
 
+                <section className="border-t border-slate-800/70 bg-slate-900/35">
+                    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12 sm:px-6 md:flex-row md:items-center md:justify-between">
+                        <div className="max-w-2xl">
+                            <h2 className="text-2xl font-bold">See the complete record, including the misses.</h2>
+                            <p className="mt-2 leading-7 text-slate-400">Open positions, pending entries, closed trades, and cancelled setups are organized separately. Paper results are labeled as paper results, with the trade history available on each card.</p>
+                        </div>
+                        <a href="/signals" className="self-start whitespace-nowrap rounded-xl border border-indigo-500/60 px-5 py-3 font-semibold text-indigo-200 hover:bg-indigo-950/50">View trade history</a>
+                    </div>
+                </section>
+
                 <section id="sign-in" className="border-t border-slate-800/70 bg-slate-900/25">
                     <div className="mx-auto grid max-w-5xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
                         <div>
                             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Keep your research together</div>
                             <h2 className="mt-2 text-3xl font-bold">Save the names worth watching.</h2>
-                            <p className="mt-3 leading-7 text-slate-400">The market plan and opportunities are public. Create a free account to build a watchlist and follow the ratings that matter to you.</p>
+                            <p className="mt-3 leading-7 text-slate-400">The trade record and market context are public. Create a free account to build a watchlist and follow the ratings that matter to you.</p>
                         </div>
                         <div className="lg:justify-self-end lg:w-full lg:max-w-md">
                             <Login />
