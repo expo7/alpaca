@@ -12,16 +12,32 @@ const mockResponse = (data, ok = true, status = 200) => ({
 });
 
 describe("Landing page", () => {
-  test("shows marketing copy and embedded login form", () => {
+  test("opens sign in immediately from the header", async () => {
+    const originalShowModal = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () {
+      this.removeAttribute("open");
+      this.dispatchEvent(new Event("close"));
+    };
+    try {
     render(
       <AuthProvider>
         <Landing />
       </AuthProvider>
     );
     expect(screen.getByText(/Trade ideas with a plan/i)).toBeInTheDocument();
-    expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^QUANTELLE$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Sign in/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Sign in$/i }));
+    expect(screen.getByRole("dialog", { name: "Quantelle sign in" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog").querySelector("input")).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: /Close sign in/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally {
+      HTMLDialogElement.prototype.showModal = originalShowModal;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
   });
 });
 

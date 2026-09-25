@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import Login from "./Login.jsx";
 import { APP_NAME } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
@@ -10,6 +11,17 @@ const workflow = [
 ];
 
 export default function Landing() {
+    const [signInOpen, setSignInOpen] = useState(false);
+    const dialogRef = useRef(null);
+
+    useEffect(() => {
+        if (!signInOpen) return;
+        const dialog = dialogRef.current;
+        dialog.showModal();
+        dialog.querySelector("input")?.focus();
+        return () => { if (dialog.open) dialog.close(); };
+    }, [signInOpen]);
+
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100">
             <header className="border-b border-slate-800/80 bg-slate-950/90">
@@ -23,7 +35,7 @@ export default function Landing() {
                     <nav aria-label="Main navigation" className="flex items-center gap-2 text-xs sm:gap-3 sm:text-sm">
                         <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
                         <a href="/articles" className="text-slate-300 hover:text-white">Articles</a>
-                        <a href="#sign-in" className="rounded-full border border-slate-700 px-2 py-1.5 text-slate-200 hover:bg-slate-900 sm:px-3">Sign in</a>
+                        <button type="button" onClick={() => setSignInOpen(true)} className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-500">Sign in</button>
                     </nav>
                 </div>
             </header>
@@ -105,21 +117,17 @@ export default function Landing() {
                     </div>
                 </section>
 
-                <section id="sign-in" className="border-t border-slate-800/70 bg-slate-900/25">
-                    <div className="mx-auto grid max-w-5xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-                        <div>
-                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Keep your research together</div>
-                            <h2 className="mt-2 text-3xl font-bold">Save the names worth watching.</h2>
-                            <p className="mt-3 leading-7 text-slate-400">The trade record and market context are public. Create a free account to build a watchlist and follow the ratings that matter to you.</p>
-                        </div>
-                        <div className="lg:justify-self-end lg:w-full lg:max-w-md">
-                            <Login />
-                        </div>
-                    </div>
-                </section>
             </main>
 
             <SiteFooter />
+            {signInOpen && <dialog ref={dialogRef} onClose={() => setSignInOpen(false)} onClick={(event) => {
+                if (event.target === event.currentTarget) event.currentTarget.close();
+            }} aria-label="Quantelle sign in" className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-2 text-slate-100 shadow-2xl shadow-black/60 backdrop:bg-slate-950/80">
+                <div className="mb-1 flex justify-end">
+                    <button type="button" onClick={() => dialogRef.current?.close()} aria-label="Close sign in" className="rounded-md px-3 py-1 text-xl text-slate-400 hover:bg-slate-800 hover:text-white">×</button>
+                </div>
+                <Login />
+            </dialog>}
         </div>
     );
 }
