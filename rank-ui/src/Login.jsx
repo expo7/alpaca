@@ -199,12 +199,6 @@ export default function Login() {
             </button>
       </form>
 
-      <ul className="mt-5 list-disc space-y-1 pl-4 text-xs text-slate-400">
-        <li>See today&apos;s market outlook.</li>
-        <li>Get a clear daily recommendation.</li>
-        <li>Focus on top-ranked opportunities.</li>
-        <li>Track your saved watchlist daily.</li>
-      </ul>
     </section>
   );
 }
