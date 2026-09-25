@@ -29,7 +29,7 @@ class TradeSignalApiTests(APITestCase):
         return TradeSignal.objects.create(**data)
 
     def test_public_feed_excludes_drafts_and_includes_completed_updates(self):
-        published = self._signal(status=TradeSignal.STATUS_CLOSED)
+        published = self._signal(status=TradeSignal.STATUS_CLOSED, paper_exit_reason="broker_stop")
         self._signal(symbol="AAPL", status=TradeSignal.STATUS_DRAFT)
         self._signal(symbol="TEST", status=TradeSignal.STATUS_CLOSED, is_test=True)
         TradeSignalUpdate.objects.create(
@@ -46,6 +46,7 @@ class TradeSignalApiTests(APITestCase):
         self.assertEqual(response.data[0]["symbol"], "MU")
         self.assertEqual(response.data[0]["instrument"], "MU 110.00C 9/18/26")
         self.assertEqual(response.data[0]["contract_symbol"], "MU260918C00110000")
+        self.assertEqual(response.data[0]["paper_exit_reason"], "broker_stop")
         target_updates = [update for update in response.data[0]["updates"] if update["event_type"] == "target"]
         self.assertEqual(target_updates[0]["note"], "First target reached.")
 

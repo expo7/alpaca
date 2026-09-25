@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import TradeSignalsPage from "../pages/TradeSignalsPage.jsx";
@@ -81,6 +81,8 @@ describe("TradeSignalsPage", () => {
     render(<TradeSignalsPage />);
     expect(await screen.findByText("MU 110C 9/18/26")).toBeInTheDocument();
     expect(screen.getAllByText("+40.65%")).toHaveLength(2);
+    expect(screen.getByText("Realized return")).toBeInTheDocument();
+    expect(screen.queryByText("+48.05%")).not.toBeInTheDocument();
     expect(screen.getByText("Booked profits at the second target.")).toBeInTheDocument();
   });
 
@@ -208,8 +210,43 @@ describe("TradeSignalsPage", () => {
     expect(await screen.findByRole("heading", { name: "Open positions" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Completed history/ })).toBeInTheDocument();
-    expect(screen.getByText("3 published · 1 open · 1 pending")).toBeInTheDocument();
+    expect(screen.getByText("3 published · 1 active · 1 waiting · 1 completed")).toBeInTheDocument();
     expect(document.getElementById("trade-12")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Waiting 1/i }));
+    expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Open positions" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Completed 1/i }));
+    expect(screen.getByRole("heading", { name: /Completed history/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pending entries" })).not.toBeInTheDocument();
+  });
+
+  it("shows recorded customer activity, evidence, and a losing gross paper result without staff incidents", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+      id: 7, symbol: "AMZN", instrument: "AMZN call", status: "closed", status_label: "Closed",
+      instrument_type: "call", risk_level: "high", entry_low: "15.60", initial_stop: "11.50", target_1: "22.00",
+      actual_entry: "15.60", final_exit: "11.50", realized_return_pct: "-26.28", max_return_pct: "8.00",
+      paper_execution_enabled: true, paper_quantity: 1, paper_exit_reason: "broker_stop",
+      evidence_tags: ["Price action", "Options flow"], thesis: "Published thesis", published_at: "2026-09-17T19:41:00Z",
+      updates: [
+        { id: 1, event_type: "triggered", event_label: "Entry filled", audience: "customer", note: "Paper entry filled.", occurred_at: "2026-09-18T13:33:00Z" },
+        { id: 2, event_type: "execution_warning", audience: "staff", note: "Guardian DNS diagnostic", occurred_at: "2026-09-23T13:00:00Z" },
+        { id: 3, event_type: "closed", event_label: "Closed", audience: "customer", note: "Broker stop filled.", occurred_at: "2026-09-24T13:49:00Z" },
+      ],
+    }] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("AMZN call")).toBeInTheDocument();
+    expect(screen.getByText("Realized paper return")).toBeInTheDocument();
+    expect(screen.getAllByText("-26.28%")).toHaveLength(2);
+    expect(screen.getByText("−$410.00")).toBeInTheDocument();
+    expect(screen.getByText("Technical confirmation")).toHaveAttribute("title", "Published price-action evidence");
+    expect(screen.getByText("Options flow")).toBeInTheDocument();
+    expect(screen.getByText(/Exit: broker stop/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /All activity 2/i }));
+    const stream = screen.getByRole("heading", { name: "Customer trade activity" }).parentElement;
+    expect(within(stream).getByText("Paper entry filled.")).toBeInTheDocument();
+    expect(within(stream).getByText("Broker stop filled.")).toBeInTheDocument();
+    expect(within(stream).queryByText("Guardian DNS diagnostic")).not.toBeInTheDocument();
+    expect(within(stream).getAllByText(/MST/)).toHaveLength(2);
   });
 
 });
