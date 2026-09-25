@@ -1,4 +1,6 @@
 from datetime import timedelta
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from django.test import override_settings
 from django.urls import reverse
@@ -60,6 +62,25 @@ class ResearchRunTests(APITestCase):
         response = self.client.post(self.url, {**self.data, "market_regime": "R" * 81}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("market_regime", response.data)
+        self.assertFalse(ResearchRun.objects.exists())
+
+    def test_completion_order_timezone_and_future_boundary(self):
+        self.authenticate()
+        fixed = self.slot + timedelta(minutes=20)
+        phoenix = ZoneInfo("America/Phoenix")
+        payload = {**self.data, "started_at": fixed.astimezone(phoenix).isoformat(),
+                   "completed_at": fixed.astimezone(phoenix).isoformat()}
+        with patch("django.utils.timezone.now", return_value=fixed):
+            self.assertEqual(self.client.post(self.url, payload, format="json").status_code, 201)
+        self.assertEqual(ResearchRun.objects.get().completed_at, fixed)
+        ResearchRun.objects.all().delete()
+        with patch("django.utils.timezone.now", return_value=fixed):
+            for bad in (
+                {**payload, "completed_at": (fixed - timedelta(microseconds=1)).isoformat()},
+                {**payload, "completed_at": (fixed + timedelta(microseconds=1)).isoformat()},
+                {**payload, "completed_at": fixed.replace(tzinfo=None).isoformat()},
+            ):
+                self.assertEqual(self.client.post(self.url, bad, format="json").status_code, 400)
         self.assertFalse(ResearchRun.objects.exists())
 
     def test_rejects_unscheduled_slot_and_unverified_action(self):

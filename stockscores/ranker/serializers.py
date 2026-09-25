@@ -648,8 +648,18 @@ class OperatorResearchRunSerializer(serializers.Serializer):
     error_summary = serializers.CharField(max_length=500, allow_blank=True)
 
     def validate(self, attrs):
+        from datetime import datetime
         from django.utils import timezone
         from .research_runs import is_scheduled_slot
+
+        for key in ("expected_run_at", "started_at", "completed_at"):
+            raw = self.initial_data.get(key)
+            try:
+                aware = isinstance(raw, str) and datetime.fromisoformat(raw.replace("Z", "+00:00")).tzinfo is not None
+            except ValueError:
+                aware = False
+            if not aware:
+                raise serializers.ValidationError({key: "Timestamp must be ISO 8601 with an explicit timezone."})
 
         expected, started, completed = (attrs[key] for key in ("expected_run_at", "started_at", "completed_at"))
         now = timezone.now()
@@ -658,7 +668,7 @@ class OperatorResearchRunSerializer(serializers.Serializer):
             errors["expected_run_at"] = "Use an actual scheduled weekday slot within the last seven days."
         if started < expected - timedelta(hours=6) or started > expected + timedelta(hours=6):
             errors["started_at"] = "Start must be within six hours of the scheduled slot."
-        if completed < started or completed > now + timedelta(minutes=5):
+        if completed < started or completed > now:
             errors["completed_at"] = "Completion must follow start and cannot be in the future."
         if attrs["outcome"] == "failure" and not attrs["error_summary"].strip():
             errors["error_summary"] = "Summarize the failure."
