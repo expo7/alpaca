@@ -20,10 +20,10 @@ export default function Landing() {
                         </span>
                         <span className="hidden text-xs text-slate-500 sm:block">Options research with a public trade record</span>
                     </a>
-                    <nav aria-label="Main navigation" className="flex items-center gap-3 text-sm">
+                    <nav aria-label="Main navigation" className="flex items-center gap-2 text-xs sm:gap-3 sm:text-sm">
                         <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
-                        <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
-                        <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
+                        <a href="/articles" className="text-slate-300 hover:text-white">Articles</a>
+                        <a href="#sign-in" className="rounded-full border border-slate-700 px-2 py-1.5 text-slate-200 hover:bg-slate-900 sm:px-3">Sign in</a>
                     </nav>
                 </div>
             </header>
