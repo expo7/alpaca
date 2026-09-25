@@ -158,7 +158,7 @@ describe("TradeSignalsPage", () => {
     expect(screen.getAllByText("— / —").length).toBeGreaterThan(0);
   });
 
-  it("separates open positions, pending entries, and completed history", async () => {
+  it("separates filled completed trades from cancelled and expired setups", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => [
@@ -196,12 +196,17 @@ describe("TradeSignalsPage", () => {
           entry_low: "2.90",
           initial_stop: "1.90",
           target_1: "4.25",
+          actual_entry: "2.90",
+          final_exit: "3.95",
+          realized_return_pct: "36.21",
           thesis: "Completed test trade.",
           evidence_tags: [],
           published_at: "2026-09-10T13:30:00Z",
           updates: [],
           is_locked: false,
         },
+        { id: 13, symbol: "SHOP", instrument: "SHOP call", status: "cancelled", status_label: "Cancelled", entry_low: "2.00", initial_stop: "1.00", target_1: "3.00", thesis: "Unfilled", updates: [] },
+        { id: 14, symbol: "MU", instrument: "MU call", status: "expired", status_label: "Expired", entry_low: "2.00", initial_stop: "1.00", target_1: "3.00", thesis: "Unfilled", updates: [] },
       ],
     }));
 
@@ -209,15 +214,21 @@ describe("TradeSignalsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Open positions" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Completed history/ })).toBeInTheDocument();
-    expect(screen.getByText("3 published · 1 active · 1 waiting · 1 completed")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Completed trades/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Unfilled and other outcomes/ })).toBeInTheDocument();
+    expect(screen.getByText("5 published · 1 active · 1 waiting · 1 completed trades · 2 unfilled/other")).toBeInTheDocument();
     expect(document.getElementById("trade-12")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Waiting 1/i }));
     expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Open positions" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Completed 1/i }));
-    expect(screen.getByRole("heading", { name: /Completed history/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Completed trades 1/i }));
+    expect(screen.getByRole("heading", { name: /Completed trades/ })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pending entries" })).not.toBeInTheDocument();
+    expect(screen.queryByText("SHOP call")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Unfilled \/ other 2/i }));
+    expect(screen.getByText("SHOP call")).toBeInTheDocument();
+    expect(screen.getByText("MU call")).toBeInTheDocument();
+    expect(screen.queryByText("NVDA 240C 10/16/26")).not.toBeInTheDocument();
   });
 
   it("shows recorded customer activity, evidence, and a losing gross paper result without staff incidents", async () => {
@@ -247,6 +258,25 @@ describe("TradeSignalsPage", () => {
     expect(within(stream).getByText("Broker stop filled.")).toBeInTheDocument();
     expect(within(stream).queryByText("Guardian DNS diagnostic")).not.toBeInTheDocument();
     expect(within(stream).getAllByText(/MST/)).toHaveLength(2);
+  });
+
+  it("counts the three filled exits as two wins and one loss without counting unfilled plans", async () => {
+    const trade = (id, symbol, result) => ({ id, symbol, instrument: `${symbol} call`, status: "closed", status_label: "Closed",
+      instrument_type: "call", entry_low: "1.00", initial_stop: "0.50", target_1: "2.00", actual_entry: "1.00",
+      final_exit: result > 0 ? "1.50" : "0.75", realized_return_pct: String(result), thesis: "Recorded trade", updates: [] });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [
+      trade(10, "QCOM", 58.76), trade(7, "AMZN", -26.28), trade(6, "NVDA", 36.43),
+      { id: 11, symbol: "SHOP", instrument: "SHOP call", status: "cancelled", status_label: "Cancelled",
+        entry_low: "1.00", initial_stop: "0.50", target_1: "2.00", thesis: "No fill", updates: [] },
+    ] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("4 published · 0 active · 0 waiting · 3 completed trades · 1 unfilled/other")).toBeInTheDocument();
+    expect(screen.getByText(/2 wins · 1 loss/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Completed trades 3/i }));
+    expect(screen.getByText("QCOM call")).toBeInTheDocument();
+    expect(screen.getByText("AMZN call")).toBeInTheDocument();
+    expect(screen.getByText("NVDA call")).toBeInTheDocument();
+    expect(screen.queryByText("SHOP call")).not.toBeInTheDocument();
   });
 
 });

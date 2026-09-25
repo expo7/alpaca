@@ -311,14 +311,20 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const pending = useMemo(() => signals.filter((signal) => signal.status === "published"), [signals]);
   const open = useMemo(() => signals.filter((signal) => signal.status === "open"), [signals]);
   const active = useMemo(() => signals.filter((signal) => ACTIVE.has(signal.status)), [signals]);
-  const history = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)), [signals]);
+  const completedTrades = useMemo(() => signals.filter((signal) => signal.status === "closed"
+    && signal.actual_entry != null && signal.final_exit != null && signal.realized_return_pct != null), [signals]);
+  const otherOutcomes = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)
+    && !completedTrades.some((trade) => trade.id === signal.id)), [signals, completedTrades]);
+  const wins = completedTrades.filter((signal) => Number(signal.realized_return_pct) > 0).length;
+  const losses = completedTrades.filter((signal) => Number(signal.realized_return_pct) < 0).length;
   const activity = useMemo(() => signals.flatMap((signal) => customerEvents(signal).map((update) => ({ signal, update })))
     .sort((a, b) => new Date(b.update.occurred_at) - new Date(a.update.occurred_at)), [signals]);
   const views = [
     { id: "all", label: "All setups", count: signals.length },
     { id: "active", label: "Active", count: open.length },
     { id: "waiting", label: "Waiting", count: pending.length },
-    { id: "completed", label: "Completed", count: history.length },
+    { id: "completed", label: "Completed trades", count: completedTrades.length },
+    { id: "unfilled", label: "Unfilled / other", count: otherOutcomes.length },
     { id: "activity", label: "All activity", count: activity.length },
   ];
 
@@ -328,10 +334,10 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">Quantelle trade record</div>
           <h1 className="mt-2 text-3xl font-bold text-white">Published trade setups</h1>
-          <p className="mt-2 max-w-2xl text-slate-400">Qualified options plans, monitored through their paper lifecycle. Every completed result, including a loss or unfilled entry, remains visible.</p>
+          <p className="mt-2 max-w-2xl text-slate-400">Qualified options plans, monitored through their paper lifecycle. Filled trades and setups that never entered have separate records.</p>
         </div>
         <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
-          {signals.length} published · {open.length} active · {pending.length} waiting · {history.length} completed
+          {signals.length} published · {open.length} active · {pending.length} waiting · {completedTrades.length} completed trades · {otherOutcomes.length} unfilled/other
         </div>
       </div>
 
@@ -373,7 +379,8 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
       }} />}
       {!loading && !error && view === "active" && !open.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No active paper positions right now. Qualified setups are published only when their conditions are met.</p>}
       {!loading && !error && view === "waiting" && !pending.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No published setups are waiting for entry right now.</p>}
-      {!loading && !error && view === "completed" && !history.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No completed setups yet.</p>}
+      {!loading && !error && view === "completed" && !completedTrades.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No filled trades have closed yet.</p>}
+      {!loading && !error && view === "unfilled" && !otherOutcomes.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No unfilled or other terminal setups yet.</p>}
       {(view === "all" || view === "active" || view === "waiting") && !!active.length && (
         <div className="space-y-8">
           {(view === "all" || view === "active") && !!open.length && (
@@ -403,13 +410,22 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
           )}
         </div>
       )}
-      {(view === "all" || view === "completed") && !!history.length && (
+      {(view === "all" || view === "completed") && !!completedTrades.length && (
         <section className={view === "all" && active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
           <div className="mb-3">
-            <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed history <span className="ml-1 text-sm font-normal text-slate-500">{history.length}</span></h2>
-            <p className="mt-1 text-sm text-slate-500">Closed, cancelled, expired, and unfilled setups remain visible, including losses.</p>
+            <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed trades <span className="ml-1 text-sm font-normal text-slate-500">{completedTrades.length}</span></h2>
+            <p className="mt-1 text-sm text-slate-500">Filled and exited trades with recorded realized returns · {wins} {wins === 1 ? "win" : "wins"} · {losses} {losses === 1 ? "loss" : "losses"}. Paper results are shown where paper execution was enabled.</p>
           </div>
-          <div className="space-y-4">{history.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
+          <div className="space-y-4">{completedTrades.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
+        </section>
+      )}
+      {(view === "all" || view === "unfilled") && !!otherOutcomes.length && (
+        <section className={view === "all" ? "mt-10" : ""} aria-labelledby="other-outcomes-heading">
+          <div className="mb-3">
+            <h2 id="other-outcomes-heading" className="text-lg font-semibold text-white">Unfilled and other outcomes <span className="ml-1 text-sm font-normal text-slate-500">{otherOutcomes.length}</span></h2>
+            <p className="mt-1 text-sm text-slate-500">Cancelled and expired plans remain visible. A closed record without a complete fill, exit, and return also appears here until its record is complete.</p>
+          </div>
+          <div className="space-y-4">{otherOutcomes.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
         </section>
       )}
 
