@@ -3,9 +3,10 @@ import { APP_NAME } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
 
 const workflow = [
-    { number: "01", title: "A specific setup", copy: "Published plans define the contract, entry trigger, stop, targets, risk, and evidence. Active details may require Pro access." },
-    { number: "02", title: "Updates as it unfolds", copy: "Subscribers receive meaningful lifecycle alerts in Telegram. Trade cards show the current state and latest customer update." },
-    { number: "03", title: "An outcome that stays visible", copy: "Review open positions, pending entries, and completed history, including losses and setups that never filled." },
+    { number: "01", title: "Qualify a setup", copy: "Research produces a specific options plan only when the contract and entry conditions qualify." },
+    { number: "02", title: "Publish the plan", copy: "The contract, trigger, stop, targets, risk, and evidence are recorded before entry. Active details may require Pro access." },
+    { number: "03", title: "Monitor the paper trade", copy: "The Alpaca paper executor follows a qualifying entry and its protective exit. Material lifecycle events reach the Telegram alert channel." },
+    { number: "04", title: "Keep every result", copy: "The public record retains completed paper outcomes, losses, cancellations, expirations, and setups that never filled." },
 ];
 
 export default function Landing() {
@@ -20,7 +21,7 @@ export default function Landing() {
                         <span className="hidden text-xs text-slate-500 sm:block">Options research with a public trade record</span>
                     </a>
                     <nav aria-label="Main navigation" className="flex items-center gap-3 text-sm">
-                        <a href="/signals" className="text-slate-300 hover:text-white">Trade record</a>
+                        <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
                         <a href="/articles" className="hidden text-slate-300 hover:text-white sm:inline">Articles</a>
                         <a href="#sign-in" className="rounded-full border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-900">Sign in</a>
                     </nav>
@@ -43,13 +44,13 @@ export default function Landing() {
                             </p>
                             <div className="mt-7 flex flex-wrap gap-3">
                                 <a href="/signals" className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500">
-                                    Explore the trade record
+                                    Explore Live Options
                                 </a>
-                                <a href="#how-it-works" className="rounded-xl border border-slate-700 bg-slate-900/60 px-5 py-3 font-semibold text-slate-200 hover:bg-slate-900">
-                                    How it works
+                                <a href="https://t.me/+6zJGLH-XJWY0MTcx" target="_blank" rel="noreferrer" className="rounded-xl border border-sky-700 bg-sky-950/40 px-5 py-3 font-semibold text-sky-200 hover:bg-sky-950/70">
+                                    Quantelle Trade Alerts
                                 </a>
                             </div>
-                            <p className="mt-4 text-xs text-slate-500">Free public record · Alpaca paper execution · No brokerage connection required to browse</p>
+                            <p className="mt-4 text-xs text-slate-500">Free public record · Alpaca paper execution and returns · No brokerage connection required to browse</p>
                         </div>
 
                         <div className="rounded-3xl border border-slate-700/80 bg-slate-900/75 p-5 shadow-2xl shadow-indigo-950/30 backdrop-blur">
@@ -83,7 +84,7 @@ export default function Landing() {
                         <h2 className="mt-2 text-3xl font-bold tracking-tight">From setup to outcome</h2>
                         <p className="mt-3 leading-7 text-slate-400">A candidate becomes a published trade only when its conditions qualify. If an entry never triggers, that remains part of the record too.</p>
                     </div>
-                    <div className="mt-8 grid gap-4 md:grid-cols-3">
+                    <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         {workflow.map((item) => (
                             <article key={item.number} className="rounded-2xl border border-slate-800 bg-slate-900/45 p-5">
                                 <div className="font-mono text-sm text-indigo-400">{item.number}</div>

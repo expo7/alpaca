@@ -16,7 +16,7 @@ function percent(value) {
 
 function dateTime(value) {
   if (!value) return "—";
-  return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return `${new Date(value).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Phoenix" })} MST`;
 }
 
 function dateOnly(value) {
@@ -27,6 +27,39 @@ function dateOnly(value) {
 function plannedPercent(value, entryReference) {
   if (value === null || value === undefined || !entryReference) return null;
   return ((Number(value) / entryReference) - 1) * 100;
+}
+
+const EVIDENCE_LABELS = {
+  "price action": { label: "Technical confirmation", explanation: "Published price-action evidence" },
+  "technical analysis": { label: "Technical confirmation", explanation: "Published technical-analysis evidence" },
+  "options flow": { label: "Options flow", explanation: "Published options-flow evidence; this is not a standalone recommendation" },
+  "bull sweeps": { label: "Bullish flow", explanation: "Published bullish options-flow evidence" },
+  "bear sweeps": { label: "Bearish flow", explanation: "Published bearish options-flow evidence" },
+};
+
+function EvidenceTags({ tags = [] }) {
+  return <div className="mt-3 flex flex-wrap gap-2">{tags.map((tag, index) => {
+    const mapped = EVIDENCE_LABELS[String(tag).trim().toLowerCase()];
+    return <span key={`${tag}-${index}`} title={mapped?.explanation || `Published evidence: ${tag}`} className="rounded-lg border border-indigo-800/50 bg-indigo-950/70 px-2.5 py-1 text-xs font-semibold text-indigo-200">{mapped?.label || tag}</span>;
+  })}</div>;
+}
+
+function customerEvents(signal) {
+  return (signal.updates || []).filter((update) => update.audience !== "staff");
+}
+
+function ActivityStream({ events, heading = "Customer activity", onSelectTrade }) {
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5">
+    <h3 className="font-semibold text-white">{heading}</h3>
+    {events.length ? <ol className="mt-4 space-y-4 border-l border-indigo-600/50 pl-4">{events.map(({ signal, update }) =>
+      <li key={`${signal.id}-${update.id}`} className="relative text-sm">
+        <span aria-hidden="true" className="absolute -left-[1.27rem] top-1.5 h-2 w-2 rounded-full bg-indigo-400" />
+        <div className="flex flex-wrap items-baseline gap-x-2"><strong className="text-slate-100">{signal.symbol} · {update.event_label || update.event_type || "Update"}</strong><time className="text-xs text-slate-500">{dateTime(update.occurred_at)}</time></div>
+        <p className="mt-1 whitespace-pre-wrap text-slate-300">{update.note}</p>
+        {onSelectTrade ? <button type="button" onClick={() => onSelectTrade(signal.id)} className="mt-1 text-xs font-semibold text-indigo-300 hover:text-indigo-200">View trade card</button>
+          : <a href={`#trade-${signal.id}`} className="mt-1 inline-block text-xs font-semibold text-indigo-300 hover:text-indigo-200">View trade card</a>}
+      </li>)}</ol> : <p className="mt-3 text-sm text-slate-400">No customer updates are recorded yet.</p>}
+  </div>;
 }
 
 function PlanValue({ value, entryReference, tone = "text-white" }) {
@@ -63,15 +96,21 @@ function CurrentQuote({ signal, token = "" }) {
     : null;
   const position = quote?.paper_position;
   const positionPositive = Number(position?.unrealized_pl) >= 0;
+  const stop = Number(signal.current_stop || signal.initial_stop);
+  const target = Number(signal.target_1);
+  const bid = Number(quote?.option_bid);
+  const targetProgress = signal.status === "open" && quote?.option_bid != null && target > stop
+    ? Math.max(0, Math.min(100, ((bid - stop) / (target - stop)) * 100)) : null;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Market now</div>
+        <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Latest available quote</div>
         <div className={`text-xs font-semibold ${quote?.available ? "text-amber-300" : "text-slate-500"}`}>
           {quote?.status_label || "Loading quote…"}
         </div>
       </div>
+      {targetProgress !== null && <div className="mt-4"><div className="flex justify-between text-xs text-slate-400"><span>Bid progress from stop to target 1</span><span>{targetProgress.toFixed(0)}%</span></div><div role="progressbar" aria-label="Bid progress to target 1" aria-valuenow={Math.round(targetProgress)} aria-valuemin={0} aria-valuemax={100} className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-400" style={{ width: `${targetProgress}%` }} /></div></div>}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div><div className="text-xs text-slate-500">{signal.symbol} last</div><div className="mt-1 font-semibold text-white">{money(quote?.underlying_price)}</div></div>
         {signal.instrument_type !== "stock" && <>
@@ -111,7 +150,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
         <div className="h-1 bg-indigo-500" />
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="text-xl font-bold text-white">Active {signal.symbol} setup</h2><p className="mt-1 text-slate-400">{signal.company_name}</p></div>
+            <div><h2 className="text-xl font-bold text-white">Active {signal.symbol} setup</h2><p className="mt-1 text-slate-400">{signal.company_name} · {signal.instrument_type === "put" ? "Put" : "Call"} option</p></div>
             <span className="rounded-full bg-indigo-950 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-indigo-300">Pro setup</span>
           </div>
           <p className="mt-5 max-w-2xl leading-7 text-slate-300">The contract, trigger, entry range, risk controls, live quote, thesis, and evidence are available to Quantelle Pro subscribers. The complete result will remain on the public record when the setup ends.</p>
@@ -123,12 +162,15 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
   const entry = signal.entry_high && signal.entry_high !== signal.entry_low
     ? `${money(signal.entry_low)}–${money(signal.entry_high)}`
     : money(signal.entry_low);
-  const customerUpdates = (signal.updates || []).filter((update) => update.audience !== "staff");
+  const customerUpdates = customerEvents(signal);
   const latest = customerUpdates[customerUpdates.length - 1];
   const isPending = signal.status === "published";
   const isOpen = signal.status === "open";
-  const returnValue = signal.realized_return_pct ?? signal.max_return_pct;
+  const returnValue = signal.realized_return_pct;
   const positive = Number(returnValue) >= 0;
+  const grossPaperResult = signal.paper_execution_enabled && signal.actual_entry != null && signal.final_exit != null
+    ? (Number(signal.final_exit) - Number(signal.actual_entry)) * 100 * Number(signal.paper_quantity || 1)
+    : null;
   const entryReference = signal.actual_entry
     ? Number(signal.actual_entry)
     : signal.entry_high
@@ -216,11 +258,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
         <div className="mt-5 rounded-xl bg-slate-950/55 p-4">
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Why it qualified</div>
           <p className="mt-2 leading-6 text-slate-200">{signal.thesis}</p>
-          {!!signal.evidence_tags?.length && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {signal.evidence_tags.map((tag) => <span key={tag} className="rounded-lg bg-indigo-950/70 px-2.5 py-1 text-xs font-semibold text-indigo-200">{tag}</span>)}
-            </div>
-          )}
+          {!!signal.evidence_tags?.length && <EvidenceTags tags={signal.evidence_tags} />}
         </div>
 
         {signal.invalidation && <p className="mt-3 text-sm text-slate-400"><span className="font-semibold text-slate-300">Invalidation:</span> {signal.invalidation}</p>}
@@ -232,14 +270,20 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
           </div>
         )}
 
+        {customerUpdates.length > 1 && <details className="mt-4 rounded-xl border border-slate-800 p-3">
+          <summary className="cursor-pointer font-semibold text-indigo-300">Customer activity · {customerUpdates.length} updates</summary>
+          <div className="mt-4"><ActivityStream heading="Recorded customer updates" events={customerUpdates.map((update) => ({ signal, update }))} /></div>
+        </details>}
+
         {archived && returnValue !== null && returnValue !== undefined && (
           <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-4">
-            <span className="text-sm text-slate-400">Recorded return</span>
+            <span className="text-sm text-slate-400">Realized {signal.paper_execution_enabled ? "paper " : ""}return</span>
             <span className={`text-xl font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>{percent(returnValue)}</span>
           </div>
         )}
+        {archived && grossPaperResult !== null && <div className="mt-2 text-sm text-slate-300">Gross paper P/L: <strong className={grossPaperResult >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(grossPaperResult)}</strong> <span className="text-xs text-slate-500">({signal.paper_quantity || 1} {(signal.paper_quantity || 1) === 1 ? "contract" : "contracts"} · before fees)</span></div>}
         {archived && <div className="mt-3 flex gap-6 text-sm text-slate-300"><span>Fill: {money(signal.actual_entry)}</span><span>Exit: {money(signal.final_exit)}</span></div>}
-        {archived && <div className="mt-2 text-xs text-slate-400">Lifecycle certification: {signal.certification_state || "Pending"}{signal.paper_exit_reason ? ` · Exit: ${signal.paper_exit_reason}` : ""}</div>}
+        {archived && <div className="mt-2 text-xs text-slate-400">Lifecycle certification: {signal.certification_state || "Pending"}{signal.paper_exit_reason ? ` · Exit: ${signal.paper_exit_reason.replaceAll("_", " ")}` : ""}</div>}
       </div>
     </article>
   );
@@ -247,6 +291,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
 
 export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
+  const [view, setView] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -267,6 +312,15 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const open = useMemo(() => signals.filter((signal) => signal.status === "open"), [signals]);
   const active = useMemo(() => signals.filter((signal) => ACTIVE.has(signal.status)), [signals]);
   const history = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)), [signals]);
+  const activity = useMemo(() => signals.flatMap((signal) => customerEvents(signal).map((update) => ({ signal, update })))
+    .sort((a, b) => new Date(b.update.occurred_at) - new Date(a.update.occurred_at)), [signals]);
+  const views = [
+    { id: "all", label: "All setups", count: signals.length },
+    { id: "active", label: "Active", count: open.length },
+    { id: "waiting", label: "Waiting", count: pending.length },
+    { id: "completed", label: "Completed", count: history.length },
+    { id: "activity", label: "All activity", count: activity.length },
+  ];
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
@@ -274,10 +328,10 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">Quantelle trade record</div>
           <h1 className="mt-2 text-3xl font-bold text-white">Published trade setups</h1>
-          <p className="mt-2 max-w-2xl text-slate-400">Every setup is timestamped before its outcome is known. Entries, stops, targets, changes, wins, and losses remain on the record.</p>
+          <p className="mt-2 max-w-2xl text-slate-400">Qualified options plans, monitored through their paper lifecycle. Every completed result, including a loss or unfilled entry, remains visible.</p>
         </div>
         <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
-          {signals.length} published · {open.length} open · {pending.length} pending
+          {signals.length} published · {open.length} active · {pending.length} waiting · {history.length} completed
         </div>
       </div>
 
@@ -297,6 +351,13 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </a>
       </aside>
 
+      <nav aria-label="Trade record views" className="mb-6 flex gap-2 overflow-x-auto pb-2">
+        {views.map((item) => <button key={item.id} type="button" aria-pressed={view === item.id} onClick={() => setView(item.id)}
+          className={`min-h-11 shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition ${view === item.id ? "border-indigo-400 bg-indigo-950 text-white" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}>
+          {item.label} <span className="ml-1 text-xs opacity-75">{item.count}</span>
+        </button>)}
+      </nav>
+
       {loading && <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">Loading trade record…</div>}
       {error && <div className="rounded-2xl border border-rose-800 bg-rose-950/40 p-5 text-rose-200">{error}</div>}
       {!loading && !error && !signals.length && (
@@ -306,9 +367,16 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </div>
       )}
 
-      {!!active.length && (
+      {!loading && !error && view === "activity" && <ActivityStream events={activity} heading="Customer trade activity" onSelectTrade={(id) => {
+        setView("all");
+        window.requestAnimationFrame(() => document.getElementById(`trade-${id}`)?.scrollIntoView());
+      }} />}
+      {!loading && !error && view === "active" && !open.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No active paper positions right now. Qualified setups are published only when their conditions are met.</p>}
+      {!loading && !error && view === "waiting" && !pending.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No published setups are waiting for entry right now.</p>}
+      {!loading && !error && view === "completed" && !history.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No completed setups yet.</p>}
+      {(view === "all" || view === "active" || view === "waiting") && !!active.length && (
         <div className="space-y-8">
-          {!!open.length && (
+          {(view === "all" || view === "active") && !!open.length && (
             <section aria-labelledby="open-positions-heading">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
@@ -321,7 +389,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
             </section>
           )}
 
-          {!!pending.length && (
+          {(view === "all" || view === "waiting") && !!pending.length && (
             <section aria-labelledby="pending-entries-heading">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
@@ -335,11 +403,11 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
           )}
         </div>
       )}
-      {!!history.length && (
-        <section className={active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
+      {(view === "all" || view === "completed") && !!history.length && (
+        <section className={view === "all" && active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
           <div className="mb-3">
             <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed history <span className="ml-1 text-sm font-normal text-slate-500">{history.length}</span></h2>
-            <p className="mt-1 text-sm text-slate-500">Closed and cancelled setups remain visible as the permanent performance record.</p>
+            <p className="mt-1 text-sm text-slate-500">Closed, cancelled, expired, and unfilled setups remain visible, including losses.</p>
           </div>
           <div className="space-y-4">{history.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
         </section>
