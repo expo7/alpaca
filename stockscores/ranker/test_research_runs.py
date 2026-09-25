@@ -45,6 +45,23 @@ class ResearchRunTests(APITestCase):
         self.assertEqual(self.client.post(self.url, changed, format="json").status_code, 409)
         self.assertEqual(ResearchRun.objects.get().candidates_reviewed, 18)
 
+    def test_regime_contract_accepts_boundary_and_preserves_narrative(self):
+        self.authenticate()
+        analysis = "QQQ led premarket while opening confirmation and intraday VWAP were unavailable."
+        payload = {**self.data, "market_regime": "R" * 80, "verified_result": analysis}
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, 201)
+        run = ResearchRun.objects.get(expected_run_at=self.slot)
+        self.assertEqual(run.market_regime, "R" * 80)
+        self.assertEqual(run.verified_result, analysis)
+
+    def test_regime_over_limit_is_rejected_without_record(self):
+        self.authenticate()
+        response = self.client.post(self.url, {**self.data, "market_regime": "R" * 81}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("market_regime", response.data)
+        self.assertFalse(ResearchRun.objects.exists())
+
     def test_rejects_unscheduled_slot_and_unverified_action(self):
         self.authenticate()
         invalid = {**self.data, "expected_run_at": (self.slot + timedelta(minutes=1)).isoformat()}
