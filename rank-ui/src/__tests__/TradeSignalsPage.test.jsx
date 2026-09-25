@@ -50,6 +50,16 @@ describe("TradeSignalsPage", () => {
     expect(await screen.findByText("No setups published yet")).toBeInTheDocument();
   });
 
+  it("starts on waiting when no position is open", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+      id: 9, symbol: "MU", instrument: "MU call", status: "published", status_label: "Waiting",
+      entry_low: "2.00", initial_stop: "1.00", target_1: "3.00", thesis: "Waiting", updates: [],
+    }] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Waiting 1/i })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows published plans and completed outcomes", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -213,6 +223,8 @@ describe("TradeSignalsPage", () => {
     render(<TradeSignalsPage />);
 
     expect(await screen.findByRole("heading", { name: "Open positions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Active 1/i })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: /All setups 5/i }));
     expect(screen.getByRole("heading", { name: "Pending entries" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Completed trades/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Unfilled and other outcomes/ })).toBeInTheDocument();
@@ -271,6 +283,7 @@ describe("TradeSignalsPage", () => {
     ] }));
     render(<TradeSignalsPage />);
     expect(await screen.findByText("4 published · 0 active · 0 waiting · 3 completed trades · 1 unfilled/other")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Completed trades 3/i })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText(/2 wins · 1 loss/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Completed trades 3/i }));
     expect(screen.getByText("QCOM call")).toBeInTheDocument();

@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
+        run: python manage.py test ranker.test_public_sitemap ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
 
       - name: Configure production SSH
         env:
@@ -128,6 +128,7 @@ jobs:
 
           docker compose build web
           docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
+          docker compose run --rm -T web python manage.py generate_public_sitemap < /dev/null
           docker compose up -d web worker beat execution_guardian
           docker compose ps
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
@@ -142,3 +143,5 @@ jobs:
       - name: Verify public site
         run: |
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors https://quantelle.io/signals > /dev/null
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors https://quantelle.io/sitemap.xml | grep -q 'http://www.sitemaps.org/schemas/sitemap/0.9'
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors https://quantelle.io/robots.txt | grep -q 'Sitemap: https://quantelle.io/sitemap.xml'

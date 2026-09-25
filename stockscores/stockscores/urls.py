@@ -5,8 +5,11 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from paper.api import api_urls as paper_api_urls
 from paper.api.api_urls import router as paper_router
+from ranker.public_indexing_views import robots, sitemap
 
 urlpatterns = [
+    path("sitemap.xml", sitemap, name="public-sitemap"),
+    path("robots.txt", robots, name="public-robots"),
     path("admin/", admin.site.urls),
     path("api/", include("ranker.urls")),
     path("api/", include("macro.urls")),
