@@ -291,7 +291,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
 
 export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
-  const [view, setView] = useState("all");
+  const [view, setView] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -315,6 +315,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
     && signal.actual_entry != null && signal.final_exit != null && signal.realized_return_pct != null), [signals]);
   const otherOutcomes = useMemo(() => signals.filter((signal) => !ACTIVE.has(signal.status)
     && !completedTrades.some((trade) => trade.id === signal.id)), [signals, completedTrades]);
+  const selectedView = view ?? (open.length ? "active" : pending.length ? "waiting" : completedTrades.length ? "completed" : "all");
   const wins = completedTrades.filter((signal) => Number(signal.realized_return_pct) > 0).length;
   const losses = completedTrades.filter((signal) => Number(signal.realized_return_pct) < 0).length;
   const activity = useMemo(() => signals.flatMap((signal) => customerEvents(signal).map((update) => ({ signal, update })))
@@ -358,8 +359,8 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
       </aside>
 
       <nav aria-label="Trade record views" className="mb-6 flex gap-2 overflow-x-auto pb-2">
-        {views.map((item) => <button key={item.id} type="button" aria-pressed={view === item.id} onClick={() => setView(item.id)}
-          className={`min-h-11 shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition ${view === item.id ? "border-indigo-400 bg-indigo-950 text-white" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}>
+        {views.map((item) => <button key={item.id} type="button" aria-pressed={selectedView === item.id} onClick={() => setView(item.id)}
+          className={`min-h-11 shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedView === item.id ? "border-indigo-400 bg-indigo-950 text-white" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}>
           {item.label} <span className="ml-1 text-xs opacity-75">{item.count}</span>
         </button>)}
       </nav>
@@ -373,17 +374,17 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </div>
       )}
 
-      {!loading && !error && view === "activity" && <ActivityStream events={activity} heading="Customer trade activity" onSelectTrade={(id) => {
+      {!loading && !error && selectedView === "activity" && <ActivityStream events={activity} heading="Customer trade activity" onSelectTrade={(id) => {
         setView("all");
         window.requestAnimationFrame(() => document.getElementById(`trade-${id}`)?.scrollIntoView());
       }} />}
-      {!loading && !error && view === "active" && !open.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No active paper positions right now. Qualified setups are published only when their conditions are met.</p>}
-      {!loading && !error && view === "waiting" && !pending.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No published setups are waiting for entry right now.</p>}
-      {!loading && !error && view === "completed" && !completedTrades.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No filled trades have closed yet.</p>}
-      {!loading && !error && view === "unfilled" && !otherOutcomes.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No unfilled or other terminal setups yet.</p>}
-      {(view === "all" || view === "active" || view === "waiting") && !!active.length && (
+      {!loading && !error && selectedView === "active" && !open.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No active paper positions right now. Qualified setups are published only when their conditions are met.</p>}
+      {!loading && !error && selectedView === "waiting" && !pending.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No published setups are waiting for entry right now.</p>}
+      {!loading && !error && selectedView === "completed" && !completedTrades.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No filled trades have closed yet.</p>}
+      {!loading && !error && selectedView === "unfilled" && !otherOutcomes.length && <p className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-slate-400">No unfilled or other terminal setups yet.</p>}
+      {(selectedView === "all" || selectedView === "active" || selectedView === "waiting") && !!active.length && (
         <div className="space-y-8">
-          {(view === "all" || view === "active") && !!open.length && (
+          {(selectedView === "all" || selectedView === "active") && !!open.length && (
             <section aria-labelledby="open-positions-heading">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
@@ -396,7 +397,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
             </section>
           )}
 
-          {(view === "all" || view === "waiting") && !!pending.length && (
+          {(selectedView === "all" || selectedView === "waiting") && !!pending.length && (
             <section aria-labelledby="pending-entries-heading">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
@@ -410,8 +411,8 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
           )}
         </div>
       )}
-      {(view === "all" || view === "completed") && !!completedTrades.length && (
-        <section className={view === "all" && active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
+      {(selectedView === "all" || selectedView === "completed") && !!completedTrades.length && (
+        <section className={selectedView === "all" && active.length ? "mt-10" : ""} aria-labelledby="completed-history-heading">
           <div className="mb-3">
             <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed trades <span className="ml-1 text-sm font-normal text-slate-500">{completedTrades.length}</span></h2>
             <p className="mt-1 text-sm text-slate-500">Filled and exited trades with recorded realized returns · {wins} {wins === 1 ? "win" : "wins"} · {losses} {losses === 1 ? "loss" : "losses"}. Paper results are shown where paper execution was enabled.</p>
@@ -419,8 +420,8 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
           <div className="space-y-4">{completedTrades.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
         </section>
       )}
-      {(view === "all" || view === "unfilled") && !!otherOutcomes.length && (
-        <section className={view === "all" ? "mt-10" : ""} aria-labelledby="other-outcomes-heading">
+      {(selectedView === "all" || selectedView === "unfilled") && !!otherOutcomes.length && (
+        <section className={selectedView === "all" ? "mt-10" : ""} aria-labelledby="other-outcomes-heading">
           <div className="mb-3">
             <h2 id="other-outcomes-heading" className="text-lg font-semibold text-white">Unfilled and other outcomes <span className="ml-1 text-sm font-normal text-slate-500">{otherOutcomes.length}</span></h2>
             <p className="mt-1 text-sm text-slate-500">Cancelled and expired plans remain visible. A closed record without a complete fill, exit, and return also appears here until its record is complete.</p>
