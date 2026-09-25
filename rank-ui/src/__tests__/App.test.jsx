@@ -22,7 +22,7 @@ describe("App routing and navigation smoke tests", () => {
   test("renders Landing when unauthenticated", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({}))));
     renderAppWithAuth();
-    expect(screen.getByText(/Five focused ideas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Trade ideas with a plan/i)).toBeInTheDocument();
     expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
   });
 
