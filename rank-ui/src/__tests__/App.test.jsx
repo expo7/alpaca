@@ -23,7 +23,7 @@ describe("App routing and navigation smoke tests", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({}))));
     renderAppWithAuth();
     expect(screen.getByText(/Trade ideas with a plan/i)).toBeInTheDocument();
-    expect(screen.getByText(/Save the names worth watching/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Sign in$/i })).toBeInTheDocument();
   });
 
   test("renders navbar and dashboards page when authenticated", async () => {
