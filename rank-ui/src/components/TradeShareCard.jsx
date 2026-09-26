@@ -34,6 +34,8 @@ function ShareArtwork({ signal, svgRef }) {
   const paper = Boolean(signal.paper_execution_enabled);
   const returnValue = closed ? Number(signal.realized_return_pct) : null;
   const accent = returnValue == null ? "#60a5fa" : returnValue >= 0 ? "#34d399" : "#fb7185";
+  const badge = closed ? (returnValue >= 0 ? "CLOSED · GAIN" : "CLOSED · LOSS")
+    : cancelled ? "NO FILL" : signal.status === "open" ? "POSITION OPEN" : "ENTRY PENDING";
   const headline = closed ? `${returnValue >= 0 ? "+" : ""}${returnValue.toFixed(2)}%`
     : cancelled ? "NO ENTRY" : signal.status === "open" ? "POSITION OPEN" : "WAITING FOR ENTRY";
   const subhead = closed ? `${paper ? "Realized paper" : "Recorded"} return · ${date(signal.closed_at)}`
@@ -58,6 +60,11 @@ function ShareArtwork({ signal, svgRef }) {
     <text x="86" y="333" fill="#ffffff" fontFamily="Arial, sans-serif" fontSize="50" fontWeight="800">{signal.instrument}</text>
     <text x="86" y="380" fill="#a7b5cb" fontFamily="Arial, sans-serif" fontSize="28">{signal.company_name || signal.symbol}</text>
     <rect x="86" y="432" width="1028" height="220" rx="26" fill="#111e37" stroke="#35476a" />
+    <path d="M87 460 Q87 432 115 432 H124 V652 H115 Q87 652 87 624 Z" fill={accent} />
+    <path d="M836 456 H1090 V506 L1072 524 H836 L818 506 V474 Z" fill={accent} opacity=".14" stroke={accent} strokeWidth="3" />
+    <path d="M836 510 H1072 L1090 492" fill="none" stroke={accent} strokeWidth="3" />
+    <circle cx="851" cy="490" r="6" fill={accent} />
+    <text x="870" y="499" fill={accent} fontFamily="Arial, sans-serif" fontSize="21" fontWeight="800" letterSpacing="1.5">{badge}</text>
     <text x="118" y="550" fill={accent} fontFamily="Arial, sans-serif" fontWeight="800" fontSize={headline.length > 15 ? "60" : "82"}>{headline}</text>
     <text x="120" y="607" fill="#cbd5e1" fontFamily="Arial, sans-serif" fontSize="26">{subhead}</text>
     {[0, 1, 2].map((i) => <g key={i} transform={`translate(${86 + i * 350}, 710)`}>
