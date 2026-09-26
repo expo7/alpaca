@@ -185,3 +185,31 @@ class BillingProfileAdmin(admin.ModelAdmin):
 
 	def has_delete_permission(self, request, obj=None):
 		return False
+
+
+from .models import ShadowSetup, ShadowEvent
+
+
+@admin.register(ShadowSetup)
+class ShadowSetupAdmin(admin.ModelAdmin):
+	list_display = ("id", "category", "rejection_reason", "execution_mode", "status", "decided_at")
+	list_filter = ("category", "execution_mode", "status", "rejection_reason")
+	readonly_fields = tuple(field.name for field in ShadowSetup._meta.fields)
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False
+
+
+@admin.register(ShadowEvent)
+class ShadowEventAdmin(admin.ModelAdmin):
+	list_display = ("setup", "kind", "occurred_at", "broker_order_id")
+	readonly_fields = tuple(field.name for field in ShadowEvent._meta.fields)
+
+	def has_add_permission(self, request):
+		return False
+
+	def has_delete_permission(self, request, obj=None):
+		return False

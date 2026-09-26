@@ -823,6 +823,87 @@ class ResearchRun(models.Model):
         return f"Research run · {self.expected_run_at} · {self.outcome or 'missing'}"
 
 
+class ShadowSetup(models.Model):
+    """Prospective, private research record; never a TradeSignal."""
+
+    CATEGORY_CHOICES = [("near_miss", "Near miss"), ("index", "Index benchmark")]
+    REJECTION_CHOICES = [(code, code.replace("_", " ").title()) for code in (
+        "no_fresh_catalyst", "extended", "wide_spread", "low_volume", "low_open_interest",
+        "insufficient_confirmation", "marginal_reward_risk", "uncertain_flow",
+        "earnings_proximity", "contract_data_unavailable", "other",
+    )]
+    MODE_CHOICES = [("observation", "Observation only"), ("broker_intended", "Broker intended")]
+    STATUS_CHOICES = [(code, code.replace("_", " ").title()) for code in (
+        "proposed", "waiting", "active", "completed", "expired_unfilled", "cancelled", "rejected", "failed",
+    )]
+    research_run = models.ForeignKey(ResearchRun, on_delete=models.PROTECT, related_name="shadow_setups")
+    request_id = models.CharField(max_length=80, unique=True)
+    decision = models.JSONField()
+    contract_symbol = models.CharField(max_length=21, db_index=True, default="")
+    category = models.CharField(max_length=16, choices=CATEGORY_CHOICES)
+    rejection_reason = models.CharField(max_length=40, choices=REJECTION_CHOICES, blank=True)
+    execution_mode = models.CharField(max_length=20, choices=MODE_CHOICES, default="observation")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="proposed")
+    ruleset_version = models.CharField(max_length=32)
+    broker_account_id = models.CharField(max_length=80, blank=True)
+    broker_entry_order_id = models.CharField(max_length=80, blank=True)
+    broker_exit_order_id = models.CharField(max_length=80, blank=True)
+    broker_entry_client_id = models.CharField(max_length=80, blank=True)
+    broker_exit_client_id = models.CharField(max_length=80, blank=True)
+    broker_protection_kind = models.CharField(max_length=16, blank=True)
+    trigger_first_seen_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField()
+    activated_at = models.DateTimeField(null=True, blank=True)
+    entered_at = models.DateTimeField(null=True, blank=True)
+    exited_at = models.DateTimeField(null=True, blank=True)
+    reconciled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["contract_symbol"],
+            condition=models.Q(status__in=["proposed", "waiting", "active"]),
+            name="unique_active_shadow_contract",
+        )]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old = type(self).objects.get(pk=self.pk)
+            immutable = ("research_run_id", "request_id", "decision", "contract_symbol", "category", "rejection_reason",
+                         "execution_mode", "ruleset_version", "decided_at")
+            if any(getattr(old, field) != getattr(self, field) for field in immutable):
+                raise ValueError("Shadow decision is immutable; append a correction event")
+        super().save(*args, **kwargs)
+
+
+class ShadowEvent(models.Model):
+    setup = models.ForeignKey(ShadowSetup, on_delete=models.PROTECT, related_name="events")
+    kind = models.CharField(max_length=40)
+    occurred_at = models.DateTimeField()
+    details = models.JSONField(default=dict, blank=True)
+    broker_order_id = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError("Shadow events are append-only")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Shadow events cannot be deleted")
+
+
+class ShadowExecutorHealth(models.Model):
+    singleton_id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    status = models.CharField(max_length=24, default="disabled")
+    last_error = models.CharField(max_length=300, blank=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    verified_account_id = models.CharField(max_length=80, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class BillingProfile(models.Model):
     """Stripe identifiers and the webhook-derived subscription state for one user."""
 
