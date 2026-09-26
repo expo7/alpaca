@@ -32,6 +32,7 @@ import PolicyPage from "./pages/PolicyPage.jsx";
 import BillingPage from "./pages/BillingPage.jsx";
 import SiteFooter from "./components/SiteFooter.jsx";
 import { trackEvent } from "./analytics.js";
+import { updateSeo } from "./seo.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
 const BASE = "";
@@ -133,6 +134,10 @@ export default function App() {
     && new URLSearchParams(window.location.search).get("local-navbar-preview") === "1"
   ));
   const [pathname, setPathname] = useState(() => window.location.pathname || "/");
+
+  useEffect(() => {
+    updateSeo(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     const onPopState = () => setPathname(window.location.pathname || "/");

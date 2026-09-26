@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import ArticleNav from "../components/ArticleNav.jsx";
 import ArticleCTA from "../components/ArticleCTA.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
+import { updateSeo } from "../seo.js";
 
 function formatDate(ts) {
     if (!ts) return "";
@@ -46,6 +47,7 @@ export default function ArticleDetailPage({
                 if (!res.ok) throw new Error(json?.detail || "Failed to load article.");
                 if (!alive) return;
                 setArticle(json);
+                updateSeo(`/articles/${slug}`, json);
             } catch (e) {
                 if (!alive) return;
                 setErr(e?.message || "Failed to load article.");
