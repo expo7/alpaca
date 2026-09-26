@@ -1,6 +1,6 @@
 // src/brand.js
 export const APP_NAME = "Quantelle";
-export const APP_TAGLINE = "Tech + fundamentals, one rating.";
+export const APP_TAGLINE = "Options research with a public trade record";
 export const BRAND = {
   primary: "indigo", // Tailwind color token root (e.g. indigo, emerald, sky)
   // You can expand later (secondary, accents, etc.)

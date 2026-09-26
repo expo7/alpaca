@@ -31,9 +31,12 @@ export default function Navbar({
   active,
   onNavigate,
   onLogout,
+  onSignIn,
   v1Mode = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const desktopNav = v1Mode ? "min-[900px]:flex min-[900px]:items-center min-[900px]:gap-1" : "min-[1350px]:flex min-[1350px]:items-center min-[1350px]:gap-1";
+  const mobileNav = v1Mode ? "min-[900px]:hidden" : "min-[1350px]:hidden";
   const baseTabs = v1Mode ? V1_TABS : tabs;
   const visibleTabs = user?.is_staff || user?.is_superuser
     ? [...baseTabs, { id: "analytics", label: "Analytics" }]
@@ -60,22 +63,22 @@ export default function Navbar({
   ));
 
   return (
-    <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+    <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
         <div className="flex min-h-16 items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex min-w-0 flex-col">
+            <a href="/" className="flex min-w-0 flex-col">
               <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
                 {APP_NAME.toUpperCase()}
               </span>
-              <span className="hidden text-xs text-slate-500 min-[1350px]:block">
+              <span className="hidden text-xs text-slate-400 min-[1350px]:block">
                 {APP_TAGLINE}
               </span>
-            </div>
+            </a>
 
             <nav
               aria-label="Primary navigation"
-              className="hidden min-[1350px]:flex min-[1350px]:items-center min-[1350px]:gap-1"
+              className={`hidden ${desktopNav}`}
             >
               {renderTabs("rounded-md px-2 py-2 text-xs transition")}
             </nav>
@@ -90,7 +93,7 @@ export default function Navbar({
                       {user.username || user.email || "User"}
                     </span>
                     {user.email && (
-                      <span className="text-slate-500">{user.email}</span>
+                      <span className="text-slate-400">{user.email}</span>
                     )}
                   </div>
                 )}
@@ -103,12 +106,15 @@ export default function Navbar({
                 </button>
               </>
             ) : (
-              <a
-                href="/"
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
-              >
-                Sign in / Create account
-              </a>
+              onSignIn ? (
+                <button type="button" onClick={onSignIn} className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white transition hover:bg-indigo-500">
+                  Sign in
+                </button>
+              ) : (
+                <a href="/" className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white transition hover:bg-indigo-500">
+                  Sign in / Create account
+                </a>
+              )
             )}
             <button
               type="button"
@@ -116,7 +122,7 @@ export default function Navbar({
               aria-expanded={menuOpen}
               aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
               onClick={() => setMenuOpen((isOpen) => !isOpen)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 min-[1350px]:hidden"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 ${mobileNav}`}
             >
               <span aria-hidden="true" className="text-lg leading-none">
                 {menuOpen ? "×" : "☰"}
@@ -130,7 +136,7 @@ export default function Navbar({
         <nav
           id="navbar-menu"
           aria-label="Navigation menu"
-          className="border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur sm:px-6 min-[1350px]:hidden"
+          className={`border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur sm:px-6 ${mobileNav}`}
         >
           <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-1 sm:grid-cols-3">
             {renderTabs("rounded-md px-3 py-2 text-left text-xs transition")}

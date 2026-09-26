@@ -1,5 +1,5 @@
 import SiteFooter from "../components/SiteFooter";
-import { APP_NAME, APP_TAGLINE } from "../brand";
+import Navbar from "../components/Navbar.jsx";
 
 const updated = "September 9, 2026";
 
@@ -48,15 +48,7 @@ export default function PolicyPage({ type }) {
   const policy = policies[type] || policies.support;
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800/80 bg-slate-950/90">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <a href="/" className="flex min-w-0 flex-col">
-            <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">{APP_NAME.toUpperCase()}</span>
-            <span className="hidden text-xs text-slate-500 sm:block">{APP_TAGLINE}</span>
-          </a>
-          <a href="/dashboard" className="rounded-full border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-900">Open Quantelle</a>
-        </div>
-      </header>
+      <Navbar v1Mode onNavigate={(page) => { window.location.href = `/${page}`; }} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
         <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">{policy.eyebrow}</div>
         <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">{policy.title}</h1>

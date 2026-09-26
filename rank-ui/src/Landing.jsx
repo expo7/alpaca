@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Login from "./Login.jsx";
-import { APP_NAME } from "./brand";
 import SiteFooter from "./components/SiteFooter.jsx";
+import Navbar from "./components/Navbar.jsx";
 
 const workflow = [
     { number: "01", title: "Qualify a setup", copy: "Research produces a specific options plan only when the contract and entry conditions qualify." },
@@ -24,21 +24,7 @@ export default function Landing() {
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100">
-            <header className="border-b border-slate-800/80 bg-slate-950/90">
-                <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-                    <a href="/" className="flex min-w-0 flex-col">
-                        <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
-                            {APP_NAME.toUpperCase()}
-                        </span>
-                        <span className="hidden text-xs text-slate-400 sm:block">Options research with a public trade record</span>
-                    </a>
-                    <nav aria-label="Main navigation" className="flex items-center gap-2 text-xs sm:gap-3 sm:text-sm">
-                        <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
-                        <a href="/articles" className="text-slate-300 hover:text-white">Articles</a>
-                        <button type="button" onClick={() => setSignInOpen(true)} className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-500">Sign in</button>
-                    </nav>
-                </div>
-            </header>
+            <Navbar v1Mode onNavigate={(page) => { window.location.href = `/${page}`; }} onSignIn={() => setSignInOpen(true)} />
 
             <main>
                 <section className="relative overflow-hidden border-b border-slate-800/70">
