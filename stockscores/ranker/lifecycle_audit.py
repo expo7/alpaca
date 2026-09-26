@@ -226,14 +226,15 @@ def audit_trade_signal(signal, *, client=None, orders=None, positions=None, now=
         _checkpoint(checkpoints, codes, details, "database_finalized", False, "DATABASE_PENDING", "Lifecycle is unresolved.", pending=True)
         _checkpoint(checkpoints, codes, details, "public_record_finalized", False, "PUBLIC_RECORD_PENDING", "Lifecycle is unresolved.", pending=True)
 
-    required_events = REQUIRED_TELEGRAM_EVENTS.get(signal.status, set())
+    required_events = set() if signal.is_test else REQUIRED_TELEGRAM_EVENTS.get(signal.status, set())
     notifications = {u.event_type: getattr(u, "telegram_notification", None) for u in updates if u.event_type in required_events}
     telegram_ok = all(
         notifications.get(event) and notifications[event].status == TelegramNotification.STATUS_SENT
         for event in required_events
     )
     _checkpoint(checkpoints, codes, details, "required_telegram_events_succeeded", telegram_ok,
-                "TELEGRAM_EVENT_MISSING", "All required lifecycle Telegram events were sent." if telegram_ok else "One or more required lifecycle Telegram events are missing or unsent.")
+                "TELEGRAM_EVENT_MISSING", "Test trades do not notify customers." if signal.is_test else
+                ("All required lifecycle Telegram events were sent." if telegram_ok else "One or more required lifecycle Telegram events are missing or unsent."))
 
     duplicate_event_types = list(
         TradeSignalUpdate.objects.filter(signal=signal, event_type__in={"published", "triggered", "closed", "cancelled"})

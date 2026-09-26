@@ -15,7 +15,7 @@ from .serializers import (
     ArticleSerializer,
     TradeSignalSerializer, OperatorTradePublicationSerializer, OperatorResearchRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, OperationalTelegramAlert, ResearchRun, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, OperationalTelegramAlert, ResearchRun, TelegramNotification, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -1219,13 +1219,13 @@ class TradeSignalLifecycleActionView(APIView):
             )
         except TradeLifecycleError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        notification = result.update.telegram_notification
+        notification = TelegramNotification.objects.filter(update=result.update).first()
         return Response({
             "signal_id": result.signal.pk,
             "status": result.signal.status,
             "event_id": result.update.pk,
-            "notification_id": notification.pk,
-            "notification_status": notification.status,
+            "notification_id": notification.pk if notification else None,
+            "notification_status": notification.status if notification else "not_applicable",
             "already_applied": result.already_applied,
         })
 
@@ -1243,7 +1243,7 @@ class TradeSignalPublicationView(APIView):
             result = publish_trade_signal(validated_data=serializer.validated_data)
         except TradeLifecycleError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        notification = result.update.telegram_notification
+        notification = TelegramNotification.objects.filter(update=result.update).first()
         return Response({
             "signal_id": result.signal.pk,
             "status": result.signal.status,
@@ -1252,8 +1252,8 @@ class TradeSignalPublicationView(APIView):
             "paper_quantity": result.signal.paper_quantity,
             "test_mode": result.signal.is_test,
             "event_id": result.update.pk,
-            "notification_id": notification.pk,
-            "notification_status": notification.status,
+            "notification_id": notification.pk if notification else None,
+            "notification_status": notification.status if notification else "not_applicable",
             "already_applied": result.already_applied,
         }, status=status.HTTP_200_OK if result.already_applied else status.HTTP_201_CREATED)
 

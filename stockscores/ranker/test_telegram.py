@@ -72,7 +72,7 @@ class TelegramNotificationTests(TestCase):
         signal = self.signal()
         update = TradeSignalUpdate.objects.create(
             signal=signal,
-            event_type="note",
+            event_type="triggered",
             note="A useful lifecycle note.",
         )
         TelegramNotification.objects.get_or_create(update=update)
@@ -91,17 +91,29 @@ class TelegramNotificationTests(TestCase):
         self.assertIn("$13.00", message)
         self.assertIn(" ET", message)
         self.assertIn(f"https://quantelle.io/signals#trade-{signal.pk}", message)
-        self.assertIn("View this trade on Quantelle", message)
+        self.assertIn("Trade details", message)
 
-    def test_test_trade_is_labeled_and_has_no_public_link(self):
+    def test_test_trade_never_creates_customer_outbox(self):
         signal = self.signal(status=TradeSignal.STATUS_PUBLISHED, is_test=True)
         update = TradeSignalUpdate.objects.get(signal=signal, event_type="published")
+        self.assertFalse(TelegramNotification.objects.filter(update=update).exists())
 
-        message = format_trade_update(update)
+    def test_routine_order_and_internal_updates_do_not_create_customer_outbox(self):
+        signal = self.signal()
+        for event in ("entry_submitted", "protection_active", "exit_submitted", "note", "execution_warning"):
+            update = TradeSignalUpdate.objects.create(signal=signal, event_type=event, note="Internal detail")
+            self.assertFalse(TelegramNotification.objects.filter(update=update).exists())
 
-        self.assertIn("TEST TRADE", message)
-        self.assertIn("NOT A PUBLIC QUANTELLE SIGNAL", message)
-        self.assertNotIn("quantelle.io/signals", message)
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token", TELEGRAM_CHAT_ID="customer")
+    @patch("ranker.telegram.requests.post")
+    def test_preexisting_non_customer_outbox_is_skipped(self, post):
+        signal = self.signal(is_test=True)
+        update = TradeSignalUpdate.objects.create(signal=signal, event_type="closed", note="Test")
+        notification = TelegramNotification.objects.create(update=update)
+        self.assertEqual(deliver_telegram_notification.run(notification.pk)["status"], "skipped")
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, TelegramNotification.STATUS_SKIPPED)
+        post.assert_not_called()
 
     @override_settings(
         TELEGRAM_NOTIFICATIONS_ENABLED=True,
@@ -143,7 +155,7 @@ class TelegramNotificationTests(TestCase):
         signal = self.signal()
         update = TradeSignalUpdate.objects.create(
             signal=signal,
-            event_type="note",
+            event_type="triggered",
             note="Only send this once.",
         )
         notification = update.telegram_notification
@@ -165,7 +177,7 @@ class TelegramNotificationTests(TestCase):
         signal = self.signal()
         update = TradeSignalUpdate.objects.create(
             signal=signal,
-            event_type="note",
+            event_type="triggered",
             note="Do not send yet.",
         )
 

@@ -12,6 +12,9 @@ from .models import OperationalTelegramAlert, TelegramNotification
 
 EASTERN = ZoneInfo("America/New_York")
 
+# The public channel is a trade-action feed, not an executor or audit log.
+CUSTOMER_EVENTS = frozenset({"published", "triggered", "stop", "target", "partial_exit", "closed", "cancelled"})
+
 EVENT_HEADINGS = {
     "published": ("📣", "New Trade Setup"),
     "entry_submitted": ("⏳", "Entry Order Submitted"),
@@ -41,14 +44,12 @@ def _line(label, value):
 def format_trade_update(update):
     signal = update.signal
     emoji, heading = EVENT_HEADINGS.get(update.event_type, EVENT_HEADINGS["note"])
-    occurred = timezone.localtime(update.occurred_at, EASTERN).strftime("%b %-d, %Y · %-I:%M:%S %p ET")
+    occurred = timezone.localtime(update.occurred_at, EASTERN).strftime("%b %-d · %-I:%M %p ET")
 
     lines = [
         f"<b>{emoji} {html.escape(heading)} · {html.escape(signal.display_instrument)}</b>",
-        _line("Status", signal.get_status_display()),
+        "<i>Quantelle paper trade</i>",
     ]
-    if signal.is_test:
-        lines.insert(0, "<b>🧪 TEST TRADE — NOT A PUBLIC QUANTELLE SIGNAL</b>")
     if update.price is not None:
         price_label = "Fill" if update.event_type == "triggered" else "Price"
         lines.append(_line(price_label, _money(update.price)))
@@ -66,20 +67,18 @@ def format_trade_update(update):
             _line("Entry", entry),
             _line("Stop", _money(signal.current_stop or signal.initial_stop)),
             _line("Target", _money(signal.target_1)),
-            _line("Risk", signal.get_risk_level_display()),
         ])
-    elif update.event_type in {"triggered", "protection_active", "stop", "target", "partial_exit"}:
+        lines.append("Wait for the trigger and stay within the entry range.")
+    elif update.event_type in {"triggered", "stop", "target", "partial_exit"}:
         lines.extend([
             _line("Stop", _money(signal.current_stop or signal.initial_stop)),
             _line("Target", _money(signal.target_1)),
         ])
 
-    lines.extend([
-        _line("Time", occurred),
-        html.escape(update.note),
-    ])
-    if not signal.is_test:
-        lines.append(f'<a href="https://quantelle.io/signals#trade-{signal.pk}">View this trade on Quantelle</a>')
+    if update.event_type in {"cancelled", "stop", "target", "partial_exit"}:
+        lines.append(html.escape(update.note.strip()[:220]))
+    lines.append(f"<i>{occurred}</i>")
+    lines.append(f'<a href="https://quantelle.io/signals#trade-{signal.pk}">Trade details</a>')
     return "\n".join(line for line in lines if line)
 
 
@@ -108,8 +107,15 @@ def deliver_telegram_notification(self, notification_id):
         )
         if notification.update.audience != "customer":
             return {"status": "staff_only"}
+        if notification.update.signal.is_test or notification.update.event_type not in CUSTOMER_EVENTS:
+            if notification.status != TelegramNotification.STATUS_SENT:
+                notification.status = TelegramNotification.STATUS_SKIPPED
+                notification.save(update_fields=["status", "updated_at"])
+            return {"status": "skipped"}
         if notification.status == TelegramNotification.STATUS_SENT:
             return {"status": "already_sent"}
+        if notification.status == TelegramNotification.STATUS_SKIPPED:
+            return {"status": "already_skipped"}
         if notification.status == TelegramNotification.STATUS_SENDING:
             return {"status": "already_sending"}
         notification.status = TelegramNotification.STATUS_SENDING

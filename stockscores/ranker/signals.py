@@ -3,6 +3,7 @@ from django.db import transaction
 from django.dispatch import receiver
 
 from .models import TelegramNotification, TradeSignal, TradeSignalUpdate
+from .telegram import CUSTOMER_EVENTS
 
 
 TERMINAL_TRADE_STATUSES = {
@@ -55,7 +56,8 @@ def schedule_lifecycle_certification(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=TradeSignalUpdate)
 def create_telegram_outbox_entry(sender, instance, created, **kwargs):
-    if created and instance.audience == TradeSignalUpdate.AUDIENCE_CUSTOMER:
+    if (created and instance.audience == TradeSignalUpdate.AUDIENCE_CUSTOMER
+            and not instance.signal.is_test and instance.event_type in CUSTOMER_EVENTS):
         TelegramNotification.objects.get_or_create(update=instance)
         from .tasks import audit_trade_lifecycle
         transaction.on_commit(lambda: audit_trade_lifecycle.apply_async(args=[instance.signal_id], countdown=3))

@@ -697,10 +697,12 @@ class TelegramNotification(models.Model):
     STATUS_PENDING = "pending"
     STATUS_SENDING = "sending"
     STATUS_SENT = "sent"
+    STATUS_SKIPPED = "skipped"
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_SENDING, "Sending"),
         (STATUS_SENT, "Sent"),
+        (STATUS_SKIPPED, "Skipped"),
     ]
 
     update = models.OneToOneField(
