@@ -15,11 +15,13 @@ describe("TradeSignalsPage", () => {
       updates: [],
     }] }));
     render(<TradeSignalsPage />);
+    expect(await screen.findByText("Closed · loss")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Share image" }));
     const dialog = screen.getByRole("dialog", { name: /Share AMZN/ });
     expect(within(dialog).getByText("-26.28%")).toBeInTheDocument();
     expect(within(dialog).getByText("quantelle.io")).toBeInTheDocument();
     expect(within(dialog).getByText("PAPER TRADE")).toBeInTheDocument();
+    expect(within(dialog).getByText("CLOSED · LOSS")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Download PNG" })).toBeInTheDocument();
   });
 
@@ -107,6 +109,7 @@ describe("TradeSignalsPage", () => {
 
     render(<TradeSignalsPage />);
     expect(await screen.findByText("MU 110C 9/18/26")).toBeInTheDocument();
+    expect(screen.getByText("Closed · gain")).toBeInTheDocument();
     expect(screen.getAllByText("+40.65%")).toHaveLength(2);
     expect(screen.getByText("Realized return")).toBeInTheDocument();
     expect(screen.queryByText("+48.05%")).not.toBeInTheDocument();

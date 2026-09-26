@@ -147,7 +147,8 @@ function CurrentQuote({ signal, token = "" }) {
 function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" }) {
   if (signal.is_locked) {
     return (
-      <article id={`trade-${signal.id}`} className="scroll-mt-28 overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
+      <article id={`trade-${signal.id}`} className="relative scroll-mt-28 overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
+        <div aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-indigo-400" />
         <div className="h-1 bg-indigo-500" />
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -169,6 +170,16 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
   const isOpen = signal.status === "open";
   const returnValue = signal.realized_return_pct;
   const positive = Number(returnValue) >= 0;
+  const outcome = signal.status === "closed" && returnValue != null
+    ? positive ? "gain" : "loss"
+    : signal.status === "open" ? "open" : isPending ? "waiting" : "no-entry";
+  const outcomeStyle = {
+    gain: { rail: "bg-emerald-400", badge: "border-emerald-500/60 bg-emerald-950/70 text-emerald-200", label: "Closed · gain" },
+    loss: { rail: "bg-rose-400", badge: "border-rose-500/60 bg-rose-950/70 text-rose-200", label: "Closed · loss" },
+    open: { rail: "bg-sky-400", badge: "border-sky-500/60 bg-sky-950/70 text-sky-200", label: "Position open" },
+    waiting: { rail: "bg-indigo-400", badge: "border-indigo-500/60 bg-indigo-950/70 text-indigo-200", label: "Entry pending" },
+    "no-entry": { rail: "bg-slate-500", badge: "border-slate-500/60 bg-slate-800 text-slate-200", label: "No entry" },
+  }[outcome];
   const grossPaperResult = signal.paper_execution_enabled && signal.actual_entry != null && signal.final_exit != null
     ? (Number(signal.final_exit) - Number(signal.actual_entry)) * 100 * Number(signal.paper_quantity || 1)
     : null;
@@ -180,16 +191,16 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
   const hasPublicationQuote = signal.publication_underlying_price || signal.publication_option_bid || signal.publication_option_ask;
 
   return (
-    <article id={`trade-${signal.id}`} className={`scroll-mt-28 overflow-hidden rounded-2xl border ${archived ? "border-slate-700 bg-slate-900/65" : "border-indigo-500/40 bg-slate-900"}`}>
-      <div className={`h-1 ${archived ? "bg-slate-600" : signal.instrument_type === "put" ? "bg-rose-500" : "bg-emerald-500"}`} />
+    <article id={`trade-${signal.id}`} className={`relative scroll-mt-28 overflow-hidden rounded-2xl border ${archived ? "border-slate-700 bg-slate-900/65" : "border-indigo-500/40 bg-slate-900"}`}>
+      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${outcomeStyle.rail}`} />
+      <div className={`h-1 ${outcomeStyle.rail}`} />
       <div className="p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-white">{signal.instrument}</h2>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${signal.status === "open" ? "bg-emerald-950 text-emerald-300" : signal.status === "published" ? "bg-indigo-950 text-indigo-300" : "bg-slate-800 text-slate-300"}`}>
-                {signal.status_label}
-              </span>
+              <span className={`border px-3 py-1 text-xs font-bold uppercase tracking-wide ${outcomeStyle.badge}`} style={{ clipPath: "polygon(0 0, 100% 0, 100% 72%, 92% 100%, 0 100%)" }}>{outcomeStyle.label}</span>
+              {outcome === "no-entry" && <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-300">{signal.status_label}</span>}
               <span className="rounded-full border border-amber-700/60 px-2.5 py-1 text-xs font-semibold capitalize text-amber-300">
                 {signal.risk_level} risk
               </span>

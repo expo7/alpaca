@@ -65,8 +65,8 @@ function ShareArtwork({ signal, svgRef }) {
     <path d="M836 510 H1072 L1090 492" fill="none" stroke={accent} strokeWidth="3" />
     <circle cx="851" cy="490" r="6" fill={accent} />
     <text x="870" y="499" fill={accent} fontFamily="Arial, sans-serif" fontSize="21" fontWeight="800" letterSpacing="1.5">{badge}</text>
-    <text x="118" y="550" fill={accent} fontFamily="Arial, sans-serif" fontWeight="800" fontSize={headline.length > 15 ? "60" : "82"}>{headline}</text>
-    <text x="120" y="607" fill="#cbd5e1" fontFamily="Arial, sans-serif" fontSize="26">{subhead}</text>
+    <text x="160" y="550" fill={accent} fontFamily="Arial, sans-serif" fontWeight="800" fontSize={headline.length > 15 ? "60" : "82"}>{headline}</text>
+    <text x="160" y="619" fill="#cbd5e1" fontFamily="Arial, sans-serif" fontSize="26">{subhead}</text>
     {[0, 1, 2].map((i) => <g key={i} transform={`translate(${86 + i * 350}, 710)`}>
       <text fill="#94a3b8" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="700" letterSpacing="2">{[closed || signal.status === "open" ? "ACTUAL FILL" : "ENTRY PLAN", "PUBLISHED STOP", closed ? "ACTUAL EXIT" : "TARGET 1"][i]}</text>
       <text y="65" fill="#f8fafc" fontFamily="Arial, sans-serif" fontSize="39" fontWeight="700">{[entry, stop, third][i]}</text>
