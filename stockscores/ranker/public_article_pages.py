@@ -49,12 +49,16 @@ def _render(shell, title, description, canonical, body):
 
 def _atomic_write(path, contents):
     path.parent.mkdir(parents=True, exist_ok=True)
+    owner = frontend_directory().stat()
+    if path.parent.stat().st_uid != owner.st_uid or path.parent.stat().st_gid != owner.st_gid:
+        os.chown(path.parent, owner.st_uid, owner.st_gid)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=".article-", delete=False) as output:
             temporary = output.name
             output.write(contents)
             os.chmod(temporary, 0o644)
+            os.chown(temporary, owner.st_uid, owner.st_gid)
         os.replace(temporary, path)
     finally:
         if temporary and os.path.exists(temporary):

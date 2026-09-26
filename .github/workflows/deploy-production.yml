@@ -120,7 +120,7 @@ jobs:
           trap cleanup_frontend_stage EXIT
           tar -xzf /tmp/quantelle-rank-ui-dist.tgz -C "$frontend_stage"
           test -f "$frontend_stage/dist/index.html"
-          rm -rf /opt/alpaca/rank-ui/dist.previous
+          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
           if [ -d /opt/alpaca/rank-ui/dist ]; then
             mv /opt/alpaca/rank-ui/dist /opt/alpaca/rank-ui/dist.previous
           fi
@@ -130,7 +130,7 @@ jobs:
             fi
             exit 1
           fi
-          rm -rf /opt/alpaca/rank-ui/dist.previous
+          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
 
           docker compose build web
           docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
