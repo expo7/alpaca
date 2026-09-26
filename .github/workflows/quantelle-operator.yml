@@ -1,0 +1,223 @@
+name: Quantelle operator action
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  lifecycle-action:
+    if: >-
+      github.event.issue.user.login == 'expo7' &&
+      github.event.issue.author_association == 'OWNER' &&
+      startsWith(github.event.issue.title, '[Quantelle Operator]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate and execute lifecycle action
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATOR_TOKEN: ${{ secrets.QUANTELLE_RESEARCH_OPERATOR_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+          from zoneinfo import ZoneInfo
+
+          event = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+          issue = event["issue"]
+          issue_number = int(issue["number"])
+          github_api = f"https://api.github.com/repos/{os.environ['REPOSITORY']}"
+
+          def github_request(method, path, payload):
+              request = urllib.request.Request(
+                  github_api + path,
+                  data=json.dumps(payload).encode(),
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          try:
+              if not os.environ.get("OPERATOR_TOKEN"):
+                  raise ValueError("QUANTELLE_RESEARCH_OPERATOR_TOKEN is not configured")
+              payload = json.loads(issue.get("body") or "")
+              action = payload.get("action")
+              if action == "cancel":
+                  allowed_keys = {"action", "signal_id", "expected_status", "note"}
+                  if set(payload) - allowed_keys:
+                      raise ValueError("Cancellation request contains unsupported fields")
+                  signal_id = payload.get("signal_id")
+                  if not isinstance(signal_id, int) or signal_id < 1:
+                      raise ValueError("signal_id must be a positive integer")
+                  expected_status = payload.get("expected_status", "published")
+                  if expected_status != "published":
+                      raise ValueError("expected_status must be published")
+                  note = payload.get("note")
+                  if not isinstance(note, str) or not 20 <= len(note.strip()) <= 1000:
+                      raise ValueError("note must contain 20 to 1000 characters")
+                  operator_url = f"https://quantelle.io/api/operator/trade-signals/{signal_id}/lifecycle/"
+                  operator_payload = {
+                      "action": "cancel",
+                      "expected_status": expected_status,
+                      "note": note.strip(),
+                  }
+              elif action == "publish":
+                  allowed_keys = {
+                      "action", "symbol", "company_name", "instrument_type", "strike", "expiration",
+                      "risk_level", "trigger_direction", "underlying_trigger_price", "trigger_confirmation",
+                      "do_not_chase_price", "entry_deadline", "official_fill_method", "entry_low", "entry_high",
+                      "initial_stop", "target_1", "target_2", "target_3", "thesis", "invalidation",
+                      "evidence_tags", "paper_quantity", "test_mode",
+                  }
+                  if set(payload) - allowed_keys:
+                      raise ValueError("Publication request contains unsupported fields")
+                  operator_url = "https://quantelle.io/api/operator/trade-signals/publish/"
+                  operator_payload = dict(payload)
+                  operator_payload.pop("action")
+                  operator_payload["request_id"] = f"github-issue-{issue_number}"
+              elif action == "report_run":
+                  if not issue.get("title", "").startswith("[Quantelle Operator] Report Run"):
+                      raise ValueError("Research reports require the Report Run issue title")
+                  required_keys = {
+                      "action", "expected_run_at", "started_at", "completed_at", "session_type",
+                      "outcome", "market_regime", "candidates_reviewed", "operator_action",
+                      "verified_result", "error_summary",
+                  }
+                  if set(payload) != required_keys:
+                      raise ValueError("Research report fields must match the narrow report_run schema")
+                  regime = payload.get("market_regime")
+                  if not isinstance(regime, str) or not 1 <= len(regime.strip()) <= 80:
+                      raise ValueError("market_regime must be a concise label of 1 to 80 characters; keep longer analysis in the Research Ledger")
+                  stamps = {}
+                  for key in ("expected_run_at", "started_at", "completed_at"):
+                      raw = payload.get(key)
+                      try:
+                          stamp = datetime.fromisoformat(raw.replace("Z", "+00:00")) if isinstance(raw, str) else None
+                      except ValueError:
+                          stamp = None
+                      if stamp is None or stamp.tzinfo is None or stamp.utcoffset() is None:
+                          raise ValueError(f"{key}: invalid ISO 8601 timezone or format; an explicit offset is required")
+                      stamps[key] = stamp.astimezone(timezone.utc)
+                  expected, started, completed = (stamps[key] for key in ("expected_run_at", "started_at", "completed_at"))
+                  now = datetime.now(timezone.utc)
+                  slot = expected.astimezone(ZoneInfo("America/Phoenix"))
+                  sessions = {5: "premarket", 7: "premarket", 10: "regular", 12: "regular", 14: "aftermarket"}
+                  if (slot.weekday() >= 5 or slot.hour not in sessions or
+                          slot.minute or slot.second or slot.microsecond or
+                          not now - timedelta(days=7) <= expected <= now + timedelta(minutes=5)):
+                      raise ValueError("expected_run_at: invalid scheduled Phoenix weekday slot or reporting window")
+                  if payload["session_type"] not in (sessions[slot.hour], "market_closed"):
+                      raise ValueError("session_type: inconsistent with the scheduled Phoenix slot")
+                  if not expected - timedelta(hours=6) <= started <= expected + timedelta(hours=6):
+                      raise ValueError("started_at: outside the scheduled slot's six-hour window; check clock skew")
+                  if completed < started:
+                      raise ValueError("completed_at: invalid ordering; completion precedes start")
+                  if completed > now:
+                      if completed - now <= timedelta(seconds=2):
+                          raise ValueError("completed_at: clock-skew concern; wait for clocks to agree and submit an actual completion time")
+                      raise ValueError("completed_at: future completion time; projected timestamps are prohibited")
+                  if issue.get("title", "") != f"[Quantelle Operator] Report Run {expected:%Y-%m-%dT%H:%M:%SZ}":
+                      raise ValueError("Report Run title must identify the exact expected UTC slot")
+                  operator_url = "https://quantelle.io/api/operator/research-runs/"
+                  operator_payload = dict(payload)
+                  for key, stamp in stamps.items():
+                      operator_payload[key] = stamp.isoformat().replace("+00:00", "Z")
+                  operator_payload["request_id"] = f"github-issue-{issue_number}"
+              elif action == "shadow_proposal":
+                  if issue.get("title", "") != "[Quantelle Operator] Shadow Proposal":
+                      raise ValueError("Shadow proposals require the exact Shadow Proposal title")
+                  common = {
+                      "action", "proposal_number", "research_run_id", "category", "decided_at", "symbol",
+                      "direction", "option_symbol", "expiration", "strike", "option_type",
+                      "contract_multiplier", "quantity", "underlying_price", "bid", "ask", "midpoint",
+                      "quote_at", "spread_dollars", "spread_pct", "volume", "open_interest",
+                      "entry_trigger", "required_confirmation", "trigger_direction", "underlying_trigger_price",
+                      "confirmation_seconds", "entry_low", "entry_high", "do_not_chase", "entry_deadline",
+                      "stop", "target_1", "underlying_invalidation", "expected_reward_risk",
+                      "market_regime", "thesis", "evidence", "data_provenance", "ruleset_version",
+                      "broker_execution_intended",
+                  }
+                  optional = {"target_2"}
+                  category_fields = {"rejection_reason"} if payload.get("category") == "near_miss" else {"benchmark_rationale"}
+                  if set(payload) - common - optional - category_fields or not common | category_fields <= set(payload):
+                      raise ValueError("Shadow proposal fields do not match the restricted schema")
+                  number = payload.pop("proposal_number")
+                  if not isinstance(number, int) or not 1 <= number <= 99:
+                      raise ValueError("proposal_number must be 1–99")
+                  operator_url = "https://quantelle.io/api/operator/shadow-research/"
+                  operator_payload = dict(payload)
+                  operator_payload.pop("action")
+                  operator_payload["request_id"] = f"github-issue-{issue_number}-shadow-{number}"
+              else:
+                  raise ValueError("Only publish, cancel, report_run, and shadow_proposal actions are supported")
+
+              operator_request = urllib.request.Request(
+                  operator_url,
+                  data=json.dumps(operator_payload).encode(),
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {os.environ['OPERATOR_TOKEN']}",
+                      "Content-Type": "application/json",
+                      "User-Agent": "quantelle-github-operator/1.0",
+                  },
+              )
+              with urllib.request.urlopen(operator_request, timeout=30) as response:
+                  result = json.load(response)
+
+              if action == "report_run":
+                  summary = (
+                      "Quantelle research run recorded.\n\n"
+                      f"- Expected: `{result['expected_run_at']}`\n"
+                      f"- Outcome: `{result['outcome']}`\n"
+                      f"- Health: `{result['status']}`\n"
+                      f"- Next expected: `{result['next_expected_run_at']}`\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              elif action == "shadow_proposal":
+                  summary = (
+                      "Private shadow research proposal recorded. No broker order was submitted.\n\n"
+                      f"- Shadow setup: `{result['id']}`\n"
+                      f"- Status: `{result['status']}`\n"
+                      f"- Mode: `{result['execution_mode']}`\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              else:
+                  summary = (
+                      "Quantelle operator action completed.\n\n"
+                      f"- Signal: `{result['signal_id']}`\n"
+                      f"- Status: `{result['status']}`\n"
+                      f"- Contract: `{result.get('contract_symbol', 'n/a')}`\n"
+                      f"- Paper execution: `{str(result.get('paper_execution_enabled', 'n/a')).lower()}`\n"
+                      f"- Test mode: `{str(result.get('test_mode', False)).lower()}`\n"
+                      f"- Event: `{result['event_id']}`\n"
+                      f"- Notification: `{result['notification_id']}` (`{result['notification_status']}`)\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              github_request("POST", f"/issues/{issue_number}/comments", {"body": summary})
+              github_request("PATCH", f"/issues/{issue_number}", {"state": "closed"})
+          except Exception as exc:
+              if isinstance(exc, urllib.error.HTTPError):
+                  detail = exc.read().decode(errors="replace")[:1000]
+                  message = f"HTTP {exc.code}: {detail}"
+              else:
+                  message = str(exc)
+              github_request(
+                  "POST",
+                  f"/issues/{issue_number}/comments",
+                  {"body": f"Quantelle operator action failed: `{message}`"},
+              )
+              raise
+          PY

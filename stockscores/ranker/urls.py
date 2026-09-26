@@ -1,5 +1,6 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
+from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView
 from .views import (
     RankView,
     RefreshView,
@@ -208,6 +209,9 @@ urlpatterns = [
     path("operator/trade-signals/publish/", TradeSignalPublicationView.as_view(), name="trade-signal-publication"),
     path("operator/lifecycle-certifications/", LifecycleCertificationReportView.as_view(), name="lifecycle-certification-report"),
     path("operator/research-runs/", ResearchRunReportView.as_view(), name="research-run-report"),
+    path("operator/shadow-research/", ShadowResearchView.as_view(), name="shadow-research"),
+    path("operator/shadow-research/<int:pk>/observe/", ShadowObservationView.as_view(), name="shadow-observe"),
+    path("operator/shadow-research/<int:pk>/corrections/", ShadowCorrectionView.as_view(), name="shadow-correction"),
     path("operator/incidents/", OperatorIncidentReportView.as_view(), name="operator-incident-report"),
     path("billing/status/", BillingStatusView.as_view(), name="billing-status"),
     path("billing/checkout/", BillingCheckoutView.as_view(), name="billing-checkout"),

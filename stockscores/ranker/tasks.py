@@ -17,6 +17,7 @@ from .models import (
 from .serializers import StrategySpecSerializer, BotConfigSerializer
 from .lifecycle_audit import audit_lifecycles, audit_trade_signal
 from .research_runs import monitor_research_runs
+from .protection_policy import desired_exit
 
 SCHEDULE_OFFSETS = {
     "1m": timedelta(minutes=1),
@@ -351,10 +352,9 @@ def _exit_progress(bid, stop, target):
 def _desired_broker_exit(signal, bid):
     """Choose one broker-held order with hysteresis to prevent order churn."""
     stop = signal.current_stop or signal.initial_stop
-    progress = _exit_progress(bid, stop, signal.target_1)
-    if signal.paper_exit_reason == "broker_target":
-        return "broker_stop" if progress < BROKER_STOP_SWITCH_PROGRESS else "broker_target"
-    return "broker_target" if progress >= BROKER_TARGET_SWITCH_PROGRESS else "broker_stop"
+    choice = desired_exit(bid=bid, stop=stop, target=signal.target_1,
+                          currently_target=signal.paper_exit_reason == "broker_target")
+    return "broker_target" if choice == "target" else "broker_stop"
 
 
 def _submit_broker_exit(signal, client, desired, now):

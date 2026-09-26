@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master, main ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ master, main, production ]
 
 jobs:
   backend-tests:
@@ -39,7 +39,7 @@ jobs:
           # Adjust/extend if your settings read env vars
           DJANGO_SETTINGS_MODULE: stockscores.settings
         run: |
-          python manage.py test
+          python manage.py test ranker paper macro
 
   frontend-tests:
     name: Frontend (rank-ui) tests
@@ -63,7 +63,11 @@ jobs:
 
       - name: Run frontend tests (Vitest)
         working-directory: ./rank-ui
-        run: npm test -- --runInBand
+        run: npm test
+
+      - name: Build frontend
+        working-directory: ./rank-ui
+        run: npm run build
 
       # Optional: generate coverage on CI (you can turn this on later)
       # - name: Run tests with coverage

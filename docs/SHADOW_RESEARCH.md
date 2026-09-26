@@ -1,0 +1,49 @@
+# Quantelle shadow research and paper execution
+
+**State:** Code under review. No production migration, shadow worker, credential, or shadow broker order has been activated. The default branch owner-issue workflow and active Trade Operations task still need coordinated rollout. Do not change the execution flags until Brendan explicitly approves activation and the first one-contract paper test.
+
+## Isolation
+
+`ShadowSetup`, `ShadowEvent`, and `ShadowExecutorHealth` are dedicated tables. None is a `TradeSignal`, Telegram notification, lifecycle certification, public activity item, or primary Guardian input. The public API, public statistics, and frontend do not query them. The owner-token report at `/api/operator/shadow-research/` and read-only Django admin are private. The standalone `shadow_executor` management command is absent from the primary worker, Celery Beat, and Compose. It uses a different PostgreSQL advisory lock and its own health record. A shadow exception never writes the primary trade tables or pauses primary exits.
+
+The standalone client uses only `SHADOW_ALPACA_PAPER_API_KEY` and `SHADOW_ALPACA_PAPER_SECRET_KEY` for orders and quotes. It does not call the primary client constructor. Each cycle first reads `/v2/account` with both credential sets at the exact `https://paper-api.alpaca.markets` endpoint and requires distinct nonempty account IDs. The primary keys are used only for this read-only identity comparison. Different key strings alone do not establish different accounts. Missing, invalid, live-endpoint, or matching-account configuration fails closed. A stored shadow account ID that changes also blocks that setup.
+
+## Prospective research
+
+The restricted proposal requires a completed regular-session `ResearchRun`, decision time between its actual start and completion, submission within ten minutes of the decision, an exact OCC contract with matching symbol/expiration/strike/type, 21–60 DTE, one contract, a quote within 30 seconds, coherent bid/ask/spread arithmetic, structured near-miss reason or SPY/QQQ/IWM benchmark rationale, source provenance, evidence, and a versioned plan. It stores an entry trigger price and direction, confirmation duration, entry range/deadline, chase ceiling, stop, target, invalidation, and risk/reward. A unique active-contract constraint prevents concurrent duplicate shadow setups; the operator request key prevents replay. It also refuses a currently published/open setup of the same contract.
+
+The original decision cannot be changed or deleted. Application checks and database triggers reject updates to material fields, bulk rewrites, and event updates/deletes. Corrections use `/api/operator/shadow-research/<id>/corrections/` with a stable correction ID, reason, corrected statement, and source; the original snapshot remains visible. Trusted database superusers can disable triggers, so access to production SQL remains privileged. Timestamps and issue history limit hindsight bias, but cannot independently prove that a human recorded every observation at that moment.
+
+The `shadow_proposal` action is staged in `.github/workflows/quantelle-operator.yml` with owner association, exact title, strict field set, derived issue-based idempotency key, and a private result comment. The active GitHub issue workflow runs from `master`, while the backend is deployed from `production`; both branches must receive compatible changes before the issue route is usable. The recurring Trade Operations prompt should then evaluate SPY/QQQ, IWM when relevant, and at most a few genuine near-misses in regular-session reviews. Its current publication gates and widened search remain unchanged. Do not update the live task to send proposals before the backend and default-branch workflow are deployed.
+
+## Execution and observation
+
+`SHADOW_TRADING_ENABLED=false`, `SHADOW_EXECUTION_CONFIRMED=false`, and `SHADOW_EMERGENCY_PAUSE=true` are defaults; all three must deliberately allow execution. Fresh entries also require either the exact `SHADOW_ALLOWED_SETUP_ID` selected for an approved first test, or a later separately approved `SHADOW_AUTONOMOUS_ENTRIES_ENABLED=true`. Existing orders and open exits continue to reconcile regardless of the entry approval selector. No service is installed or started by this code. An enabled cycle requires PostgreSQL advisory locking, both identified paper accounts, a live market clock, a fresh quote (default 20 seconds), maximum option spread (default 12%), a prospectively stored underlying trigger and at least 60 seconds of confirmation, entry range, chase ceiling, and future deadline. It permits one contract, defaults to one concurrent position and two entry intents per UTC day, and refuses unexpected broker inventory.
+
+Entry and exit client order IDs start `quantelle-shadow-`. A durable intent is written **before** any order request. If an order response is uncertain, the next cycle looks up that client ID; a missing or unavailable lookup blocks resubmission pending operator reconciliation. Exact position and order states are reconciled against the shadow account. Filled entries receive one GTC protective order. The shared pure exit decision retains the published system's 75% target switch and 60% stop switch thresholds; account clients, records, locks, and health remain separate. Switching cancels, waits for confirmed terminal cancellation, and only then submits the replacement. A crossed stop with no protection invokes the independent monitored market exit. Open shadow protection errors pause new shadow entries. Only confirmed broker fills create broker realized results; broker position disappearance without an unambiguous filled order remains an error. An unambiguous external sell fill is labeled manually closed.
+
+Observation-only records never call order methods. The standalone `shadow_observer` command can sample the second paper account's market data while trading stays disabled; it is not scheduled or started by this release. A read-only identity check still requires both credential sets. Model `sampled-ask-bid-v1` takes a quote supplied through the restricted endpoint or sampler within 30 seconds of observation and within 30 seconds of receipt. It requires confirmation, a non-invalidated underlying price level, nonzero recorded volume/open interest, a sampled spread no wider than 20%, and a reachable ask plus $0.01 premium slippage inside the entry range and chase limit. The automated sampler can only verify the stored price-level thesis, not news or qualitative evidence; that broader thesis assessment remains unknown until reviewed. It closes only on a later sampled bid crossing stop or target, using bid minus $0.01; stop gaps use the observed gapped bid. MFE/MAE use sampled quotes only. Results are labeled `modeled` with low confidence, distinct from `broker` results. Without a usable exact contract/quote, a candidate remains research only and has no invented fill or return. No historical setup should be backfilled from later prices.
+
+## Internal analysis
+
+The token-restricted report includes status counts, category/mode counts, results by rejection reason, regime, direction, symbol, and ruleset; win rate, average win/loss, mean realized return, chronological compounded max drawdown, completeness, and sample size. It compares with published closed trades whose publication timestamps fall in the observed shadow decision window. This is an **unmatched selected-cohort comparison**, not a causal estimate. Fewer than 30 completed results are flagged premature. Gross paper returns exclude fees; modeled data may miss intrabar prices, liquidity changes, and stop/target order. No maximum gain substitutes for realized return. Broker versus modeled results should be examined separately.
+
+## Configuration and operations
+
+| Name | Safe default / purpose |
+| --- | --- |
+| `SHADOW_TRADING_ENABLED` | `false`; global kill switch |
+| `SHADOW_EXECUTION_CONFIRMED` | `false`; second activation gate |
+| `SHADOW_EMERGENCY_PAUSE` | `true`; independent emergency pause |
+| `SHADOW_ALPACA_PAPER_BASE_URL` | exact paper URL |
+| `SHADOW_ALPACA_PAPER_API_KEY`, `SHADOW_ALPACA_PAPER_SECRET_KEY` | second account only |
+| `SHADOW_MAX_CONCURRENT_POSITIONS` | `1`, bounded at 3 |
+| `SHADOW_MAX_DAILY_ENTRIES` | `2`, bounded at 5 |
+| `SHADOW_MAX_QUOTE_AGE_SECONDS` | `20`, capped at 30 |
+| `SHADOW_MAX_SPREAD_PCT` | `12`, capped at 20 |
+| `SHADOW_AUTONOMOUS_ENTRIES_ENABLED` | `false`; future autonomous-entry gate |
+| `SHADOW_ALLOWED_SETUP_ID` | empty; explicit first-test setup ID |
+
+The established deployment reads `.env.docker` from the server. First inspect its ownership/permissions without displaying values. Add second-account secrets directly on the server or an approved secret store with history-safe interactive editing. Verify both account IDs and endpoint through a read-only preflight before changing the kill switches. Do not enable or start the command until end-to-end broker fakes and production safeguards pass, and Brendan separately approves the first one-contract test.
+
+For emergency shutdown, set `SHADOW_EMERGENCY_PAUSE=true` or stop only the separate shadow command; existing broker-held orders remain at the second paper broker until separately reconciled. Never restart or alter the primary executor to control shadow trading. Recovery starts with a read-only comparison of shadow account ID, exact positions, orders by client ID, and append-only events. Ambiguous intent must be manually resolved; never clear client IDs to force a retry. To remove the feature, keep flags disabled, stop the standalone command, remove its private routes/registrations, and retain the dedicated tables as audit history. Primary trading is unaffected. Never put secret values in chat, issues, documentation, logs, or source control.
