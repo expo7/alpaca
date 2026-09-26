@@ -81,6 +81,8 @@ jobs:
           ssh -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/alpaca
+          # Recover the previous interrupted deployment's generated build only.
+          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
           if [ -n "$(git status --porcelain)" ]; then
             echo "Refusing to deploy over a dirty production worktree."
             git status --short
