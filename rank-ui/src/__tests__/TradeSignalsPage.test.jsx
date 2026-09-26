@@ -6,6 +6,23 @@ import TradeSignalsPage from "../pages/TradeSignalsPage.jsx";
 describe("TradeSignalsPage", () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it("offers a branded image for a completed paper result without hiding a loss", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+      id: 7, symbol: "AMZN", instrument: "AMZN 255C 11/20/26", status: "closed", status_label: "Closed",
+      paper_execution_enabled: true, paper_quantity: 1, actual_entry: "15.60", final_exit: "11.50",
+      realized_return_pct: "-26.28", initial_stop: "11.50", target_1: "22.00",
+      published_at: "2026-09-21T14:00:00Z", closed_at: "2026-09-24T14:00:00Z", thesis: "A testable thesis",
+      updates: [],
+    }] }));
+    render(<TradeSignalsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Share image" }));
+    const dialog = screen.getByRole("dialog", { name: /Share AMZN/ });
+    expect(within(dialog).getByText("-26.28%")).toBeInTheDocument();
+    expect(within(dialog).getByText("quantelle.io")).toBeInTheDocument();
+    expect(within(dialog).getByText("PAPER TRADE")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Download PNG" })).toBeInTheDocument();
+  });
+
   it("keeps staff incidents out of the latest customer update and folds an open entry plan", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{
       id: 88, symbol: "QCOM", instrument: "QCOM call", status: "open", status_label: "Open",

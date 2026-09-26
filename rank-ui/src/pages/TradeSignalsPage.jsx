@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import TradeShareCard from "../components/TradeShareCard.jsx";
 
 const ACTIVE = new Set(["published", "open"]);
 
@@ -143,7 +144,7 @@ function CurrentQuote({ signal, token = "" }) {
   );
 }
 
-function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
+function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" }) {
   if (signal.is_locked) {
     return (
       <article id={`trade-${signal.id}`} className="scroll-mt-28 overflow-hidden rounded-2xl border border-indigo-500/40 bg-slate-900">
@@ -284,6 +285,7 @@ function TradeCard({ signal, archived = false, onUpgrade, token = "" }) {
         {archived && grossPaperResult !== null && <div className="mt-2 text-sm text-slate-300">Gross paper P/L: <strong className={grossPaperResult >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(grossPaperResult)}</strong> <span className="text-xs text-slate-500">({signal.paper_quantity || 1} {(signal.paper_quantity || 1) === 1 ? "contract" : "contracts"} · before fees)</span></div>}
         {archived && <div className="mt-3 flex gap-6 text-sm text-slate-300"><span>Fill: {money(signal.actual_entry)}</span><span>Exit: {money(signal.final_exit)}</span></div>}
         {archived && <div className="mt-2 text-xs text-slate-400">Lifecycle certification: {signal.certification_state || "Pending"}{signal.paper_exit_reason ? ` · Exit: ${signal.paper_exit_reason.replaceAll("_", " ")}` : ""}</div>}
+        <button type="button" onClick={() => onShare(signal)} className="mt-5 rounded-lg border border-cyan-700/70 px-3 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-950/50">Share image</button>
       </div>
     </article>
   );
@@ -294,6 +296,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
   const [view, setView] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shareSignal, setShareSignal] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -393,7 +396,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
                 </div>
                 <span className="rounded-full bg-emerald-950/70 px-2.5 py-1 text-xs font-semibold text-emerald-300">{open.length} open</span>
               </div>
-              <div className="space-y-4">{open.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div>
+              <div className="space-y-4">{open.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} onShare={setShareSignal} token={token} />)}</div>
             </section>
           )}
 
@@ -406,7 +409,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
                 </div>
                 <span className="rounded-full bg-indigo-950/70 px-2.5 py-1 text-xs font-semibold text-indigo-300">{pending.length} pending</span>
               </div>
-              <div className="space-y-4">{pending.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} token={token} />)}</div>
+              <div className="space-y-4">{pending.map((signal) => <TradeCard key={signal.id} signal={signal} onUpgrade={onUpgrade} onShare={setShareSignal} token={token} />)}</div>
             </section>
           )}
         </div>
@@ -417,7 +420,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
             <h2 id="completed-history-heading" className="text-lg font-semibold text-white">Completed trades <span className="ml-1 text-sm font-normal text-slate-500">{completedTrades.length}</span></h2>
             <p className="mt-1 text-sm text-slate-500">Filled and exited trades with recorded realized returns · {wins} {wins === 1 ? "win" : "wins"} · {losses} {losses === 1 ? "loss" : "losses"}. Paper results are shown where paper execution was enabled.</p>
           </div>
-          <div className="space-y-4">{completedTrades.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
+          <div className="space-y-4">{completedTrades.map((signal) => <TradeCard key={signal.id} signal={signal} archived onShare={setShareSignal} />)}</div>
         </section>
       )}
       {(selectedView === "all" || selectedView === "unfilled") && !!otherOutcomes.length && (
@@ -426,11 +429,12 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
             <h2 id="other-outcomes-heading" className="text-lg font-semibold text-white">Unfilled and other outcomes <span className="ml-1 text-sm font-normal text-slate-500">{otherOutcomes.length}</span></h2>
             <p className="mt-1 text-sm text-slate-500">Cancelled and expired plans remain visible. A closed record without a complete fill, exit, and return also appears here until its record is complete.</p>
           </div>
-          <div className="space-y-4">{otherOutcomes.map((signal) => <TradeCard key={signal.id} signal={signal} archived />)}</div>
+          <div className="space-y-4">{otherOutcomes.map((signal) => <TradeCard key={signal.id} signal={signal} archived onShare={setShareSignal} />)}</div>
         </section>
       )}
 
       <p className="mt-8 border-t border-slate-800 pt-5 text-xs leading-5 text-slate-500">For research and educational use only. Options can lose their entire value. Published performance does not include commissions, slippage, taxes, or differences in execution unless a record specifically says otherwise.</p>
+      {shareSignal && <TradeShareCard signal={shareSignal} onClose={() => setShareSignal(null)} />}
     </div>
   );
 }
