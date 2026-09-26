@@ -18,7 +18,7 @@ class PublicArticlePagesTests(TestCase):
             )
             article = Article.objects.create(title='Market <Notes>', slug="market-notes", content="## Thesis\n\nA & B <script>alert(1)</script>")
             self.assertEqual(write_public_article_pages(), 1)
-            page = (dist / "articles" / article.slug / "index.html").read_text(encoding="utf-8")
+            page = (dist / "articles" / article.slug).read_text(encoding="utf-8")
             self.assertIn("Market &lt;Notes&gt; | Quantelle", page)
             self.assertIn("A &amp; B alert(1)", page)
             self.assertNotIn("<script>alert(1)</script>", page)

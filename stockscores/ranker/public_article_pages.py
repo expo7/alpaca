@@ -76,7 +76,9 @@ def write_public_article_pages():
         f"{ORIGIN}/articles", listing_body,
     ))
     for article in articles:
-        path = dist / "articles" / article.slug / "index.html"
+        # Host Nginx resolves exact files before its SPA fallback. An
+        # extensionless file serves /articles/<slug> without a server change.
+        path = dist / "articles" / article.slug
         description = _plain_text(article.content)[:155]
         body = (
             f'<main><nav><a href="/articles">All articles</a></nav>'
@@ -88,12 +90,10 @@ def write_public_article_pages():
                                     f"{ORIGIN}/articles/{article.slug}", body))
     # Remove only pages we generated, never arbitrary files under dist.
     active = {article.slug for article in articles}
-    for directory in (dist / "articles").iterdir():
-        if directory.is_dir() and directory.name not in active:
-            page = directory / "index.html"
-            if page.exists() and '<link rel="canonical" href="https://quantelle.io/articles/' in page.read_text(encoding="utf-8"):
+    for page in (dist / "articles").iterdir():
+        if page.is_file() and page.name not in active and page.name != "index.html":
+            if '<link rel="canonical" href="https://quantelle.io/articles/' in page.read_text(encoding="utf-8"):
                 page.unlink()
-                directory.rmdir()
     return len(articles)
 
 
