@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_public_sitemap ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command
+        run: python manage.py test ranker.test_public_sitemap ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer
 
       - name: Configure production SSH
         env:
@@ -101,6 +101,12 @@ jobs:
               raise SystemExit('Telegram notifications must be enabled for staff incident delivery.')
           if len(values.get('QUANTELLE_RESEARCH_OPERATOR_TOKEN', '')) < 32:
               raise SystemExit('The restricted operator token is not configured.')
+          if (values.get('SHADOW_TRADING_ENABLED', 'false').lower() != 'false' or
+                  values.get('SHADOW_EXECUTION_CONFIRMED', 'false').lower() != 'false' or
+                  values.get('SHADOW_EMERGENCY_PAUSE', 'true').lower() != 'true' or
+                  values.get('SHADOW_AUTONOMOUS_ENTRIES_ENABLED', 'false').lower() != 'false' or
+                  values.get('SHADOW_ALLOWED_SETUP_ID', '')):
+              raise SystemExit('Shadow execution must remain disabled for this release.')
           print('Staff alert destination and restricted operator credential configured.')
           PY
           git fetch origin production
