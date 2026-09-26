@@ -30,7 +30,7 @@ export default function Landing() {
                         <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
                             {APP_NAME.toUpperCase()}
                         </span>
-                        <span className="hidden text-xs text-slate-500 sm:block">Options research with a public trade record</span>
+                        <span className="hidden text-xs text-slate-400 sm:block">Options research with a public trade record</span>
                     </a>
                     <nav aria-label="Main navigation" className="flex items-center gap-2 text-xs sm:gap-3 sm:text-sm">
                         <a href="/signals" className="text-slate-300 hover:text-white">Live Options</a>
@@ -62,7 +62,7 @@ export default function Landing() {
                                     Quantelle Trade Alerts
                                 </a>
                             </div>
-                            <p className="mt-4 text-xs text-slate-500">Free public record · Alpaca paper execution and returns · No brokerage connection required to browse</p>
+                            <p className="mt-4 text-xs text-slate-400">Free public record · Alpaca paper execution and returns · No brokerage connection required to browse</p>
                         </div>
 
                         <div className="rounded-3xl border border-slate-700/80 bg-slate-900/75 p-5 shadow-2xl shadow-indigo-950/30 backdrop-blur">
@@ -75,11 +75,11 @@ export default function Landing() {
                             </div>
                             <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                 <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">Before entry</div>
+                                    <div className="text-xs uppercase tracking-wide text-slate-400">Before entry</div>
                                     <div className="mt-2 font-medium">Contract, trigger, and do-not-chase level</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">Defined risk</div>
+                                    <div className="text-xs uppercase tracking-wide text-slate-400">Defined risk</div>
                                     <div className="mt-2 font-medium">Stop, targets, and invalidation</div>
                                 </div>
                             </div>
