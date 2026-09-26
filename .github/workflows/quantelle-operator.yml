@@ -136,8 +136,33 @@ jobs:
                   for key, stamp in stamps.items():
                       operator_payload[key] = stamp.isoformat().replace("+00:00", "Z")
                   operator_payload["request_id"] = f"github-issue-{issue_number}"
+              elif action == "shadow_proposal":
+                  if issue.get("title", "") != "[Quantelle Operator] Shadow Proposal":
+                      raise ValueError("Shadow proposals require the exact Shadow Proposal title")
+                  common = {
+                      "action", "proposal_number", "research_run_id", "category", "decided_at", "symbol",
+                      "direction", "option_symbol", "expiration", "strike", "option_type",
+                      "contract_multiplier", "quantity", "underlying_price", "bid", "ask", "midpoint",
+                      "quote_at", "spread_dollars", "spread_pct", "volume", "open_interest",
+                      "entry_trigger", "required_confirmation", "trigger_direction", "underlying_trigger_price",
+                      "confirmation_seconds", "entry_low", "entry_high", "do_not_chase", "entry_deadline",
+                      "stop", "target_1", "underlying_invalidation", "expected_reward_risk",
+                      "market_regime", "thesis", "evidence", "data_provenance", "ruleset_version",
+                      "broker_execution_intended",
+                  }
+                  optional = {"target_2"}
+                  category_fields = {"rejection_reason"} if payload.get("category") == "near_miss" else {"benchmark_rationale"}
+                  if set(payload) - common - optional - category_fields or not common | category_fields <= set(payload):
+                      raise ValueError("Shadow proposal fields do not match the restricted schema")
+                  number = payload.pop("proposal_number")
+                  if not isinstance(number, int) or not 1 <= number <= 99:
+                      raise ValueError("proposal_number must be 1–99")
+                  operator_url = "https://quantelle.io/api/operator/shadow-research/"
+                  operator_payload = dict(payload)
+                  operator_payload.pop("action")
+                  operator_payload["request_id"] = f"github-issue-{issue_number}-shadow-{number}"
               else:
-                  raise ValueError("Only publish, cancel, and report_run actions are supported")
+                  raise ValueError("Only publish, cancel, report_run, and shadow_proposal actions are supported")
 
               operator_request = urllib.request.Request(
                   operator_url,
@@ -159,6 +184,14 @@ jobs:
                       f"- Outcome: `{result['outcome']}`\n"
                       f"- Health: `{result['status']}`\n"
                       f"- Next expected: `{result['next_expected_run_at']}`\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              elif action == "shadow_proposal":
+                  summary = (
+                      "Private shadow research proposal recorded. No broker order was submitted.\n\n"
+                      f"- Shadow setup: `{result['id']}`\n"
+                      f"- Status: `{result['status']}`\n"
+                      f"- Mode: `{result['execution_mode']}`\n"
                       f"- Already applied: `{str(result['already_applied']).lower()}`"
                   )
               else:
