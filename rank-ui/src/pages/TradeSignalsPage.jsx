@@ -218,6 +218,13 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
           </div>
         </div>
 
+        {archived && returnValue != null && (
+          <div className={`mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 rounded-xl border px-4 py-3 ${positive ? "border-emerald-700/50 bg-emerald-950/25" : "border-rose-700/50 bg-rose-950/25"}`}>
+            <span className="text-sm font-medium text-slate-200">Realized {signal.paper_execution_enabled ? "paper " : ""}return</span>
+            <strong className={`text-2xl ${positive ? "text-emerald-300" : "text-rose-300"}`}>{percent(returnValue)}</strong>
+          </div>
+        )}
+
         {isOpen && <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-sky-800/60 bg-sky-950/25 p-4 text-sm sm:grid-cols-4">
           <div><div className="text-xs text-slate-400">Average fill</div><strong>{money(signal.actual_entry)}</strong></div>
           <div><div className="text-xs text-slate-400">Current stop</div><strong>{money(signal.current_stop || signal.initial_stop)}</strong></div>
@@ -287,12 +294,6 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
           <div className="mt-4"><ActivityStream heading="Recorded customer updates" events={customerUpdates.map((update) => ({ signal, update }))} /></div>
         </details>}
 
-        {archived && returnValue !== null && returnValue !== undefined && (
-          <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-4">
-            <span className="text-sm text-slate-400">Realized {signal.paper_execution_enabled ? "paper " : ""}return</span>
-            <span className={`text-xl font-bold ${positive ? "text-emerald-400" : "text-rose-400"}`}>{percent(returnValue)}</span>
-          </div>
-        )}
         {archived && grossPaperResult !== null && <div className="mt-2 text-sm text-slate-300">Gross paper P/L: <strong className={grossPaperResult >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(grossPaperResult)}</strong> <span className="text-xs text-slate-500">({signal.paper_quantity || 1} {(signal.paper_quantity || 1) === 1 ? "contract" : "contracts"} · before fees)</span></div>}
         {archived && <div className="mt-3 flex gap-6 text-sm text-slate-300"><span>Fill: {money(signal.actual_entry)}</span><span>Exit: {money(signal.final_exit)}</span></div>}
         {archived && <div className="mt-2 text-xs text-slate-400">Lifecycle certification: {signal.certification_state || "Pending"}{signal.paper_exit_reason ? ` · Exit: ${signal.paper_exit_reason.replaceAll("_", " ")}` : ""}</div>}
