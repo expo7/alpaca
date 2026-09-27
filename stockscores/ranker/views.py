@@ -1137,6 +1137,31 @@ class ArticleDetailView(APIView):
         return Response(serializer.data)
 
 
+class OperatorArticlePublicationView(APIView):
+    """Owner-issue transport for creating one public Markdown article."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if set(request.data) != {"title", "slug", "content"}:
+            return Response({"detail": "Expected title, slug, and content only."}, status=status.HTTP_400_BAD_REQUEST)
+        title, slug, content = (request.data.get(key) for key in ("title", "slug", "content"))
+        if (not isinstance(title, str) or not isinstance(slug, str) or not isinstance(content, str)
+                or not 20 <= len(title.strip()) <= 180 or not 20 <= len(content.strip()) <= 20000
+                or title != title.strip() or slug != slug.strip() or content != content.strip()):
+            return Response({"detail": "Invalid article fields or length."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ArticleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        existing = Article.objects.filter(slug=slug).first()
+        if existing:
+            if existing.title != title or existing.content != content:
+                return Response({"detail": "Slug already belongs to a different article."}, status=status.HTTP_409_CONFLICT)
+            return Response({"slug": slug, "already_applied": True})
+        article = serializer.save()
+        return Response({"slug": article.slug, "already_applied": False}, status=status.HTTP_201_CREATED)
+
+
 class TradeSignalListView(APIView):
     """Public, read-only trade record. Drafts never leave the staff workflow."""
 
