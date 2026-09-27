@@ -1,13 +1,13 @@
 # Quantelle × Alpaca: admin review build
 
-**Status, September 27, 2026:** A private, staff-only paper connection prototype. No customer order placement or live-money authority. This document describes proposed capabilities for business and legal review; it does not assert regulatory approval.
+**Status, September 27, 2026:** A private paper connection prototype and a separate admin-only Broker sandbox trial. No customer order placement or live-money authority. This document describes proposed capabilities for business and legal review; it does not assert regulatory approval.
 
 ## Product choices
 
 | Route | Customer journey | Current state | Questions for Alpaca and counsel |
 | --- | --- | --- | --- |
 | Connect OAuth | Existing Alpaca user authorizes Quantelle; Alpaca hosts login and consent. | Paper-only, read-only OAuth code deployed, feature flag off. Staff-only API/UI in this draft. | Commercial app approval; paper and eventual live scope review; investment-advice/automation classification; disclosures and records. |
-| Broker API | Customer starts in Quantelle; Alpaca is account infrastructure. | No integration. Free sandbox is available, but that is not a launched customer product. | Does Alpaca permit persistent, customer-facing **paper-only** accounts under a partner arrangement? Options availability, KYC/agreements, operating obligations, fees and minimums, and future live launch. |
+| Broker API | Customer starts in Quantelle; Alpaca is account infrastructure. | Admin-only sandbox adapter and account inspection; manual one-share US equity limit order trial is separately gated and off by default. No customer onboarding or live integration. | Does Alpaca permit persistent, customer-facing **paper-only** accounts under a partner arrangement? Options availability, KYC/agreements, operating obligations, fees and minimums, and future live launch. |
 | Quantelle simulated ledger | Customer signs up solely with Quantelle; simulated fills are computed in our own ledger. | Existing general paper features are not a per-customer options-copy system. | How to describe simulations and performance; data licensing and disclosures; whether later migration to Alpaca accounts is practical. |
 
 ## Proposed architecture
@@ -28,6 +28,8 @@
 5. What review/approval steps, options enablement, pricing, and operational responsibilities apply to a later live-money rollout?
 
 ## Current technical gate
+
+Broker sandbox credentials use `ALPACA_BROKER_SANDBOX_API_KEY` and `ALPACA_BROKER_SANDBOX_API_SECRET` as AuthX client credentials. The server exchanges them at the fixed sandbox token endpoint, caches the Bearer token briefly, and calls only the fixed sandbox Broker API host. The admin inspection route requires `is_superuser`. `ALPACA_BROKER_SANDBOX_ORDER_ENABLED=false` is the default; enabling it permits only an explicit manual one-share US equity day limit buy with a typed confirmation, buying-power check, and unique client order ID. An ambiguous submission result must be reconciled in Alpaca by that ID before any retry. No automated customer trading or options support exists in this trial.
 
 `ALPACA_CONNECT_ENABLED` remains off until an Alpaca-approved commercial OAuth app, server-only credentials, exact callback registration, and a real staff paper connect/disconnect test. The current OAuth request deliberately omits `trading`, so it cannot submit orders. No customer or staff trading endpoint is present in this draft. Do not infer execution permission from a connected account.
 
