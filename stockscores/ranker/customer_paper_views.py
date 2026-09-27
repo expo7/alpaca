@@ -8,8 +8,15 @@ from .customer_paper import CustomerPaperError, available, begin_connection, com
 from .models import CustomerPaperConnection
 
 
+class StaffPaperPermission(permissions.BasePermission):
+    """Keep the experimental brokerage surface invisible to ordinary customers."""
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser))
+
+
 class CustomerPaperConnectionView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [StaffPaperPermission]
 
     def get(self, request):
         connection = CustomerPaperConnection.objects.filter(user=request.user).first()
@@ -25,7 +32,7 @@ class CustomerPaperConnectionView(APIView):
 
 
 class CustomerPaperConnectView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [StaffPaperPermission]
 
     def post(self, request):
         try:
@@ -39,6 +46,7 @@ class CustomerPaperCallbackView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
+        # The one-use state ties this callback to the staff user who initiated it.
         try:
             complete_connection(request.query_params.get("code"), request.query_params.get("state"))
         except (CustomerPaperError, IntegrityError):
