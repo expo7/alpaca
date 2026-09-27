@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TradeShareCard from "../components/TradeShareCard.jsx";
 import CustomerPaperPanel from "../components/CustomerPaperPanel.jsx";
+import BrokerSandboxPanel from "../components/BrokerSandboxPanel.jsx";
 
 const ACTIVE = new Set(["published", "open"]);
 
@@ -304,7 +305,7 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
   );
 }
 
-export default function TradeSignalsPage({ token = "", isStaff = false, onUpgrade = () => {} }) {
+export default function TradeSignalsPage({ token = "", isStaff = false, isAdmin = false, onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
   const [view, setView] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -375,6 +376,7 @@ export default function TradeSignalsPage({ token = "", isStaff = false, onUpgrad
       </aside>
 
       {isStaff && <CustomerPaperPanel token={token} />}
+      {isAdmin && <BrokerSandboxPanel token={token} />}
 
       <nav aria-label="Trade record views" className="mb-6 flex gap-2 overflow-x-auto pb-2">
         {views.map((item) => <button key={item.id} type="button" aria-pressed={selectedView === item.id} onClick={() => setView(item.id)}

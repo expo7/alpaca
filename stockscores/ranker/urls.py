@@ -1,6 +1,7 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
 from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView
+from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView
 from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView
 from .views import (
     RankView,
@@ -159,6 +160,9 @@ urlpatterns = [
     path("alpaca-paper/connection/", CustomerPaperConnectionView.as_view(), name="customer-paper-connection"),
     path("alpaca-paper/connect/", CustomerPaperConnectView.as_view(), name="customer-paper-connect"),
     path("alpaca-paper/callback/", CustomerPaperCallbackView.as_view(), name="customer-paper-callback"),
+    path("broker-sandbox/", BrokerSandboxView.as_view(), name="broker-sandbox"),
+    path("broker-sandbox/accounts/<uuid:account_id>/", BrokerSandboxView.as_view(), name="broker-sandbox-account"),
+    path("broker-sandbox/accounts/<uuid:account_id>/orders/", BrokerSandboxOrderView.as_view(), name="broker-sandbox-order"),
     path("backtest/", BacktestView.as_view(), name="backtest"),
     path(
         "strategies/validate/",
