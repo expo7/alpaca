@@ -161,8 +161,19 @@ jobs:
                   operator_payload = dict(payload)
                   operator_payload.pop("action")
                   operator_payload["request_id"] = f"github-issue-{issue_number}-shadow-{number}"
+              elif action == "article_publish":
+                  if issue.get("title", "") != "[Quantelle Operator] Publish Article":
+                      raise ValueError("Article publication requires the exact Publish Article title")
+                  if set(payload) != {"action", "title", "slug", "content"}:
+                      raise ValueError("Article publication accepts title, slug, and content only")
+                  if not all(isinstance(payload[key], str) for key in ("title", "slug", "content")):
+                      raise ValueError("Article fields must be strings")
+                  if not 20 <= len(payload["title"]) <= 180 or not 20 <= len(payload["content"]) <= 20000:
+                      raise ValueError("Article title or content length is invalid")
+                  operator_url = "https://quantelle.io/api/operator/articles/publish/"
+                  operator_payload = {key: payload[key] for key in ("title", "slug", "content")}
               else:
-                  raise ValueError("Only publish, cancel, report_run, and shadow_proposal actions are supported")
+                  raise ValueError("Unsupported operator action")
 
               operator_request = urllib.request.Request(
                   operator_url,
@@ -192,6 +203,12 @@ jobs:
                       f"- Shadow setup: `{result['id']}`\n"
                       f"- Status: `{result['status']}`\n"
                       f"- Mode: `{result['execution_mode']}`\n"
+                      f"- Already applied: `{str(result['already_applied']).lower()}`"
+                  )
+              elif action == "article_publish":
+                  summary = (
+                      "Quantelle article published.\n\n"
+                      f"- URL: https://quantelle.io/articles/{result['slug']}\n"
                       f"- Already applied: `{str(result['already_applied']).lower()}`"
                   )
               else:
