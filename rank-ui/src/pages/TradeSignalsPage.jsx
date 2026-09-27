@@ -304,7 +304,7 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
   );
 }
 
-export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
+export default function TradeSignalsPage({ token = "", isStaff = false, onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
   const [view, setView] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -374,7 +374,7 @@ export default function TradeSignalsPage({ token = "", onUpgrade = () => {} }) {
         </a>
       </aside>
 
-      <CustomerPaperPanel token={token} />
+      {isStaff && <CustomerPaperPanel token={token} />}
 
       <nav aria-label="Trade record views" className="mb-6 flex gap-2 overflow-x-auto pb-2">
         {views.map((item) => <button key={item.id} type="button" aria-pressed={selectedView === item.id} onClick={() => setView(item.id)}

@@ -15,6 +15,8 @@ from .models import CustomerPaperConnection
 class CustomerPaperConnectionTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="paper-customer", password="secret")
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
         self.client.force_authenticate(self.user)
         cache.clear()
 
@@ -53,6 +55,16 @@ class CustomerPaperConnectionTests(APITestCase):
             self.assertEqual(post.call_count, 1)
             self.assertEqual(self.client.delete(reverse("customer-paper-connection")).status_code, 204)
             self.assertFalse(CustomerPaperConnection.objects.filter(user=self.user).exists())
+
+    def test_connection_is_staff_only_even_when_available(self):
+        self.user.is_staff = False
+        self.user.save(update_fields=["is_staff"])
+        for name in ("customer-paper-connection", "customer-paper-connect"):
+            method = self.client.get if name == "customer-paper-connection" else self.client.post
+            self.assertEqual(method(reverse(name)).status_code, 403)
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.assertEqual(self.client.get(reverse("customer-paper-connection")).status_code, 200)
 
     def test_connection_requires_authentication(self):
         self.client.force_authenticate(user=None)
