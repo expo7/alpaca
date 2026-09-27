@@ -138,11 +138,11 @@ jobs:
           docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
           docker compose run --rm -T web python manage.py generate_public_sitemap < /dev/null
           docker compose run --rm -T web python manage.py generate_public_article_pages < /dev/null
+          if ! sudo -n python3 scripts/install_articles_route.py --apply; then
+            echo 'Article hub routing needs a one-time server administrator action.'
+          fi
           docker compose up -d web worker beat execution_guardian
           docker compose ps
-          for config in /etc/nginx/sites-enabled/*; do
-            test -r "$config" && grep -nE 'server_name|root |location |try_files|include ' "$config" | head -80 || true
-          done
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('trade-lifecycle-certification-auditor'); assert job and job['schedule'] == 120.0; print(job)" < /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('research-run-heartbeat'); assert job and job['schedule'] == 300.0; print(job)" < /dev/null
