@@ -930,3 +930,16 @@ class BillingProfile(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.status}"
+
+
+class CustomerPaperConnection(models.Model):
+    """A customer's separately authorized Alpaca paper account; never the house account."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="customer_paper_connection")
+    alpaca_account_id = models.CharField(max_length=80, unique=True)
+    encrypted_access_token = models.TextField()
+    connected_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Paper connection for user {self.user_id}"

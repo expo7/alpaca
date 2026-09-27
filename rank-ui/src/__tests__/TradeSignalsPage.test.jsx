@@ -139,8 +139,9 @@ describe("TradeSignalsPage", () => {
   });
 
   it("shows unrealized Alpaca paper P/L for an executed open trade", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => [{
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      if (url === "/api/alpaca-paper/connection/") return Promise.resolve({ ok: true, json: async () => ({ available: false }) });
+      if (url === "/api/trade-signals/") return Promise.resolve({ ok: true, json: async () => [{
         id: 3,
         symbol: "NVDA",
         company_name: "NVIDIA Corporation",
@@ -159,8 +160,8 @@ describe("TradeSignalsPage", () => {
         paper_quantity: 1,
         published_at: "2026-09-10T13:30:00Z",
         updates: [],
-      }] })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({
+      }] });
+      return Promise.resolve({ ok: true, json: async () => ({
         available: true,
         status_label: "Market closed · last available",
         underlying_price: 221.10,
@@ -178,7 +179,8 @@ describe("TradeSignalsPage", () => {
           unrealized_pl_pct: 9.97,
           fetched_at: "2026-09-17T15:00:00Z",
         },
-      }) }));
+      }) });
+    }));
 
     render(<TradeSignalsPage token="pro-token" />);
     expect(await screen.findByText("Alpaca paper position")).toBeInTheDocument();
