@@ -91,6 +91,25 @@ class BrokerSandboxClient:
     def create_account(self, application):
         return self.request("POST", "/v1/accounts", body=application)
 
+    def ach_relationships(self, account_id):
+        return self.request("GET", f"/v1/accounts/{account_id}/ach_relationships")
+
+    def create_demo_ach_relationship(self, account_id, owner_name, bank_account_number):
+        return self.request("POST", f"/v1/accounts/{account_id}/ach_relationships", body={
+            "account_owner_name": owner_name, "bank_account_type": "CHECKING",
+            "bank_account_number": bank_account_number, "bank_routing_number": "121000358",
+            "nickname": "Quantelle sandbox test bank",
+        })
+
+    def transfers(self, account_id):
+        return self.request("GET", f"/v1/accounts/{account_id}/transfers")
+
+    def demo_deposit(self, account_id, relationship_id):
+        return self.request("POST", f"/v1/accounts/{account_id}/transfers", body={
+            "transfer_type": "ach", "relationship_id": relationship_id,
+            "amount": "1000.00", "direction": "INCOMING", "timing": "immediate",
+        })
+
     def orders(self, account_id):
         return self.request("GET", f"/v1/trading/accounts/{account_id}/orders", params={"status": "all", "limit": 20})
 

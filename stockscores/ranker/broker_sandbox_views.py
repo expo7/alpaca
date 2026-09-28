@@ -2,6 +2,7 @@
 
 from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
+from secrets import randbelow
 
 import requests
 from django.core.cache import cache
@@ -175,3 +176,55 @@ class BrokerSandboxCreateAccountView(APIView):
             "status": result.get("status"), "enabled_assets": result.get("enabled_assets"),
             "synthetic": True, "environment": "sandbox",
         }, status=201)
+
+
+class BrokerSandboxFundingView(APIView):
+    """Inspect or advance the fixed virtual ACH demo for one synthetic account."""
+    permission_classes = [BrokerAdminPermission]
+
+    def get(self, request, account_id):
+        try:
+            client = BrokerSandboxClient()
+            relationships = client.ach_relationships(str(account_id))
+            transfers = client.transfers(str(account_id))
+        except (BrokerSandboxError, requests.RequestException, ValueError):
+            return Response({"detail": "Broker sandbox funding status unavailable"}, status=503)
+        return Response({
+            "relationships": [{"id": item.get("id"), "status": item.get("status"), "nickname": item.get("nickname")}
+                              for item in relationships],
+            "transfers": [{"id": item.get("id"), "status": item.get("status"), "amount": item.get("amount"),
+                           "direction": item.get("direction")} for item in transfers[:10]],
+        })
+
+    def post(self, request, account_id):
+        if request.data.get("confirm") != "FUND SYNTHETIC SANDBOX ACCOUNT":
+            return Response({"detail": "Explicit virtual funding confirmation required"}, status=400)
+        throttle_key = f"broker_sandbox_funding_{account_id}"
+        if not cache.add(throttle_key, True, timeout=60):
+            return Response({"detail": "Wait one minute and inspect funding before retrying"}, status=429)
+        try:
+            client = BrokerSandboxClient()
+            profile = client.account_profile(str(account_id))
+            if profile.get("status") != "ACTIVE" or not str(profile.get("contact", {}).get("email_address", "")).endswith("@example.com"):
+                return Response({"detail": "Only active synthetic sandbox accounts can use demo funding"}, status=409)
+            relationships = client.ach_relationships(str(account_id))
+            approved = next((item for item in relationships if item.get("status") == "APPROVED" and
+                             item.get("nickname") == "Quantelle sandbox test bank"), None)
+            if not approved:
+                if relationships:
+                    return Response({"detail": "ACH relationship is pending or belongs to another workflow; inspect funding before retrying"}, status=409)
+                identity = profile.get("identity") or {}
+                owner = " ".join(filter(None, (identity.get("given_name"), identity.get("family_name"))))
+                if not owner:
+                    return Response({"detail": "Synthetic account identity unavailable"}, status=409)
+                relationship = client.create_demo_ach_relationship(str(account_id), owner, f"{randbelow(10**10):010d}")
+                return Response({"step": "relationship", "status": relationship.get("status"),
+                                 "detail": "Virtual bank link requested. Inspect funding for APPROVED, then fund."}, status=202)
+            transfers = client.transfers(str(account_id))
+            if any(item.get("relationship_id") == approved.get("id") and item.get("direction") == "INCOMING" for item in transfers):
+                return Response({"detail": "A demo deposit already exists for this relationship; inspect its status"}, status=409)
+            result = client.demo_deposit(str(account_id), approved["id"])
+            return Response({"step": "deposit", "id": result.get("id"), "status": result.get("status"),
+                             "detail": "Virtual $1,000 deposit requested. Inspect funding and account balance."}, status=202)
+        except (BrokerSandboxError, requests.RequestException, ValueError):
+            return Response({"detail": "Funding outcome unknown; inspect Alpaca and funding status before retrying"}, status=503)
