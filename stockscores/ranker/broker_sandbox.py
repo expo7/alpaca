@@ -104,10 +104,10 @@ class BrokerSandboxClient:
     def transfers(self, account_id):
         return self.request("GET", f"/v1/accounts/{account_id}/transfers")
 
-    def demo_deposit(self, account_id, relationship_id):
+    def demo_deposit(self, account_id, relationship_id, amount):
         return self.request("POST", f"/v1/accounts/{account_id}/transfers", body={
             "transfer_type": "ach", "relationship_id": relationship_id,
-            "amount": "1000.00", "direction": "INCOMING", "timing": "immediate",
+            "amount": str(amount), "direction": "INCOMING", "timing": "immediate",
         })
 
     def orders(self, account_id):

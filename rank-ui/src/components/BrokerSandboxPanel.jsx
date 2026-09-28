@@ -55,7 +55,7 @@ export default function BrokerSandboxPanel({ token }) {
   }
 
   async function advanceFunding() {
-    if (!window.confirm("Create a virtual bank link or request one $1,000 deposit for this fictional Alpaca sandbox account?")) return;
+    if (!window.confirm("Create a virtual bank link or fund this fictional Alpaca sandbox account toward a $25,000 total? Existing deposits count toward the target.")) return;
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/funding/`, {
@@ -140,7 +140,7 @@ export default function BrokerSandboxPanel({ token }) {
     </div>
     {detail?.account.status === "ACTIVE" && <div className="mt-3 rounded-lg border border-emerald-500/40 p-3">
       <p className="font-semibold">Virtual sandbox funding</p>
-      <p>Create a fictional ACH link, wait for approval, then request one $1,000 sandbox deposit. No real bank or money.</p>
+      <p>Create a fictional ACH link, wait for approval, then fund toward a $25,000 virtual total. Existing deposits count; pending transfers must complete first. No real bank or money.</p>
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={busy} onClick={inspectFunding} className="rounded border border-emerald-400 px-3 py-2 disabled:opacity-50">Inspect funding</button>
         <button type="button" disabled={busy} onClick={advanceFunding} className="rounded border border-emerald-400 px-3 py-2 disabled:opacity-50">Next funding step</button>

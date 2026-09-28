@@ -181,6 +181,7 @@ class BrokerSandboxCreateAccountView(APIView):
 class BrokerSandboxFundingView(APIView):
     """Inspect or advance the fixed virtual ACH demo for one synthetic account."""
     permission_classes = [BrokerAdminPermission]
+    TARGET = Decimal("25000.00")
 
     def get(self, request, account_id):
         try:
@@ -221,10 +222,16 @@ class BrokerSandboxFundingView(APIView):
                 return Response({"step": "relationship", "status": relationship.get("status"),
                                  "detail": "Virtual bank link requested. Inspect funding for APPROVED, then fund."}, status=202)
             transfers = client.transfers(str(account_id))
-            if any(item.get("relationship_id") == approved.get("id") and item.get("direction") == "INCOMING" for item in transfers):
-                return Response({"detail": "A demo deposit already exists for this relationship; inspect its status"}, status=409)
-            result = client.demo_deposit(str(account_id), approved["id"])
+            incoming = [item for item in transfers if item.get("direction") == "INCOMING" and
+                        item.get("status") not in ("CANCELED", "CANCELLED", "REJECTED", "FAILED", "RETURNED")]
+            if any(item.get("status") not in ("COMPLETE", "COMPLETED", "SETTLED") for item in incoming):
+                return Response({"detail": "An incoming deposit is still processing; inspect it before adding funds"}, status=409)
+            existing = sum((Decimal(str(item["amount"])) for item in incoming), Decimal("0"))
+            remaining = self.TARGET - existing
+            if remaining <= 0:
+                return Response({"detail": "The $25,000 demo funding target has been reached"}, status=409)
+            result = client.demo_deposit(str(account_id), approved["id"], f"{remaining:.2f}")
             return Response({"step": "deposit", "id": result.get("id"), "status": result.get("status"),
-                             "detail": "Virtual $1,000 deposit requested. Inspect funding and account balance."}, status=202)
-        except (BrokerSandboxError, requests.RequestException, ValueError):
+                             "detail": f"Virtual ${remaining:,.2f} deposit requested toward $25,000. Inspect funding and account balance."}, status=202)
+        except (BrokerSandboxError, requests.RequestException, ValueError, KeyError, InvalidOperation):
             return Response({"detail": "Funding outcome unknown; inspect Alpaca and funding status before retrying"}, status=503)

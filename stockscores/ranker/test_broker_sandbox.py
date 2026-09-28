@@ -156,10 +156,16 @@ class BrokerSandboxTests(APITestCase):
         response = self.client.post(url, payload)
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["step"], "deposit")
-        broker.demo_deposit.assert_called_once_with(str(self.account_id), broker.ach_relationships.return_value[0]["id"])
+        broker.demo_deposit.assert_called_once_with(str(self.account_id), broker.ach_relationships.return_value[0]["id"], "25000.00")
         cache.clear()
         broker.transfers.return_value = [{"relationship_id": broker.ach_relationships.return_value[0]["id"], "direction": "INCOMING"}]
         self.assertEqual(self.client.post(url, payload).status_code, 409)
+        broker.transfers.return_value = [{"relationship_id": broker.ach_relationships.return_value[0]["id"],
+                                          "direction": "INCOMING", "status": "COMPLETE", "amount": "1000.00"}]
+        cache.clear()
+        broker.demo_deposit.reset_mock()
+        self.assertEqual(self.client.post(url, payload).status_code, 202)
+        broker.demo_deposit.assert_called_once_with(str(self.account_id), broker.ach_relationships.return_value[0]["id"], "24000.00")
         self.user.is_superuser = False
         self.user.save(update_fields=["is_superuser"])
         self.assertEqual(self.client.get(url).status_code, 403)
