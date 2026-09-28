@@ -36,12 +36,15 @@ class BrokerSandboxView(APIView):
             return Response({"detail": "Invalid account ID"}, status=400)
         try:
             client = BrokerSandboxClient()
-            account = client.account(account_id)
-            orders = client.orders(account_id)
+            profile = client.account_profile(account_id)
+            active = profile.get("status") == "ACTIVE"
+            account = client.account(account_id) if active else {}
+            orders = client.orders(account_id) if active else []
         except (BrokerSandboxError, requests.RequestException, ValueError):
             return Response({"detail": "Broker sandbox is unavailable"}, status=503)
         return Response({
-            "account": {field: account.get(field) for field in ("status", "cash", "buying_power", "trading_blocked", "account_blocked")},
+            "account": {"status": profile.get("status"), "enabled_assets": profile.get("enabled_assets") or [],
+                        **{field: account.get(field) for field in ("cash", "buying_power", "trading_blocked", "account_blocked")}},
             "orders": [{field: order.get(field) for field in ("id", "client_order_id", "symbol", "qty", "side", "type", "status", "filled_qty", "filled_avg_price", "limit_price", "time_in_force")}
                        for order in orders[:20]],
             "orders_enabled": orders_enabled(),
