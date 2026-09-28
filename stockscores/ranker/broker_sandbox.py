@@ -11,9 +11,28 @@ API_URL = "https://broker-api.sandbox.alpaca.markets"
 
 
 class BrokerSandboxError(Exception):
-    def __init__(self, message, status_code=None):
+    def __init__(self, message, status_code=None, validation_fields=()):
         super().__init__(message)
         self.status_code = status_code
+        self.validation_fields = validation_fields
+
+
+_VALIDATION_FIELD_NAMES = (
+    "enabled_assets", "account_type", "contact", "identity", "tax_id", "tax_id_type",
+    "disclosures", "agreements", "customer_agreement", "options_agreement", "margin_agreement",
+    "documents", "date_of_birth", "phone_number", "postal_code", "risk_tolerance",
+    "investment_objective", "investment_time_horizon", "liquidity_needs",
+    "annual_income", "total_net_worth", "liquid_net_worth", "investment_experience",
+)
+
+
+def validation_fields(response):
+    """Expose only known field names; never return echoed applicant details."""
+    try:
+        description = str(response.json()).lower()
+    except ValueError:
+        return []
+    return [name for name in _VALIDATION_FIELD_NAMES if name in description]
 
 
 def configured():
@@ -59,7 +78,8 @@ class BrokerSandboxClient:
             cache.delete("alpaca_broker_sandbox_access_token")
             response = self.session.request(method, url, headers={"Authorization": f"Bearer {self.token()}"}, json=body, timeout=15)
         if not response.ok:
-            raise BrokerSandboxError(f"Alpaca sandbox request failed ({response.status_code})", response.status_code)
+            raise BrokerSandboxError(f"Alpaca sandbox request failed ({response.status_code})", response.status_code,
+                                     validation_fields(response) if method == "POST" and path == "/v1/accounts" else ())
         return response.json()
 
     def account(self, account_id):

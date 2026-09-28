@@ -52,7 +52,7 @@ export default function BrokerSandboxPanel({ token }) {
         body: JSON.stringify({ options: demoOptions, confirm: "CREATE SYNTHETIC SANDBOX ACCOUNT" }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || "Account outcome unknown; inspect Alpaca before retrying.");
+      if (!response.ok) throw new Error(`${result.detail || "Account outcome unknown; inspect Alpaca before retrying."}${result.validation_fields?.length ? ` Validation fields: ${result.validation_fields.join(", ")}.` : ""}`);
       setNewAccount(result); setAccountId(result.id); setDetail(null); setMirror(null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
