@@ -153,6 +153,37 @@ class BrokerSandboxMirrorPreviewView(APIView):
         })
 
 
+class BrokerSandboxOptionsAccessView(APIView):
+    """Read-only probe of the partner's options approval entitlement in sandbox."""
+    permission_classes = [BrokerAdminPermission]
+
+    def get(self, request, account_id):
+        try:
+            client = BrokerSandboxClient()
+            profile = client.account_profile(str(account_id))
+            account = client.account(str(account_id)) if profile.get("status") == "ACTIVE" else {}
+            try:
+                approvals = client.options_approvals(str(account_id))
+                access = "available"
+            except BrokerSandboxError as exc:
+                if exc.status_code == 403:
+                    access, approvals = "not_enabled_or_account_inaccessible", None
+                else:
+                    raise
+        except (BrokerSandboxError, requests.RequestException, ValueError):
+            return Response({"detail": "Options access check unavailable"}, status=503)
+        return Response({
+            "partner_options_access": access,
+            "account_status": profile.get("status"),
+            "enabled_assets": profile.get("enabled_assets") or [],
+            "options_approved_level": account.get("options_approved_level"),
+            "options_trading_level": account.get("options_trading_level"),
+            "approval_requests": [{"requested_level": item.get("requested_level"), "status": item.get("status"),
+                                   "approved_level": item.get("approved_level")} for item in
+                                  (approvals.get("approvals", []) if isinstance(approvals, dict) else approvals or [])],
+        })
+
+
 class BrokerSandboxCreateAccountView(APIView):
     """Create only a fictional applicant in the fixed Broker sandbox environment."""
     permission_classes = [BrokerAdminPermission]

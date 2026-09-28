@@ -1,7 +1,7 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
 from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView
-from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView
+from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView, BrokerSandboxOptionsAccessView
 from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView
 from .views import (
     RankView,
@@ -164,6 +164,7 @@ urlpatterns = [
     path("broker-sandbox/accounts/create/", BrokerSandboxCreateAccountView.as_view(), name="broker-sandbox-create-account"),
     path("broker-sandbox/accounts/<uuid:account_id>/", BrokerSandboxView.as_view(), name="broker-sandbox-account"),
     path("broker-sandbox/accounts/<uuid:account_id>/funding/", BrokerSandboxFundingView.as_view(), name="broker-sandbox-funding"),
+    path("broker-sandbox/accounts/<uuid:account_id>/options-access/", BrokerSandboxOptionsAccessView.as_view(), name="broker-sandbox-options-access"),
     path("broker-sandbox/accounts/<uuid:account_id>/orders/", BrokerSandboxOrderView.as_view(), name="broker-sandbox-order"),
     path("broker-sandbox/accounts/<uuid:account_id>/orders/<uuid:order_id>/cancel/", BrokerSandboxCancelOrderView.as_view(), name="broker-sandbox-cancel-order"),
     path("broker-sandbox/accounts/<uuid:account_id>/mirror-preview/", BrokerSandboxMirrorPreviewView.as_view(), name="broker-sandbox-mirror-preview"),
