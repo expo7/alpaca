@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 
 from .broker_sandbox import AUTH_URL, API_URL, BrokerSandboxClient
 from .models import TradeSignal
+from .broker_sandbox_fixture import synthetic_application
 from datetime import date
 from decimal import Decimal
 
@@ -95,3 +96,25 @@ class BrokerSandboxTests(APITestCase):
         self.assertFalse(response.data["checks"]["estimated_buying_power"])
         self.assertFalse(response.data["can_mirror"])
         client_class.return_value.submit_order.assert_not_called()
+
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_synthetic_account_creation_is_admin_only_and_explicit(self, client_class):
+        url = reverse("broker-sandbox-create-account")
+        client_class.return_value.create_account.return_value = {"id": str(self.account_id), "status": "ACTIVE"}
+        self.assertEqual(self.client.post(url, {"options": False}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(url, {"options": False, "confirm": "CREATE SYNTHETIC SANDBOX ACCOUNT"}, format="json").status_code, 201)
+        application = client_class.return_value.create_account.call_args.args[0]
+        self.assertEqual(application["enabled_assets"], ["us_equity"])
+        self.assertTrue(application["contact"]["email_address"].endswith("@example.com"))
+        self.assertTrue(application["identity"]["tax_id"].startswith("666-"))
+        self.assertNotIn("us_option", application["enabled_assets"])
+        self.assertEqual(self.client.post(url, {"options": False, "confirm": "CREATE SYNTHETIC SANDBOX ACCOUNT"}, format="json").status_code, 429)
+        self.user.is_superuser = False
+        self.user.save(update_fields=["is_superuser"])
+        self.assertEqual(self.client.post(url, {"options": False, "confirm": "CREATE SYNTHETIC SANDBOX ACCOUNT"}, format="json").status_code, 403)
+
+    def test_options_fixture_has_agreement_and_identity_fields(self):
+        application = synthetic_application(options=True)
+        self.assertEqual(application["enabled_assets"], ["us_equity", "us_option"])
+        self.assertIn("options_agreement", [item["agreement"] for item in application["agreements"]])
+        self.assertIn("investment_experience_with_options", application["identity"])
