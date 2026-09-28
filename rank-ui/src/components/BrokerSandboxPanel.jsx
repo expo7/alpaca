@@ -120,14 +120,15 @@ export default function BrokerSandboxPanel({ token }) {
       </> : <p>{mirror.detail}</p>}
     </div>}
     {detail && <div className="mt-3">
-      <p>Status: {detail.account.status} · Cash: ${detail.account.cash} · Buying power: ${detail.account.buying_power}</p>
+      <p>Status: {detail.account.status || "unknown"} · Assets: {detail.account.enabled_assets.join(", ") || "pending"} · Cash: {detail.account.cash == null ? "unavailable" : `$${detail.account.cash}`} · Buying power: {detail.account.buying_power == null ? "unavailable" : `$${detail.account.buying_power}`}</p>
+      {detail.account.status !== "ACTIVE" && <p role="status" className="mt-2 text-amber-200">Alpaca has the application. Inspect again later for ACTIVE status before testing orders.</p>}
       <p>Recent orders: {detail.orders.length ? "" : "none"}</p>
       {detail.orders.map((order) => <div key={order.id} className="mt-2 rounded-lg border border-slate-700 p-2">
         <span>{order.symbol} {order.side} {order.qty} · {order.status} · limit ${order.limit_price || "—"} · filled {order.filled_qty || "0"}{order.filled_avg_price ? ` at $${order.filled_avg_price}` : ""}</span>
         {state.orders_enabled && order.client_order_id?.startsWith("quantelle-admin-sandbox-") && ["accepted", "new", "pending_new", "partially_filled", "held", "done_for_day"].includes(order.status) &&
           <button type="button" disabled={busy} onClick={() => cancel(order)} className="ml-3 rounded border border-amber-400 px-2 py-1 text-amber-200 disabled:opacity-50">Cancel order</button>}
       </div>)}
-      {state.orders_enabled && <div className="mt-4 space-y-2 border-t border-slate-700 pt-3">
+      {state.orders_enabled && detail.account.status === "ACTIVE" && <div className="mt-4 space-y-2 border-t border-slate-700 pt-3">
         <p>Manual sandbox trial: one US equity share, day limit buy. Check price and buying power before submitting.</p>
         <div className="flex flex-wrap gap-2">
           <input aria-label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} className="w-28 rounded-lg bg-slate-800 p-2" />

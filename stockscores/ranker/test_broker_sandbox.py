@@ -55,6 +55,20 @@ class BrokerSandboxTests(APITestCase):
         self.assertEqual(response.status_code, 403)
 
     @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_submitted_account_can_be_inspected_without_trading_endpoint(self, client_class):
+        client_class.return_value.account_profile.return_value = {
+            "status": "SUBMITTED", "enabled_assets": ["us_equity"],
+        }
+        response = self.client.get(reverse("broker-sandbox-account", args=[self.account_id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["account"]["status"], "SUBMITTED")
+        self.assertEqual(response.data["account"]["enabled_assets"], ["us_equity"])
+        self.assertIsNone(response.data["account"]["cash"])
+        self.assertEqual(response.data["orders"], [])
+        client_class.return_value.account.assert_not_called()
+        client_class.return_value.orders.assert_not_called()
+
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
     def test_manual_trial_requires_confirmation_and_buying_power(self, client_class):
         client_class.return_value.account.return_value = {"status": "ACTIVE", "trading_blocked": False,
                                                        "non_marginable_buying_power": "0"}
