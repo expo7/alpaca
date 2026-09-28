@@ -134,6 +134,22 @@ class BrokerSandboxTests(APITestCase):
         self.assertIn("investment_experience_with_options", application["identity"])
 
     @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_options_access_probe_reports_entitlement_without_requesting_approval(self, client_class):
+        broker = client_class.return_value
+        broker.account_profile.return_value = {"status": "ACTIVE", "enabled_assets": ["us_equity"]}
+        broker.account.return_value = {"options_approved_level": 0, "options_trading_level": 0}
+        broker.options_approvals.side_effect = BrokerSandboxError("forbidden", status_code=403)
+        url = reverse("broker-sandbox-options-access", args=[self.account_id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["partner_options_access"], "not_enabled_or_account_inaccessible")
+        broker.options_approvals.assert_called_once_with(str(self.account_id))
+        broker.request.assert_not_called()
+        self.user.is_superuser = False
+        self.user.save(update_fields=["is_superuser"])
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
     def test_virtual_funding_requires_admin_and_advances_one_step(self, client_class):
         url = reverse("broker-sandbox-funding", args=[self.account_id])
         broker = client_class.return_value

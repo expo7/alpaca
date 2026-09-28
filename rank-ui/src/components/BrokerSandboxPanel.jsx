@@ -7,6 +7,7 @@ export default function BrokerSandboxPanel({ token }) {
   const [accountId, setAccountId] = useState(SAMPLE_ACCOUNT);
   const [detail, setDetail] = useState(null);
   const [mirror, setMirror] = useState(null);
+  const [optionsAccess, setOptionsAccess] = useState(null);
   const [newAccount, setNewAccount] = useState(null);
   const [funding, setFunding] = useState(null);
   const [demoOptions, setDemoOptions] = useState(false);
@@ -40,6 +41,16 @@ export default function BrokerSandboxPanel({ token }) {
       const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/mirror-preview/`, { headers });
       if (!response.ok) throw new Error("Could not inspect mirror readiness.");
       setMirror(await response.json());
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  async function checkOptionsAccess() {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/options-access/`, { headers });
+      if (!response.ok) throw new Error("Could not check Alpaca options access.");
+      setOptionsAccess(await response.json());
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -81,7 +92,7 @@ export default function BrokerSandboxPanel({ token }) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(`${result.detail || "Account outcome unknown; inspect Alpaca before retrying."}${result.validation_fields?.length ? ` Validation fields: ${result.validation_fields.join(", ")}.` : ""}`);
-      setNewAccount(result); setAccountId(result.id); setDetail(null); setMirror(null); setFunding(null);
+      setNewAccount(result); setAccountId(result.id); setDetail(null); setMirror(null); setFunding(null); setOptionsAccess(null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -134,10 +145,12 @@ export default function BrokerSandboxPanel({ token }) {
       {newAccount && <p role="status" className="mt-2">Created account {newAccount.id} · {newAccount.account_number} · {newAccount.status}. Its ID is selected below; inspect it for updates.</p>}
     </div>
     <div className="mt-3 flex flex-wrap gap-2">
-      <input aria-label="Sandbox account ID" value={accountId} onChange={(e) => { setAccountId(e.target.value); setDetail(null); setMirror(null); setFunding(null); }} className="min-w-72 flex-1 rounded-lg bg-slate-800 p-2" />
+      <input aria-label="Sandbox account ID" value={accountId} onChange={(e) => { setAccountId(e.target.value); setDetail(null); setMirror(null); setFunding(null); setOptionsAccess(null); }} className="min-w-72 flex-1 rounded-lg bg-slate-800 p-2" />
       <button type="button" disabled={busy || !state.configured} onClick={inspect} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-50">Inspect account</button>
       <button type="button" disabled={busy || !state.configured} onClick={previewMirror} className="rounded-lg border border-sky-400 px-4 py-2 font-semibold text-sky-200 disabled:opacity-50">Preview options mirror</button>
+      <button type="button" disabled={busy || !state.configured} onClick={checkOptionsAccess} className="rounded-lg border border-sky-400 px-4 py-2 font-semibold text-sky-200 disabled:opacity-50">Check options API access</button>
     </div>
+    {optionsAccess && <p role="status" className="mt-2 rounded border border-sky-500/40 p-3">Options API: {optionsAccess.partner_options_access} · Account assets: {optionsAccess.enabled_assets.join(", ") || "none"} · Approved/trading level: {optionsAccess.options_approved_level ?? "unavailable"}/{optionsAccess.options_trading_level ?? "unavailable"} · Approval requests: {optionsAccess.approval_requests.length}</p>}
     {detail?.account.status === "ACTIVE" && <div className="mt-3 rounded-lg border border-emerald-500/40 p-3">
       <p className="font-semibold">Virtual sandbox funding</p>
       <p>Create a fictional ACH link, wait for approval, then fund toward a $25,000 virtual total. Existing deposits count; pending transfers must complete first. No real bank or money.</p>

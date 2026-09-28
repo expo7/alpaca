@@ -88,6 +88,9 @@ class BrokerSandboxClient:
     def account_profile(self, account_id):
         return self.request("GET", f"/v1/accounts/{account_id}")
 
+    def options_approvals(self, account_id):
+        return self.request("GET", "/v1/accounts/options/approvals", params={"account_id": account_id})
+
     def create_account(self, application):
         return self.request("POST", "/v1/accounts", body=application)
 
