@@ -8,6 +8,9 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from .broker_sandbox import AUTH_URL, API_URL, BrokerSandboxClient
+from .models import TradeSignal
+from datetime import date
+from decimal import Decimal
 
 
 class BrokerSandboxTests(APITestCase):
@@ -72,3 +75,23 @@ class BrokerSandboxTests(APITestCase):
             self.assertEqual(self.client.post(url, {}).status_code, 400)
             self.assertEqual(self.client.post(url, {"confirm": "CANCEL SANDBOX ORDER"}).status_code, 202)
         client_class.return_value.cancel_order.assert_called_once_with(str(self.account_id), str(order_id))
+
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_mirror_preview_never_submits_and_reports_option_blockers(self, client_class):
+        signal = TradeSignal.objects.create(
+            symbol="QQQ", instrument_type="put", expiration=date(2026, 11, 20), strike=Decimal("735"),
+            status=TradeSignal.STATUS_OPEN, paper_execution_enabled=True,
+            entry_low="19.75", actual_entry="20.29", initial_stop="14", target_1="31.50", thesis="Test",
+        )
+        client_class.return_value.account_profile.return_value = {"status": "ACTIVE", "enabled_assets": ["us_equity"]}
+        client_class.return_value.account.return_value = {"options_approved_level": 0, "options_trading_level": 0,
+                                                          "options_buying_power": "1234.56", "trading_blocked": False}
+        response = self.client.get(reverse("broker-sandbox-mirror-preview", args=[self.account_id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["signal"]["contract"], signal.contract_symbol)
+        self.assertEqual(response.data["signal"]["one_contract_estimate"], "2029.00")
+        self.assertFalse(response.data["checks"]["options_asset_enabled"])
+        self.assertFalse(response.data["checks"]["level_2_approved"])
+        self.assertFalse(response.data["checks"]["estimated_buying_power"])
+        self.assertFalse(response.data["can_mirror"])
+        client_class.return_value.submit_order.assert_not_called()

@@ -63,6 +63,9 @@ class BrokerSandboxClient:
     def account(self, account_id):
         return self.request("GET", f"/v1/trading/accounts/{account_id}/account")
 
+    def account_profile(self, account_id):
+        return self.request("GET", f"/v1/accounts/{account_id}")
+
     def orders(self, account_id):
         return self.request("GET", f"/v1/trading/accounts/{account_id}/orders", params={"status": "all", "limit": 20})
 

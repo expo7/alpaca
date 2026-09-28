@@ -6,6 +6,7 @@ export default function BrokerSandboxPanel({ token }) {
   const [state, setState] = useState(null);
   const [accountId, setAccountId] = useState(SAMPLE_ACCOUNT);
   const [detail, setDetail] = useState(null);
+  const [mirror, setMirror] = useState(null);
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("AAPL");
   const [limitPrice, setLimitPrice] = useState("");
@@ -26,6 +27,16 @@ export default function BrokerSandboxPanel({ token }) {
       const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/`, { headers });
       if (!response.ok) throw new Error("Could not read this sandbox account.");
       setDetail(await response.json());
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  async function previewMirror() {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/mirror-preview/`, { headers });
+      if (!response.ok) throw new Error("Could not inspect mirror readiness.");
+      setMirror(await response.json());
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -71,9 +82,19 @@ export default function BrokerSandboxPanel({ token }) {
     <p className="mt-1 text-slate-300">Quantelle-first account infrastructure in simulation. Separate from Quantelle's house and shadow paper accounts. No live-money access.</p>
     <p className="mt-2">Server credentials: {state.configured ? "configured" : "not configured"} · Manual trial orders: {state.orders_enabled ? "enabled" : "disabled"}</p>
     <div className="mt-3 flex flex-wrap gap-2">
-      <input aria-label="Sandbox account ID" value={accountId} onChange={(e) => { setAccountId(e.target.value); setDetail(null); }} className="min-w-72 flex-1 rounded-lg bg-slate-800 p-2" />
+      <input aria-label="Sandbox account ID" value={accountId} onChange={(e) => { setAccountId(e.target.value); setDetail(null); setMirror(null); }} className="min-w-72 flex-1 rounded-lg bg-slate-800 p-2" />
       <button type="button" disabled={busy || !state.configured} onClick={inspect} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-50">Inspect account</button>
+      <button type="button" disabled={busy || !state.configured} onClick={previewMirror} className="rounded-lg border border-sky-400 px-4 py-2 font-semibold text-sky-200 disabled:opacity-50">Preview options mirror</button>
     </div>
+    {mirror && <div className="mt-3 rounded-lg border border-sky-500/40 p-3">
+      <p className="font-semibold">Live Options → Broker sandbox · read-only preview</p>
+      {mirror.signal ? <>
+        <p>Published setup #{mirror.signal.id}: {mirror.signal.contract} · {mirror.signal.status} · house paper order {mirror.signal.paper_order_status || "none"}</p>
+        <p>One contract estimate: ${mirror.signal.one_contract_estimate} · Broker orders: disabled for mirroring</p>
+        <p>Account: {mirror.account.enabled_assets.join(", ") || "none"} · options level {mirror.account.options_trading_level}/{mirror.account.options_approved_level} · options buying power {mirror.account.options_buying_power ?? "unavailable"}</p>
+        <ul className="mt-2 list-inside list-disc">{Object.entries(mirror.checks).map(([key, ok]) => <li key={key}>{key.replaceAll("_", " ")}: {ok ? "ready" : "blocked"}</li>)}</ul>
+      </> : <p>{mirror.detail}</p>}
+    </div>}
     {detail && <div className="mt-3">
       <p>Status: {detail.account.status} · Cash: ${detail.account.cash} · Buying power: ${detail.account.buying_power}</p>
       <p>Recent orders: {detail.orders.length ? "" : "none"}</p>

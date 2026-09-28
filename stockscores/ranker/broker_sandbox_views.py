@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .broker_sandbox import BrokerSandboxClient, BrokerSandboxError, configured, orders_enabled
+from .models import TradeSignal
 
 class BrokerAdminPermission(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -103,3 +104,44 @@ class BrokerSandboxCancelOrderView(APIView):
         except (BrokerSandboxError, requests.RequestException, ValueError):
             return Response({"detail": "Cancellation outcome unknown; inspect order before retrying"}, status=503)
         return Response({"detail": "Cancellation requested; inspect order to confirm its final status"}, status=202)
+
+
+class BrokerSandboxMirrorPreviewView(APIView):
+    """Read-only comparison of a published option setup with one sandbox account."""
+    permission_classes = [BrokerAdminPermission]
+
+    def get(self, request, account_id):
+        signal = (TradeSignal.objects.filter(
+            is_test=False, instrument_type__in=("call", "put"),
+            status__in=(TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN),
+            paper_execution_enabled=True,
+        ).order_by("-published_at", "-created_at").first())
+        if signal is None:
+            return Response({"detail": "No active published option setup", "can_mirror": False})
+        try:
+            client = BrokerSandboxClient()
+            profile = client.account_profile(str(account_id))
+            account = client.account(str(account_id))
+        except (BrokerSandboxError, requests.RequestException, ValueError):
+            return Response({"detail": "Broker sandbox is unavailable"}, status=503)
+
+        enabled_assets = profile.get("enabled_assets") or []
+        approved = account.get("options_approved_level") or 0
+        trading = account.get("options_trading_level") or 0
+        premium = signal.actual_entry if signal.status == TradeSignal.STATUS_OPEN else signal.entry_high or signal.entry_low
+        cost = premium * 100  # One standard option contract; planning estimate only.
+        option_bp = account.get("options_buying_power")
+        checks = {
+            "options_asset_enabled": "us_option" in enabled_assets,
+            "level_2_approved": int(approved) >= 2 and int(trading) >= 2,
+            "account_active": profile.get("status") == "ACTIVE" and not account.get("trading_blocked"),
+            "estimated_buying_power": option_bp is not None and Decimal(str(option_bp)) >= cost,
+        }
+        return Response({
+            "can_mirror": False, "mode": "read_only_preview", "checks": checks,
+            "signal": {"id": signal.pk, "status": signal.status, "contract": signal.contract_symbol,
+                       "paper_order_status": signal.paper_order_status, "one_contract_estimate": str(cost)},
+            "account": {"enabled_assets": enabled_assets, "options_approved_level": approved,
+                        "options_trading_level": trading, "options_buying_power": option_bp},
+            "detail": "Preview only. No Broker option order is submitted or scheduled.",
+        })
