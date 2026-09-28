@@ -66,6 +66,14 @@ class BrokerSandboxClient:
     def orders(self, account_id):
         return self.request("GET", f"/v1/trading/accounts/{account_id}/orders", params={"status": "all", "limit": 20})
 
+    def cancel_order(self, account_id, order_id):
+        response = self.session.delete(
+            f"{API_URL}/v1/trading/accounts/{account_id}/orders/{order_id}",
+            headers={"Authorization": f"Bearer {self.token()}"}, timeout=15,
+        )
+        if not response.ok:
+            raise BrokerSandboxError(f"Alpaca sandbox cancel failed ({response.status_code})")
+
     def submit_order(self, account_id, order):
         if not orders_enabled():
             raise BrokerSandboxError("Broker sandbox order submission is disabled")

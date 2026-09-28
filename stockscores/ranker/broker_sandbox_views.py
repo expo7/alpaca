@@ -39,7 +39,7 @@ class BrokerSandboxView(APIView):
             return Response({"detail": "Broker sandbox is unavailable"}, status=503)
         return Response({
             "account": {field: account.get(field) for field in ("status", "cash", "buying_power", "trading_blocked", "account_blocked")},
-            "orders": [{field: order.get(field) for field in ("id", "client_order_id", "symbol", "qty", "side", "type", "status", "filled_qty")}
+            "orders": [{field: order.get(field) for field in ("id", "client_order_id", "symbol", "qty", "side", "type", "status", "filled_qty", "filled_avg_price", "limit_price", "time_in_force")}
                        for order in orders[:20]],
             "orders_enabled": orders_enabled(),
         })
@@ -81,3 +81,25 @@ class BrokerSandboxOrderView(APIView):
         except (BrokerSandboxError, requests.RequestException, ValueError):
             return Response({"detail": "Order outcome unknown; inspect Alpaca orders before retrying", "client_order_id": client_order_id}, status=503)
         return Response({field: order.get(field) for field in ("id", "client_order_id", "symbol", "qty", "status")}, status=status.HTTP_201_CREATED)
+
+
+class BrokerSandboxCancelOrderView(APIView):
+    permission_classes = [BrokerAdminPermission]
+
+    def post(self, request, account_id, order_id):
+        if not orders_enabled():
+            return Response({"detail": "Sandbox order submission is disabled"}, status=403)
+        if request.data.get("confirm") != "CANCEL SANDBOX ORDER":
+            return Response({"detail": "Explicit sandbox cancellation confirmation required"}, status=400)
+        try:
+            client = BrokerSandboxClient()
+            orders = client.orders(str(account_id))
+            order = next((item for item in orders if item.get("id") == str(order_id)), None)
+            if not order or not str(order.get("client_order_id", "")).startswith("quantelle-admin-sandbox-"):
+                return Response({"detail": "Quantelle trial order not found"}, status=404)
+            if order.get("status") not in ("accepted", "new", "pending_new", "partially_filled", "held", "done_for_day"):
+                return Response({"detail": "Order is no longer open; inspect its status"}, status=409)
+            client.cancel_order(str(account_id), str(order_id))
+        except (BrokerSandboxError, requests.RequestException, ValueError):
+            return Response({"detail": "Cancellation outcome unknown; inspect order before retrying"}, status=503)
+        return Response({"detail": "Cancellation requested; inspect order to confirm its final status"}, status=202)

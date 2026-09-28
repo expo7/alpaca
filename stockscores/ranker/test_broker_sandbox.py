@@ -60,3 +60,15 @@ class BrokerSandboxTests(APITestCase):
             self.assertEqual(self.client.post(url, {**payload, "confirm": ""}).status_code, 400)
             self.assertEqual(self.client.post(url, payload).status_code, 409)
         client_class.return_value.submit_order.assert_not_called()
+
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_cancel_only_own_open_trial_order(self, client_class):
+        order_id = uuid4()
+        url = reverse("broker-sandbox-cancel-order", args=[self.account_id, order_id])
+        client_class.return_value.orders.return_value = [{"id": str(order_id), "client_order_id": "other-order", "status": "accepted"}]
+        with patch.dict(os.environ, {"ALPACA_BROKER_SANDBOX_ORDER_ENABLED": "true"}):
+            self.assertEqual(self.client.post(url, {"confirm": "CANCEL SANDBOX ORDER"}).status_code, 404)
+            client_class.return_value.orders.return_value[0]["client_order_id"] = "quantelle-admin-sandbox-test"
+            self.assertEqual(self.client.post(url, {}).status_code, 400)
+            self.assertEqual(self.client.post(url, {"confirm": "CANCEL SANDBOX ORDER"}).status_code, 202)
+        client_class.return_value.cancel_order.assert_called_once_with(str(self.account_id), str(order_id))
