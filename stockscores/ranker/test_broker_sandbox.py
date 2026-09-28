@@ -106,7 +106,7 @@ class BrokerSandboxTests(APITestCase):
         application = client_class.return_value.create_account.call_args.args[0]
         self.assertEqual(application["enabled_assets"], ["us_equity"])
         self.assertTrue(application["contact"]["email_address"].endswith("@example.com"))
-        self.assertTrue(application["identity"]["tax_id"].startswith("666-"))
+        self.assertTrue(application["identity"]["tax_id"].startswith("119-"))
         self.assertNotIn("us_option", application["enabled_assets"])
         self.assertEqual(self.client.post(url, {"options": False, "confirm": "CREATE SYNTHETIC SANDBOX ACCOUNT"}, format="json").status_code, 429)
         self.user.is_superuser = False

@@ -7,8 +7,9 @@ from django.utils import timezone
 
 def synthetic_application(*, options=False):
     suffix = uuid4().hex[:12]
-    # 666 is never issued as a US SSN; no real identity is represented here.
-    tax_id = f"666-{int(suffix[:2], 16) % 90 + 10:02d}-{int(suffix[2:6], 16) % 9000 + 1000:04d}"
+    # Sandbox-only fictional data. Alpaca rejects 666 as an SSN area number.
+    # Use the 119 area shown in Alpaca's published sandbox examples with a unique suffix.
+    tax_id = f"119-{int(suffix[:2], 16) % 90 + 10:02d}-{int(suffix[2:6], 16) % 9000 + 1000:04d}"
     signed_at = timezone.now().isoformat()
     agreements = [{"agreement": "customer_agreement", "signed_at": signed_at, "ip_address": "127.0.0.1"}]
     if options:
