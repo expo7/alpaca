@@ -133,6 +133,38 @@ class BrokerSandboxTests(APITestCase):
         self.assertIn("options_agreement", [item["agreement"] for item in application["agreements"]])
         self.assertIn("investment_experience_with_options", application["identity"])
 
+    @patch("ranker.broker_sandbox_views.BrokerSandboxClient")
+    def test_virtual_funding_requires_admin_and_advances_one_step(self, client_class):
+        url = reverse("broker-sandbox-funding", args=[self.account_id])
+        broker = client_class.return_value
+        broker.account_profile.return_value = {
+            "status": "ACTIVE", "contact": {"email_address": "fictional@example.com"},
+            "identity": {"given_name": "Fictional", "family_name": "Tester"},
+        }
+        broker.ach_relationships.return_value = []
+        broker.create_demo_ach_relationship.return_value = {"status": "QUEUED"}
+        payload = {"confirm": "FUND SYNTHETIC SANDBOX ACCOUNT"}
+        self.assertEqual(self.client.post(url, {}).status_code, 400)
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["step"], "relationship")
+        broker.demo_deposit.assert_not_called()
+        broker.ach_relationships.return_value = [{"id": str(uuid4()), "status": "APPROVED", "nickname": "Quantelle sandbox test bank"}]
+        cache.clear()
+        broker.transfers.return_value = []
+        broker.demo_deposit.return_value = {"id": str(uuid4()), "status": "QUEUED"}
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["step"], "deposit")
+        broker.demo_deposit.assert_called_once_with(str(self.account_id), broker.ach_relationships.return_value[0]["id"])
+        cache.clear()
+        broker.transfers.return_value = [{"relationship_id": broker.ach_relationships.return_value[0]["id"], "direction": "INCOMING"}]
+        self.assertEqual(self.client.post(url, payload).status_code, 409)
+        self.user.is_superuser = False
+        self.user.save(update_fields=["is_superuser"])
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(self.client.post(url, payload).status_code, 403)
+
     def test_validation_detail_only_exposes_known_field_names(self):
         response = Mock(json=lambda: {"message": "identity.tax_id invalid for Jane Doe 666-12-3456"})
         self.assertEqual(validation_fields(response), ["identity", "tax_id"])
