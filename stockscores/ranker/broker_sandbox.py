@@ -11,7 +11,9 @@ API_URL = "https://broker-api.sandbox.alpaca.markets"
 
 
 class BrokerSandboxError(Exception):
-    pass
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def configured():
@@ -57,7 +59,7 @@ class BrokerSandboxClient:
             cache.delete("alpaca_broker_sandbox_access_token")
             response = self.session.request(method, url, headers={"Authorization": f"Bearer {self.token()}"}, json=body, timeout=15)
         if not response.ok:
-            raise BrokerSandboxError(f"Alpaca sandbox request failed ({response.status_code})")
+            raise BrokerSandboxError(f"Alpaca sandbox request failed ({response.status_code})", response.status_code)
         return response.json()
 
     def account(self, account_id):
@@ -65,6 +67,9 @@ class BrokerSandboxClient:
 
     def account_profile(self, account_id):
         return self.request("GET", f"/v1/accounts/{account_id}")
+
+    def create_account(self, application):
+        return self.request("POST", "/v1/accounts", body=application)
 
     def orders(self, account_id):
         return self.request("GET", f"/v1/trading/accounts/{account_id}/orders", params={"status": "all", "limit": 20})

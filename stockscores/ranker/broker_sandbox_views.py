@@ -4,12 +4,14 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 import requests
+from django.core.cache import cache
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .broker_sandbox import BrokerSandboxClient, BrokerSandboxError, configured, orders_enabled
 from .models import TradeSignal
+from .broker_sandbox_fixture import synthetic_application
 
 class BrokerAdminPermission(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -145,3 +147,27 @@ class BrokerSandboxMirrorPreviewView(APIView):
                         "options_trading_level": trading, "options_buying_power": option_bp},
             "detail": "Preview only. No Broker option order is submitted or scheduled.",
         })
+
+
+class BrokerSandboxCreateAccountView(APIView):
+    """Create only a fictional applicant in the fixed Broker sandbox environment."""
+    permission_classes = [BrokerAdminPermission]
+
+    def post(self, request):
+        options = request.data.get("options")
+        if type(options) is not bool or request.data.get("confirm") != "CREATE SYNTHETIC SANDBOX ACCOUNT":
+            return Response({"detail": "Choose assets and confirm synthetic sandbox creation"}, status=400)
+        throttle_key = f"broker_sandbox_create_{request.user.pk}"
+        if not cache.add(throttle_key, True, timeout=60):
+            return Response({"detail": "Wait one minute and inspect Alpaca before another application"}, status=429)
+        try:
+            result = BrokerSandboxClient().create_account(synthetic_application(options=options))
+        except BrokerSandboxError as exc:
+            return Response({"detail": f"Alpaca sandbox rejected or could not confirm the application (HTTP {exc.status_code or 'unknown'}). Inspect Alpaca accounts before retrying."}, status=502)
+        except (requests.RequestException, ValueError):
+            return Response({"detail": "Application outcome unknown; inspect Alpaca accounts before retrying"}, status=503)
+        return Response({
+            "id": result.get("id"), "account_number": result.get("account_number"),
+            "status": result.get("status"), "enabled_assets": result.get("enabled_assets"),
+            "synthetic": True, "environment": "sandbox",
+        }, status=201)

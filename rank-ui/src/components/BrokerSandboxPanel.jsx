@@ -7,6 +7,8 @@ export default function BrokerSandboxPanel({ token }) {
   const [accountId, setAccountId] = useState(SAMPLE_ACCOUNT);
   const [detail, setDetail] = useState(null);
   const [mirror, setMirror] = useState(null);
+  const [newAccount, setNewAccount] = useState(null);
+  const [demoOptions, setDemoOptions] = useState(false);
   const [error, setError] = useState("");
   const [symbol, setSymbol] = useState("AAPL");
   const [limitPrice, setLimitPrice] = useState("");
@@ -37,6 +39,21 @@ export default function BrokerSandboxPanel({ token }) {
       const response = await fetch(`/api/broker-sandbox/accounts/${encodeURIComponent(accountId.trim())}/mirror-preview/`, { headers });
       if (!response.ok) throw new Error("Could not inspect mirror readiness.");
       setMirror(await response.json());
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+
+  async function createSyntheticAccount() {
+    if (!window.confirm(`Create one fictional ${demoOptions ? "equity + options" : "equity"} account in Alpaca Broker sandbox?`)) return;
+    setBusy(true); setError(""); setNewAccount(null);
+    try {
+      const response = await fetch("/api/broker-sandbox/accounts/create/", {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ options: demoOptions, confirm: "CREATE SYNTHETIC SANDBOX ACCOUNT" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Account outcome unknown; inspect Alpaca before retrying.");
+      setNewAccount(result); setAccountId(result.id); setDetail(null); setMirror(null);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -81,6 +98,13 @@ export default function BrokerSandboxPanel({ token }) {
     <h2 className="text-lg font-bold text-white">Broker sandbox · staff only</h2>
     <p className="mt-1 text-slate-300">Quantelle-first account infrastructure in simulation. Separate from Quantelle's house and shadow paper accounts. No live-money access.</p>
     <p className="mt-2">Server credentials: {state.configured ? "configured" : "not configured"} · Manual trial orders: {state.orders_enabled ? "enabled" : "disabled"}</p>
+    <div className="mt-3 rounded-lg border border-violet-500/40 p-3">
+      <p className="font-semibold">Open a fictional Broker sandbox account</p>
+      <p>Admin demonstration only. Alpaca will receive generated test identity and simulated agreement data. No real applicant or money.</p>
+      <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={demoOptions} onChange={(e) => setDemoOptions(e.target.checked)} />Request US options asset too (requires Alpaca partner enablement)</label>
+      <button type="button" disabled={busy || !state.configured} onClick={createSyntheticAccount} className="mt-2 rounded-lg border border-violet-400 px-4 py-2 font-semibold text-violet-200 disabled:opacity-50">Create synthetic sandbox account</button>
+      {newAccount && <p role="status" className="mt-2">Created account {newAccount.id} · {newAccount.account_number} · {newAccount.status}. Its ID is selected below; inspect it for updates.</p>}
+    </div>
     <div className="mt-3 flex flex-wrap gap-2">
       <input aria-label="Sandbox account ID" value={accountId} onChange={(e) => { setAccountId(e.target.value); setDetail(null); setMirror(null); }} className="min-w-72 flex-1 rounded-lg bg-slate-800 p-2" />
       <button type="button" disabled={busy || !state.configured} onClick={inspect} className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-50">Inspect account</button>
