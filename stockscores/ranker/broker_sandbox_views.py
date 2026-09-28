@@ -163,7 +163,8 @@ class BrokerSandboxCreateAccountView(APIView):
         try:
             result = BrokerSandboxClient().create_account(synthetic_application(options=options))
         except BrokerSandboxError as exc:
-            return Response({"detail": f"Alpaca sandbox rejected or could not confirm the application (HTTP {exc.status_code or 'unknown'}). Inspect Alpaca accounts before retrying."}, status=502)
+            return Response({"detail": f"Alpaca sandbox rejected or could not confirm the application (HTTP {exc.status_code or 'unknown'}). Inspect Alpaca accounts before retrying.",
+                             "validation_fields": exc.validation_fields}, status=502)
         except (requests.RequestException, ValueError):
             return Response({"detail": "Application outcome unknown; inspect Alpaca accounts before retrying"}, status=503)
         return Response({

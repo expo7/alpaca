@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
-from .broker_sandbox import AUTH_URL, API_URL, BrokerSandboxClient
+from .broker_sandbox import AUTH_URL, API_URL, BrokerSandboxClient, BrokerSandboxError, validation_fields
 from .models import TradeSignal
 from .broker_sandbox_fixture import synthetic_application
 from datetime import date
@@ -118,3 +118,7 @@ class BrokerSandboxTests(APITestCase):
         self.assertEqual(application["enabled_assets"], ["us_equity", "us_option"])
         self.assertIn("options_agreement", [item["agreement"] for item in application["agreements"]])
         self.assertIn("investment_experience_with_options", application["identity"])
+
+    def test_validation_detail_only_exposes_known_field_names(self):
+        response = Mock(json=lambda: {"message": "identity.tax_id invalid for Jane Doe 666-12-3456"})
+        self.assertEqual(validation_fields(response), ["identity", "tax_id"])
