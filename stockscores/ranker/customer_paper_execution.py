@@ -161,6 +161,9 @@ def submit_intent(row, client, *, exiting=False):
                     found = client.find_order(client_id)
                     if found:
                         return remember_order(row, found, exiting)
+                    row.last_error = "Alpaca returned HTTP 422; the exact order ID remains under reconciliation."
+                    row.save(update_fields=["last_error", "updated_at"])
+                    raise
                 row.state = "attention" if exiting else "rejected"
                 row.last_error = str(exc)
                 row.save(update_fields=["state", "last_error", "updated_at"])
