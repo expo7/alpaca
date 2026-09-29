@@ -246,3 +246,25 @@ class CustomerPaperTests(APITestCase):
         with self.assertRaisesRegex(CustomerBrokerError, "worker"):
             create_execution(self.connection, self.signal(), client=self.broker)
         self.broker.submit_limit_order.assert_not_called()
+
+    def test_duplicate_response_with_delayed_lookup_remains_reconcilable(self):
+        self.broker.submit_limit_order.side_effect = CustomerBrokerError("HTTP 422", code=422)
+        self.broker.find_order.return_value = None
+        with self.assertRaises(CustomerBrokerError):
+            create_execution(self.connection, self.signal(), client=self.broker)
+        row = CustomerPaperExecution.objects.get()
+        self.assertEqual(row.state, "entry_intent")
+        self.assertTrue(row.entry_attempted)
+        self.broker.find_order.return_value = {"id": "late-original", "status": "filled"}
+        self.assertEqual(process_execution(row, self.broker), "entry_pending")
+        self.assertEqual(row.entry_order_id, "late-original")
+        self.assertEqual(self.broker.submit_limit_order.call_count, 1)
+
+    def test_read_only_preflight_checks_admin_boundary_without_alpaca_requests(self):
+        from django.core.management import call_command
+        from io import StringIO
+        with patch("ranker.customer_paper_broker.requests.request") as request:
+            output = StringIO()
+            call_command("customer_paper_preflight", stdout=output)
+            self.assertIn("preflight PASS", output.getvalue())
+            request.assert_not_called()
