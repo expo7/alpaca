@@ -259,3 +259,12 @@ class CustomerPaperTests(APITestCase):
         self.assertEqual(process_execution(row, self.broker), "entry_pending")
         self.assertEqual(row.entry_order_id, "late-original")
         self.assertEqual(self.broker.submit_limit_order.call_count, 1)
+
+    def test_read_only_preflight_checks_admin_boundary_without_alpaca_requests(self):
+        from django.core.management import call_command
+        from io import StringIO
+        with patch("ranker.customer_paper_broker.requests.request") as request:
+            output = StringIO()
+            call_command("customer_paper_preflight", stdout=output)
+            self.assertIn("preflight PASS", output.getvalue())
+            request.assert_not_called()
