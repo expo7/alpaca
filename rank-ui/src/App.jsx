@@ -27,6 +27,7 @@ import ArticlesListPage from "./pages/ArticlesListPage.jsx";
 import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
+import ShadowResearchPage from "./pages/ShadowResearchPage.jsx";
 import TradeSignalsPage from "./pages/TradeSignalsPage.jsx";
 import PolicyPage from "./pages/PolicyPage.jsx";
 import BillingPage from "./pages/BillingPage.jsx";
@@ -80,7 +81,7 @@ const CHART_STUDIES = [
 ];
 
 const V1_MODE = true;
-const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "billing", "opportunities", "analytics"]);
+const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "billing", "opportunities", "analytics", "shadow"]);
 const MIN_LOADING_MS = 300;
 const DEBUG_CHART = false;
 const CHART_DEBUG_LIMIT = 24;
@@ -158,7 +159,7 @@ export default function App() {
   }, [pathname]);
 
   useEffect(() => {
-    if (pathname === "/analytics") return;
+    if (["/analytics", "/shadow"].includes(pathname)) return;
     trackEvent("page_view", { path: pathname });
   }, [pathname]);
 
@@ -174,6 +175,7 @@ export default function App() {
   // [NOTE-NAV-STATE]
   // -------------------
   const [page, setPage] = useState(() => {
+    if (window.location.pathname === "/shadow") return "shadow";
     if (window.location.pathname === "/analytics") return "analytics";
     if (window.location.pathname === "/signals") return "signals";
     if (window.location.pathname === "/billing") return "billing";
@@ -183,7 +185,8 @@ export default function App() {
 
   useEffect(() => {
     if (route.kind !== "app") return;
-    if (pathname === "/analytics") setPage("analytics");
+    if (pathname === "/shadow") setPage("shadow");
+    else if (pathname === "/analytics") setPage("analytics");
     else if (pathname === "/signals") setPage("signals");
     else if (pathname === "/billing") setPage("billing");
     else if (pathname === "/opportunities") setPage("opportunities");
@@ -200,6 +203,11 @@ export default function App() {
       // Handle articles navigation separately using path routing
       if (nextPage === "articles") {
         navigatePath("/articles");
+        return;
+      }
+      if (nextPage === "shadow") {
+        setPage("shadow");
+        navigatePath("/shadow");
         return;
       }
       if (nextPage === "analytics") {
@@ -895,6 +903,7 @@ export default function App() {
         onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -915,6 +924,7 @@ export default function App() {
         onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -942,6 +952,7 @@ export default function App() {
         onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -962,6 +973,7 @@ export default function App() {
         onNavigateBilling={() => navigatePath("/billing")}
         onNavigateOpportunities={() => navigatePath("/opportunities")}
         onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
         onLogout={logout}
         onSignUp={() => navigatePath("/")}
         onLogIn={() => navigatePath("/")}
@@ -1460,6 +1472,8 @@ export default function App() {
             )}
           </>
         )}
+
+        {page === "shadow" && <ShadowResearchPage token={token} isStaff={Boolean(user?.is_staff || user?.is_superuser)} />}
 
         {page === "analytics" && (
           <AnalyticsPage

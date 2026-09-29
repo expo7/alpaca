@@ -39,7 +39,7 @@ export default function Navbar({
   const mobileNav = v1Mode ? "min-[900px]:hidden" : "min-[1350px]:hidden";
   const baseTabs = v1Mode ? V1_TABS : tabs;
   const visibleTabs = user?.is_staff || user?.is_superuser
-    ? [...baseTabs, { id: "analytics", label: "Analytics" }]
+    ? [...baseTabs, { id: "analytics", label: "Analytics" }, { id: "shadow", label: "Shadow research" }]
     : baseTabs;
 
   function navigate(tabId) {

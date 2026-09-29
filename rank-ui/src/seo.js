@@ -24,7 +24,8 @@ export function updateSeo(path, article = null) {
   const description = article?.content
     ? article.content.replace(/[#*`_\[\]()!>]/g, " ").replace(/\s+/g, " ").trim().slice(0, 155)
     : publicPath?.[1] || "Read Quantelle's options research and paper trade analysis.";
-  document.title = title;
+  document.title = path === "/shadow" ? "Shadow Research | Quantelle Staff" : title;
+  setMeta("robots", path === "/shadow" ? "noindex, nofollow" : "index, follow");
   setMeta("description", description);
   let canonical = document.querySelector('link[rel="canonical"]');
   if (!canonical) {

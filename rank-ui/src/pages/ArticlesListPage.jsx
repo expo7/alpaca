@@ -34,6 +34,7 @@ export default function ArticlesListPage({
     onNavigateBilling,
     onNavigateOpportunities,
     onNavigateAnalytics,
+    onNavigateShadow,
     onLogout,
     onSignUp,
     onLogIn,
@@ -124,6 +125,7 @@ export default function ArticlesListPage({
                 onNavigateOpportunities={onNavigateOpportunities}
                 onNavigateArticles={() => {}}
                 onNavigateAnalytics={onNavigateAnalytics}
+                onNavigateShadow={onNavigateShadow}
                 onLogout={onLogout}
                 onSignUp={onSignUp}
                 onLogIn={onLogIn}

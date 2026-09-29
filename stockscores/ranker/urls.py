@@ -2,7 +2,7 @@
 from django.urls import path
 from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView
 from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView, BrokerSandboxOptionsAccessView
-from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView
+from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView, StaffShadowDashboardView, StaffShadowAccountView
 from .views import (
     RankView,
     RefreshView,
@@ -224,6 +224,8 @@ urlpatterns = [
     path("operator/trade-signals/publish/", TradeSignalPublicationView.as_view(), name="trade-signal-publication"),
     path("operator/lifecycle-certifications/", LifecycleCertificationReportView.as_view(), name="lifecycle-certification-report"),
     path("operator/research-runs/", ResearchRunReportView.as_view(), name="research-run-report"),
+    path("staff/shadow-research/", StaffShadowDashboardView.as_view(), name="staff-shadow-dashboard"),
+    path("staff/shadow-research/account/", StaffShadowAccountView.as_view(), name="staff-shadow-account"),
     path("operator/shadow-research/", ShadowResearchView.as_view(), name="shadow-research"),
     path("operator/shadow-research/<int:pk>/observe/", ShadowObservationView.as_view(), name="shadow-observe"),
     path("operator/shadow-research/<int:pk>/corrections/", ShadowCorrectionView.as_view(), name="shadow-correction"),

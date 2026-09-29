@@ -16,6 +16,95 @@ from .shadow import ShadowProposalSerializer, ShadowObservationSerializer, propo
 from .shadow_broker import execution_configured
 
 
+def dashboard_record(s):
+    events = list(s.events.order_by("-occurred_at", "-id")[:100])
+    return {
+        "id": s.id, "decision": s.decision, "decided_at": s.decided_at,
+        "category": s.category, "rejection_reason": s.rejection_reason,
+        "execution_mode": s.execution_mode, "status": s.status, "result": s.result,
+        "entered_at": s.entered_at, "exited_at": s.exited_at,
+        "reconciled_at": s.reconciled_at, "has_error": bool(s.last_error),
+        "protection_kind": s.broker_protection_kind,
+        "event_count": s.events.count(),
+        "events": [{"kind": e.kind, "occurred_at": e.occurred_at, "details": e.details}
+                   for e in reversed(events)],
+    }
+
+
+class StaffShadowDashboardView(APIView):
+    """JWT staff report; deliberately has no proposal or order methods."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        try:
+            page = int(request.query_params.get("page", 1))
+            if page < 1:
+                raise ValueError
+        except ValueError:
+            return Response({"detail": "Invalid page"}, status=400)
+        records = ShadowSetup.objects.order_by("-decided_at", "-id")
+        mode = request.query_params.get("mode", "all")
+        state = request.query_params.get("status", "all")
+        if mode not in ("all", "observation", "broker_intended") or state not in (
+                "all", *(code for code, _ in ShadowSetup.STATUS_CHOICES)):
+            return Response({"detail": "Invalid filter"}, status=400)
+        if mode != "all":
+            records = records.filter(execution_mode=mode)
+        if state != "all":
+            records = records.filter(status=state)
+        report = summary()
+        rejection_groups = {}
+        for s in ShadowSetup.objects.filter(status="completed").order_by("exited_at", "id"):
+            if "realized_return_pct" not in s.result:
+                continue
+            key = (s.execution_mode, s.rejection_reason or "index_benchmark")
+            rejection_groups.setdefault(key, []).append((s.exited_at, s.result["realized_return_pct"]))
+        report["rejection_results"] = [
+            {"mode": key[0], "reason": key[1], **_performance(values)}
+            for key, values in rejection_groups.items()]
+        latest = ShadowEvent.objects.filter(kind="observation").order_by("-occurred_at").first()
+        report["last_observation_at"] = latest.occurred_at if latest else None
+        # Raw exception strings may contain provider/configuration information.
+        health = report["executor_health"]
+        health["has_error"] = bool(health.pop("last_error", ""))
+        count = records.count()
+        return Response({"generated_at": timezone.now(), "summary": report,
+                         "count": count, "page": page,
+                         "next_page": page + 1 if page * 25 < count else None,
+                         "results": [dashboard_record(s) for s in records[(page-1)*25:page*25]]},
+                        headers={"Cache-Control": "private, no-store"})
+
+
+class StaffShadowAccountView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        from django.core.cache import cache
+        from .shadow_broker import ShadowMarketDataClient, verify_account_identity
+        cached = cache.get("staff-shadow-account-v1")
+        if cached is not None:
+            return Response(cached, headers={"Cache-Control": "private, no-store"})
+        checked_at = timezone.now().isoformat()
+        try:
+            identity = verify_account_identity(require_enabled=False)
+            client = ShadowMarketDataClient()
+            positions = client._request("GET", f"{client.base_url}/v2/positions")
+            orders = client._request("GET", f"{client.base_url}/v2/orders",
+                                     params={"status": "open", "limit": 500})
+            data = {"status": "verified", "checked_at": checked_at,
+                    "account_suffix": identity[-4:], "flat": not positions and not orders,
+                    "position_count": len(positions), "open_order_count": len(orders),
+                    "positions": [{k: p.get(k) for k in ("symbol", "qty", "side", "asset_class")}
+                                  for p in positions],
+                    "orders": [{k: o.get(k) for k in ("symbol", "qty", "side", "status", "type")}
+                               for o in orders]}
+        except Exception:
+            data = {"status": "unavailable", "checked_at": checked_at,
+                    "detail": "Paper account verification failed. Inventory is unknown; inspect staff logs."}
+        cache.set("staff-shadow-account-v1", data, 30)
+        return Response(data, headers={"Cache-Control": "private, no-store"})
+
+
 def _performance(records):
     """Chronological one-contract gross return; no substitution of peak gain."""
     returns = [Decimal(str(row[1])) for row in records]

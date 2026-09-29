@@ -9,6 +9,7 @@ export default function ArticleNav({
     onNavigateOpportunities = () => {},
     onNavigateArticles = () => {},
     onNavigateAnalytics = () => {},
+    onNavigateShadow = () => {},
     onLogout = () => {},
 }) {
     const handlers = {
@@ -18,6 +19,7 @@ export default function ArticleNav({
         opportunities: onNavigateOpportunities,
         articles: onNavigateArticles,
         analytics: onNavigateAnalytics,
+        shadow: onNavigateShadow,
     };
 
     return (
