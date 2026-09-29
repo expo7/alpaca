@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
+        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
 
       - name: Configure production SSH
         env:
@@ -113,6 +113,7 @@ jobs:
           PY
           git fetch origin production
           git switch -C production FETCH_HEAD
+          python3 scripts/configure_customer_paper.py
 
           frontend_stage="$(mktemp -d /opt/alpaca/rank-ui/.dist-stage.XXXXXX)"
           cleanup_frontend_stage() {
@@ -141,8 +142,9 @@ jobs:
           if ! sudo -n python3 scripts/install_articles_route.py --apply; then
             echo 'Article hub routing needs a one-time server administrator action.'
           fi
-          docker compose up -d web worker beat execution_guardian
+          docker compose up -d web worker beat execution_guardian customer_paper_worker
           docker compose ps
+          docker compose exec -T web python manage.py shell -c "from ranker.customer_paper_broker import credentials_ready, execution_enabled; from django.conf import settings; assert credentials_ready(); assert settings.CELERY_BEAT_SCHEDULE['customer-paper-dispatch']['options']['queue'] == 'customer-paper'; print('Customer paper credential storage ready; entry switch:', execution_enabled())" < /dev/null
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('trade-lifecycle-certification-auditor'); assert job and job['schedule'] == 120.0; print(job)" < /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('research-run-heartbeat'); assert job and job['schedule'] == 300.0; print(job)" < /dev/null

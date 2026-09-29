@@ -15,8 +15,9 @@ from .models import CustomerPaperConnection
 class CustomerPaperConnectionTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="paper-customer", password="secret")
+        self.user.is_superuser = True
         self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        self.user.save(update_fields=["is_staff", "is_superuser"])
         self.client.force_authenticate(self.user)
         cache.clear()
 
@@ -37,9 +38,9 @@ class CustomerPaperConnectionTests(APITestCase):
             self.assertEqual(start.status_code, 200)
             query = parse_qs(urlparse(start.data["authorize_url"]).query)
             self.assertEqual(query["env"], ["paper"])
-            self.assertNotIn("scope", query)  # Read-only; no order access yet.
-            post.return_value = Mock(status_code=200, json=lambda: {"access_token": "paper-token"})
-            get.return_value = Mock(status_code=200, json=lambda: {"id": "paper-account-1234"})
+            self.assertEqual(query["scope"], ["trading"])
+            post.return_value = Mock(status_code=200, json=lambda: {"access_token": "paper-token", "scope": "trading"})
+            get.return_value = Mock(status_code=200, json=lambda: {"id": "paper-account-1234", "status": "ACTIVE"})
             callback = reverse("customer-paper-callback")
             response = self.client.get(callback, {"code": "single-use-code", "state": query["state"][0]})
             self.assertEqual(response.status_code, 302)
@@ -54,16 +55,18 @@ class CustomerPaperConnectionTests(APITestCase):
             self.assertEqual(self.client.get(callback, {"code": "again", "state": query["state"][0]}).url, "/signals?alpaca=connection-failed")
             self.assertEqual(post.call_count, 1)
             self.assertEqual(self.client.delete(reverse("customer-paper-connection")).status_code, 204)
-            self.assertFalse(CustomerPaperConnection.objects.filter(user=self.user).exists())
+            self.assertFalse(CustomerPaperConnection.objects.get(user=self.user).is_connected)
 
     def test_connection_is_staff_only_even_when_available(self):
         self.user.is_staff = False
-        self.user.save(update_fields=["is_staff"])
+        self.user.is_superuser = False
+        self.user.save(update_fields=["is_staff", "is_superuser"])
         for name in ("customer-paper-connection", "customer-paper-connect"):
             method = self.client.get if name == "customer-paper-connection" else self.client.post
             self.assertEqual(method(reverse(name)).status_code, 403)
         self.user.is_staff = True
-        self.user.save(update_fields=["is_staff"])
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_staff", "is_superuser"])
         self.assertEqual(self.client.get(reverse("customer-paper-connection")).status_code, 200)
 
     def test_connection_requires_authentication(self):

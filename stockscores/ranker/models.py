@@ -938,8 +938,57 @@ class CustomerPaperConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="customer_paper_connection")
     alpaca_account_id = models.CharField(max_length=80, unique=True)
     encrypted_access_token = models.TextField()
+    auth_method = models.CharField(max_length=12, default="oauth")
+    is_connected = models.BooleanField(default=True)
+    trading_authorized = models.BooleanField(default=False)
+    mirror_enabled = models.BooleanField(default=False)
+    consent_at = models.DateTimeField(null=True, blank=True)
+    max_trade_notional = models.DecimalField(max_digits=12, decimal_places=2, default=1000)
+    max_open_positions = models.PositiveIntegerField(default=2)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=255, blank=True, default="")
     connected_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Paper connection for user {self.user_id}"
+
+
+class CustomerPaperExecution(models.Model):
+    """Independent customer ledger; never writes the published/house trade."""
+
+    connection = models.ForeignKey(CustomerPaperConnection, on_delete=models.PROTECT, related_name="executions")
+    signal = models.ForeignKey(TradeSignal, on_delete=models.PROTECT, related_name="customer_executions")
+    source = models.CharField(max_length=12, default="mirror")
+    state = models.CharField(max_length=24, default="entry_intent", db_index=True)
+    symbol = models.CharField(max_length=32)
+    quantity = models.PositiveIntegerField(default=1)
+    entry_limit = models.DecimalField(max_digits=12, decimal_places=2)
+    stop = models.DecimalField(max_digits=12, decimal_places=2)
+    target = models.DecimalField(max_digits=12, decimal_places=2)
+    entry_order_id = models.CharField(max_length=64, blank=True, default="")
+    exit_order_id = models.CharField(max_length=64, blank=True, default="")
+    exit_kind = models.CharField(max_length=12, blank=True, default="")
+    exit_generation = models.PositiveIntegerField(default=0)
+    entry_attempted = models.BooleanField(default=False)
+    exit_attempted = models.BooleanField(default=False)
+    missing_position_since = models.DateTimeField(null=True)
+    filled_quantity = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    entry_fill = models.DecimalField(max_digits=12, decimal_places=4, null=True)
+    exit_fill = models.DecimalField(max_digits=12, decimal_places=4, null=True)
+    order_status = models.CharField(max_length=32, blank=True, default="")
+    last_error = models.CharField(max_length=255, blank=True, default="")
+    checked_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["connection", "signal"], name="customer_paper_signal_once")]
+
+
+class CustomerPaperEvent(models.Model):
+    connection = models.ForeignKey(CustomerPaperConnection, on_delete=models.PROTECT, related_name="events")
+    execution = models.ForeignKey(CustomerPaperExecution, null=True, on_delete=models.PROTECT, related_name="events")
+    kind = models.CharField(max_length=40)
+    details = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)

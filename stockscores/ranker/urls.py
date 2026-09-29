@@ -1,6 +1,6 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
-from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView
+from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView, CustomerPaperAccountView, CustomerPaperExecutionsView
 from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView, BrokerSandboxOptionsAccessView
 from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView, StaffShadowDashboardView, StaffShadowAccountView
 from .views import (
@@ -157,6 +157,8 @@ urlpatterns = [
     path("settings/me", UserSettingsMeView.as_view(), name="user-settings-me"),
     path("user-prefs/", UserPreferenceView.as_view(), name="user-preferences"),
     path("register/", RegisterView.as_view(), name="register"),
+    path("alpaca-paper/account/", CustomerPaperAccountView.as_view(), name="customer-paper-account"),
+    path("alpaca-paper/executions/", CustomerPaperExecutionsView.as_view(), name="customer-paper-executions"),
     path("alpaca-paper/connection/", CustomerPaperConnectionView.as_view(), name="customer-paper-connection"),
     path("alpaca-paper/connect/", CustomerPaperConnectView.as_view(), name="customer-paper-connect"),
     path("alpaca-paper/callback/", CustomerPaperCallbackView.as_view(), name="customer-paper-callback"),

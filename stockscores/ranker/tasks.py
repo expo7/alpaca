@@ -722,3 +722,6 @@ def run_backtest_batch(batch_id: int) -> Dict[str, Any]:
     batch.save(update_fields=["status"])
 
     return {"status": batch.status, "completed": completed, "total": batch.runs.count()}
+
+# Register independently routed customer paper tasks during Celery autodiscovery.
+from .customer_paper_execution import dispatch_customer_paper, run_customer_paper  # noqa: E402,F401
