@@ -994,7 +994,7 @@ export default function App() {
       />
 
       <main className="app-main">
-        {page === "signals" && <TradeSignalsPage token={token} isStaff={Boolean(user?.is_staff || user?.is_superuser)} isAdmin={Boolean(user?.is_superuser)} onUpgrade={() => navigateToPage("billing")} />}
+        {page === "signals" && <TradeSignalsPage token={token} isStaff={Boolean(user?.is_staff || user?.is_superuser)} isAdmin={Boolean(user?.is_superuser)} customerPaperAccess={Boolean(user?.customer_paper_access)} onUpgrade={() => navigateToPage("billing")} />}
         {page === "billing" && <BillingPage token={token} isAuthed={isAuthed} />}
         {/* ==============================
           DASHBOARD PAGE

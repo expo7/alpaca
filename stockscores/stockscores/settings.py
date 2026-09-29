@@ -313,3 +313,10 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# Isolated customer-paper worker: never competes with house trade jobs.
+CELERY_BEAT_SCHEDULE["customer-paper-dispatch"] = {
+    "task": "ranker.customer_paper_execution.dispatch_customer_paper",
+    "schedule": 15.0,
+    "options": {"queue": "customer-paper", "expires": 15},
+}

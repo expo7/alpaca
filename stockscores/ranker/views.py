@@ -1,3 +1,4 @@
+import os
 from unittest import result
 from rest_framework.views import APIView
 from datetime import timedelta
@@ -914,6 +915,7 @@ class CurrentUserView(APIView):
                 "id": user.id,
                 "username": user.get_username(),
                 "email": user.email,
+                "customer_paper_access": bool(user.is_superuser or os.getenv("CUSTOMER_PAPER_CUSTOMERS_ENABLED", "false").lower() == "true"),
                 "is_staff": bool(user.is_staff),
                 "is_superuser": bool(user.is_superuser),
                 "is_pro": user_has_pro_access(user),

@@ -28,6 +28,19 @@ services:
       - db
       - redis
 
+  customer_paper_worker:
+    restart: unless-stopped
+    image: quantelle-app:production
+    build: .
+    command: celery -A stockscores worker -l info -Q customer-paper --concurrency=2 --hostname=customer-paper@%h
+    env_file:
+      - .env.docker
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
   beat:
     restart: unless-stopped
     image: quantelle-app:production

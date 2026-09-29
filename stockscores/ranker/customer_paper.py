@@ -1,4 +1,4 @@
-"""Paper-only Alpaca OAuth connection. No customer order submission lives here."""
+"""Paper-only OAuth with explicit trading scope and encrypted token storage."""
 
 import hashlib
 import os
@@ -52,7 +52,7 @@ def begin_connection(user):
     cache.set(f"alpaca-paper-oauth:{hashlib.sha256(state.encode()).hexdigest()}", user.pk, STATE_TTL)
     return AUTHORIZE_URL + "?" + urlencode({
         "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
-        "state": state, "env": "paper",  # Never request a live account or trading scope.
+        "state": state, "env": "paper", "scope": "trading",
     })
 
 
@@ -65,22 +65,42 @@ def complete_connection(code, state):
     if not user_id or not cache.add(f"{cache_key}:used", True, STATE_TTL):
         raise CustomerPaperError("Connection expired or already used")
     cache.delete(cache_key)
+    from django.contrib.auth import get_user_model
+    from .customer_paper_broker import account_lock, flag, reserved_account_ids
+    from .customer_paper_views import can_replace
+    user = get_user_model().objects.filter(pk=user_id).first()
+    if not user or not user.is_active or not (user.is_superuser or flag("CUSTOMER_PAPER_CUSTOMERS_ENABLED")):
+        raise CustomerPaperError("Connection is restricted to administrators")
     try:
         token_response = requests.post(TOKEN_URL, data={
             "grant_type": "authorization_code", "code": code, "client_id": client_id,
             "client_secret": client_secret, "redirect_uri": redirect_uri,
-        }, timeout=12)
+        }, timeout=12, allow_redirects=False)
         token_response.raise_for_status()
-        token = token_response.json()["access_token"]
-        account_response = requests.get(PAPER_ACCOUNT_URL, headers={"Authorization": f"Bearer {token}"}, timeout=12)
+        token_data = token_response.json()
+        token = token_data["access_token"]
+        account_response = requests.get(PAPER_ACCOUNT_URL, headers={"Authorization": f"Bearer {token}"}, timeout=12, allow_redirects=False)
         account_response.raise_for_status()
-        account_id = account_response.json()["id"]
+        account = account_response.json()
+        account_id = account["id"]
         if not isinstance(account_id, str) or not account_id:
             raise CustomerPaperError("Alpaca did not identify the paper account")
-        connection, _ = CustomerPaperConnection.objects.update_or_create(
-            user_id=user_id,
-            defaults={"alpaca_account_id": account_id, "encrypted_access_token": cipher.encrypt(token.encode()).decode()},
-        )
-        return connection
+        if account_id in reserved_account_ids() or account.get("status") != "ACTIVE":
+            raise CustomerPaperError("Use a separate active customer paper account")
+        with account_lock(user_id):
+            can_replace(CustomerPaperConnection.objects.filter(user_id=user_id).first())
+            previous = CustomerPaperConnection.objects.filter(user_id=user_id).first()
+            if previous and previous.alpaca_account_id != account_id and previous.executions.exists():
+                raise CustomerPaperError("Reconnect the original paper account to preserve its history")
+            connection, _ = CustomerPaperConnection.objects.update_or_create(
+                user_id=user_id, defaults={"alpaca_account_id": account_id,
+                    "encrypted_access_token": cipher.encrypt(token.encode()).decode(),
+                    "auth_method": "oauth", "is_connected": True,
+                    "trading_authorized": "trading" in token_data.get("scope", "").split(),
+                    "mirror_enabled": False, "consent_at": None, "last_error": ""},
+            )
+            from .customer_paper_execution import event
+            event(connection, "connected", auth_method="oauth")
+            return connection
     except (requests.RequestException, KeyError, ValueError) as exc:
         raise CustomerPaperError("Alpaca paper connection could not be verified") from exc
