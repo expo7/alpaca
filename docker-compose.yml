@@ -19,7 +19,8 @@ services:
     restart: unless-stopped
     image: quantelle-app:production
     build: .
-    command: celery -A stockscores worker -l info
+    command: celery -A stockscores worker -l info --concurrency=1
+    oom_score_adj: -250
     env_file:
       - .env.docker
     volumes:
@@ -29,10 +30,15 @@ services:
       - redis
 
   customer_paper_worker:
-    restart: unless-stopped
+    profiles: [admin-paper]
+    restart: "no"
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.25
+    oom_score_adj: 500
     image: quantelle-app:production
     build: .
-    command: celery -A stockscores worker -l info -Q customer-paper --concurrency=2 --hostname=customer-paper@%h
+    command: celery -A stockscores worker -l info -Q customer-paper --concurrency=1 --hostname=customer-paper@%h
     env_file:
       - .env.docker
     volumes:
@@ -55,6 +61,7 @@ services:
       - redis
 
   execution_guardian:
+    oom_score_adj: -500
     restart: unless-stopped
     image: quantelle-app:production
     build: .
@@ -68,6 +75,7 @@ services:
       - redis
 
   db:
+    oom_score_adj: -500
     restart: unless-stopped
     image: postgres:15-alpine
     environment:
@@ -78,6 +86,7 @@ services:
       - db_data:/var/lib/postgresql/data
 
   redis:
+    oom_score_adj: -500
     restart: unless-stopped
     image: redis:7-alpine
 
