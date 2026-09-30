@@ -142,9 +142,11 @@ jobs:
           if ! sudo -n python3 scripts/install_articles_route.py --apply; then
             echo 'Article hub routing needs a one-time server administrator action.'
           fi
-          docker compose up -d web worker beat execution_guardian customer_paper_worker
+          docker compose up -d web worker beat execution_guardian
+          # Customer experiments are enabled explicitly through the admin-paper profile.
+          docker compose stop customer_paper_worker
           docker compose ps
-          docker compose exec -T web python manage.py customer_paper_preflight --wait 45 --check-http < /dev/null
+          # Run customer worker preflight when explicitly enabling admin-paper.
           docker compose exec -T web python manage.py shell -c "from ranker.customer_paper_broker import credentials_ready, execution_enabled; from django.conf import settings; assert credentials_ready(); assert settings.CELERY_BEAT_SCHEDULE['customer-paper-dispatch']['options']['queue'] == 'customer-paper'; print('Customer paper credential storage ready; entry switch:', execution_enabled())" < /dev/null
           curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:8000/api/trade-signals/ > /dev/null
           docker compose exec -T web python manage.py shell -c "from django.conf import settings; job=settings.CELERY_BEAT_SCHEDULE.get('trade-lifecycle-certification-auditor'); assert job and job['schedule'] == 120.0; print(job)" < /dev/null
