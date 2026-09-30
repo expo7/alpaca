@@ -71,14 +71,14 @@ jobs:
           PROD_USER: ${{ secrets.PROD_USER }}
         run: |
           tar -C rank-ui -czf /tmp/quantelle-rank-ui-dist.tgz dist
-          scp -i ~/.ssh/quantelle_deploy /tmp/quantelle-rank-ui-dist.tgz "$PROD_USER@$PROD_HOST:/tmp/quantelle-rank-ui-dist.tgz"
+          scp -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/quantelle_deploy /tmp/quantelle-rank-ui-dist.tgz "$PROD_USER@$PROD_HOST:/tmp/quantelle-rank-ui-dist.tgz"
 
       - name: Deploy production branch
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
         run: |
-          ssh -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
+          ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/alpaca
           # Recover the previous interrupted deployment's generated build only.
