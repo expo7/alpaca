@@ -21,12 +21,13 @@ describe("Navbar", () => {
 
     await user.click(menuButton);
     const menu = screen.getByRole("navigation", { name: /navigation menu/i });
-    expect(within(menu).getByRole("button", { name: /^Today$/i })).toBeInTheDocument();
-    expect(within(menu).getByRole("button", { name: /^Live Options$/i })).toBeInTheDocument();
+    expect(within(menu).queryByRole("button", { name: /^Today$/i })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("link", { name: /^Results$/i })).toHaveAttribute("href", "/signals?view=completed");
+    expect(within(menu).getByRole("link", { name: /^Trade Plans$/i })).toBeInTheDocument();
     expect(within(menu).queryByRole("button", { name: /Alerts/i })).not.toBeInTheDocument();
     expect(within(menu).queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
 
-    await user.click(within(menu).getByRole("button", { name: /^Live Options$/i }));
+    await user.click(within(menu).getByRole("link", { name: /^Trade Plans$/i }));
     expect(onNavigate).toHaveBeenCalledWith("signals");
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
   });

@@ -4,7 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TradeSignalsPage from "../pages/TradeSignalsPage.jsx";
 
 describe("TradeSignalsPage", () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, "", "/signals"); });
+
+  it("opens completed results directly even when a position is active", async () => {
+    window.history.replaceState({}, "", "/signals?view=completed");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [
+      { id: 1, symbol: "OPEN", instrument: "Open call", status: "open", updates: [] },
+      { id: 2, symbol: "LOSS", instrument: "Completed call", status: "closed", actual_entry: "2.00", final_exit: "1.00", realized_return_pct: "-50", updates: [] },
+    ] }));
+    render(<TradeSignalsPage />);
+    expect(await screen.findByText("Completed call")).toBeInTheDocument();
+    expect(screen.queryByText("Open call")).not.toBeInTheDocument();
+    expect(screen.getByText("Closed · loss")).toBeInTheDocument();
+  });
 
   it("offers a branded image for a completed paper result without hiding a loss", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [{

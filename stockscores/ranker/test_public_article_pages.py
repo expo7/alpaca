@@ -13,6 +13,7 @@ class PublicArticlePagesTests(TestCase):
             dist = Path(directory)
             (dist / "index.html").write_text(
                 '<html><head><meta name="description" content="generic" />'
+                '<link rel="canonical" href="https://quantelle.io/" />'
                 '<title>Generic</title></head><body><div id="root"><main>Generic</main></div>'
                 '<script src="/assets/app.js"></script></body></html>', encoding="utf-8",
             )
@@ -23,6 +24,8 @@ class PublicArticlePagesTests(TestCase):
             self.assertIn("A &amp; B alert(1)", page)
             self.assertNotIn("<script>alert(1)</script>", page)
             self.assertIn('href="https://quantelle.io/articles/market-notes"', page)
+            self.assertEqual(page.count('rel="canonical"'), 1)
+            self.assertNotIn('href="https://quantelle.io/"', page)
             self.assertIn('/assets/app.js', page)
             self.assertIn('href="/articles/market-notes"', (dist / "articles" / "index.html").read_text())
             article.delete()

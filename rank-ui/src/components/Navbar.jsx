@@ -18,11 +18,9 @@ const tabs = [
 ];
 
 const V1_TABS = [
-  { id: "dashboard", label: "Today" },
-  { id: "signals", label: "Live Options" },
-  { id: "billing", label: "Pro" },
-  { id: "opportunities", label: "Opportunities" },
-  { id: "articles", label: "Articles" },
+  { id: "signals", label: "Trade Plans", href: "/signals" },
+  { id: "results", label: "Results", href: "/signals?view=completed" },
+  { id: "articles", label: "Learn", href: "/articles" },
 ];
 
 export default function Navbar({
@@ -39,7 +37,7 @@ export default function Navbar({
   const mobileNav = v1Mode ? "min-[900px]:hidden" : "min-[1350px]:hidden";
   const baseTabs = v1Mode ? V1_TABS : tabs;
   const visibleTabs = user?.is_staff || user?.is_superuser
-    ? [...baseTabs, { id: "analytics", label: "Analytics" }, { id: "shadow", label: "Shadow research" }]
+    ? [...baseTabs, { id: "dashboard", label: "Today" }, { id: "opportunities", label: "Opportunities" }, { id: "billing", label: "Pro" }, { id: "analytics", label: "Analytics" }, { id: "shadow", label: "Shadow research" }]
     : baseTabs;
 
   function navigate(tabId) {
@@ -47,20 +45,25 @@ export default function Navbar({
     setMenuOpen(false);
   }
 
-  const renderTabs = (className) => visibleTabs.map((tab) => (
-    <button
-      key={tab.id}
-      type="button"
-      onClick={() => navigate(tab.id)}
-      className={`${className} ${
-        active === tab.id
-          ? "bg-indigo-500/15 text-indigo-200"
-          : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-      }`}
-    >
-      {tab.label}
-    </button>
-  ));
+  const renderTabs = (className) => visibleTabs.map((tab) => {
+    const classNames = `${className} ${active === tab.id
+      ? "bg-indigo-500/15 text-indigo-200"
+      : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"}`;
+    return tab.href ? (
+      <a key={tab.id} href={tab.href} className={classNames}
+        aria-current={active === tab.id ? "page" : undefined}
+        onClick={(event) => {
+          // Results changes the query and must also work from an existing trade view.
+          if (tab.id === "results" || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          navigate(tab.id);
+        }}>{tab.label}</a>
+    ) : (
+      <button key={tab.id} type="button" onClick={() => navigate(tab.id)} className={classNames}>
+        {tab.label}
+      </button>
+    );
+  });
 
   return (
     <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/90 backdrop-blur">
