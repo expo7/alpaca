@@ -1,6 +1,6 @@
 const descriptions = {
-  "/": ["Quantelle | Options Research and Public Paper Trade Record", "Explore Quantelle's options plans and public paper trade record, including entries, risk levels, stops, targets, and completed outcomes."],
-  "/signals": ["Live Options Plans | Quantelle", "Review current and completed Quantelle paper options plans, including entries, stops, targets, and outcomes."],
+  "/": ["Options Trade Plans & Paper Results | Quantelle", "Explore selected options trade plans with clear entries, stops, targets, and ongoing updates. Follow the reasoning and review transparent paper results."],
+  "/signals": ["Options Trade Plans & Results | Quantelle", "Review current and completed Quantelle paper options plans, including entries, stops, targets, and outcomes."],
   "/articles": ["Options Research Articles | Quantelle", "Read Quantelle's options research articles, market analysis, and explanations of paper trade plans."],
   "/dashboard": ["Market Dashboard | Quantelle", "Explore Quantelle's market dashboard and options research context."],
   "/support": ["Support | Quantelle", "Find help and contact information for Quantelle."],

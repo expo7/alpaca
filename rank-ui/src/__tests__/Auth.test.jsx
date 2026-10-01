@@ -26,7 +26,7 @@ describe("Landing page", () => {
         <Landing />
       </AuthProvider>
     );
-    expect(screen.getByText(/Trade ideas with a plan/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep the excitement/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^QUANTELLE$/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Sign in$/i }));
