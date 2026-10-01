@@ -36,6 +36,7 @@ def _article_body(markdown):
 
 
 def _render(shell, title, description, canonical, body):
+    shell = re.sub(r'<link[^>]*rel="canonical"[^>]*>', "", shell)
     escaped_title = html.escape(title)
     escaped_description = html.escape(description, quote=True)
     header = (

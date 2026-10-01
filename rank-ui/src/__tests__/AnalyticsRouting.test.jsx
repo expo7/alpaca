@@ -29,7 +29,7 @@ describe("analytics route synchronization", () => {
     render(<AuthProvider><App /></AuthProvider>);
     expect(await screen.findByText("Site analytics")).toBeInTheDocument();
 
-    await userEvent.click(screen.getAllByRole("button", { name: "Articles" })[0]);
+    await userEvent.click(screen.getAllByRole("link", { name: "Learn" })[0]);
     expect(await screen.findByRole("heading", { name: "Articles" })).toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole("button", { name: "Today" })[0]);

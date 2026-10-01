@@ -18,11 +18,9 @@ const tabs = [
 ];
 
 const V1_TABS = [
-  { id: "dashboard", label: "Today" },
-  { id: "signals", label: "Live Options" },
-  { id: "billing", label: "Pro" },
-  { id: "opportunities", label: "Opportunities" },
-  { id: "articles", label: "Articles" },
+  { id: "signals", label: "Trade Plans", href: "/signals" },
+  { id: "results", label: "Results", href: "/signals?view=completed" },
+  { id: "articles", label: "Learn", href: "/articles" },
 ];
 
 export default function Navbar({
@@ -38,29 +36,39 @@ export default function Navbar({
   const desktopNav = v1Mode ? "min-[900px]:flex min-[900px]:items-center min-[900px]:gap-1" : "min-[1350px]:flex min-[1350px]:items-center min-[1350px]:gap-1";
   const mobileNav = v1Mode ? "min-[900px]:hidden" : "min-[1350px]:hidden";
   const baseTabs = v1Mode ? V1_TABS : tabs;
-  const visibleTabs = user?.is_staff || user?.is_superuser
-    ? [...baseTabs, { id: "analytics", label: "Analytics" }, { id: "shadow", label: "Shadow research" }]
-    : baseTabs;
+  const visibleTabs = baseTabs;
+  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
+  const staffTabs = [
+    { id: "dashboard", label: "Today" },
+    { id: "opportunities", label: "Opportunities" },
+    { id: "analytics", label: "Analytics" },
+    { id: "shadow", label: "Shadow research" },
+  ];
 
   function navigate(tabId) {
     onNavigate(tabId);
     setMenuOpen(false);
   }
 
-  const renderTabs = (className) => visibleTabs.map((tab) => (
-    <button
-      key={tab.id}
-      type="button"
-      onClick={() => navigate(tab.id)}
-      className={`${className} ${
-        active === tab.id
-          ? "bg-indigo-500/15 text-indigo-200"
-          : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-      }`}
-    >
-      {tab.label}
-    </button>
-  ));
+  const renderTabs = (className) => visibleTabs.map((tab) => {
+    const classNames = `${className} ${active === tab.id
+      ? "bg-indigo-500/15 text-indigo-200"
+      : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"}`;
+    return tab.href ? (
+      <a key={tab.id} href={tab.href} className={classNames}
+        aria-current={active === tab.id ? "page" : undefined}
+        onClick={(event) => {
+          // Results changes the query and must also work from an existing trade view.
+          if (tab.id === "results" || (tab.id === "signals" && window.location.search) || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          navigate(tab.id);
+        }}>{tab.label}</a>
+    ) : (
+      <button key={tab.id} type="button" onClick={() => navigate(tab.id)} className={classNames}>
+        {tab.label}
+      </button>
+    );
+  });
 
   return (
     <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/90 backdrop-blur">
@@ -82,6 +90,20 @@ export default function Navbar({
             >
               {renderTabs("rounded-md px-2 py-2 text-xs transition")}
             </nav>
+            {v1Mode && isStaff && (
+              <details className="relative">
+                <summary className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">Staff tools</summary>
+                <nav aria-label="Staff tools" className="absolute left-0 top-full z-50 mt-2 grid min-w-48 gap-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-xl">
+                  {staffTabs.map((tab) => (
+                    <button key={tab.id} type="button" className="rounded-md px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-800"
+                      onClick={(event) => {
+                        navigate(tab.id);
+                        event.currentTarget.closest("details").open = false;
+                      }}>{tab.label}</button>
+                  ))}
+                </nav>
+              </details>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-2 text-xs sm:gap-3">
@@ -97,6 +119,7 @@ export default function Navbar({
                     )}
                   </div>
                 )}
+                <a href="/billing" className="rounded-md px-2 py-1.5 text-xs text-slate-300 hover:text-white">Pro</a>
                 <button
                   type="button"
                   onClick={onLogout}

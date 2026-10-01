@@ -175,6 +175,7 @@ export default function App() {
   // [NOTE-NAV-STATE]
   // -------------------
   const [page, setPage] = useState(() => {
+    if (window.location.pathname === "/") return "signals";
     if (window.location.pathname === "/shadow") return "shadow";
     if (window.location.pathname === "/analytics") return "analytics";
     if (window.location.pathname === "/signals") return "signals";
@@ -185,7 +186,8 @@ export default function App() {
 
   useEffect(() => {
     if (route.kind !== "app") return;
-    if (pathname === "/shadow") setPage("shadow");
+    if (pathname === "/") setPage("signals");
+    else if (pathname === "/shadow") setPage("shadow");
     else if (pathname === "/analytics") setPage("analytics");
     else if (pathname === "/signals") setPage("signals");
     else if (pathname === "/billing") setPage("billing");

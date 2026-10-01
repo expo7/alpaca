@@ -22,11 +22,11 @@ describe("App routing and navigation smoke tests", () => {
   test("renders Landing when unauthenticated", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({}))));
     renderAppWithAuth();
-    expect(screen.getByText(/Trade ideas with a plan/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep the excitement/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Sign in$/i })).toBeInTheDocument();
   });
 
-  test("renders navbar and dashboards page when authenticated", async () => {
+  test("opens trade plans with the focused navigation when authenticated", async () => {
     // Seed token so AuthProvider treats user as logged in
     localStorage.setItem("access", "token");
     localStorage.setItem("username", "tester");
@@ -43,8 +43,10 @@ describe("App routing and navigation smoke tests", () => {
 
     renderAppWithAuth();
 
-    const dashboards = await screen.findAllByText(/Today/i);
-    expect(dashboards.length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Published trade setups" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Trade Plans" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Results" })).toHaveAttribute("href", "/signals?view=completed");
+    expect(screen.queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
     // V1: Alerts and other non-dashboard tabs are hidden
     expect(screen.queryByRole("button", { name: /^Alerts$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
@@ -52,6 +54,7 @@ describe("App routing and navigation smoke tests", () => {
   });
 
   test("chart button is hidden in V1 Top Opportunities rows", async () => {
+    window.history.replaceState({}, "", "/opportunities");
     localStorage.setItem("access", "token");
     localStorage.setItem("username", "tester");
 
@@ -99,7 +102,6 @@ describe("App routing and navigation smoke tests", () => {
 
     renderAppWithAuth();
 
-    await userEvent.click((await screen.findAllByRole("button", { name: /Opportunities/i }))[0]);
     await userEvent.click(await screen.findByRole("button", { name: /Find opportunities/i }));
 
     await waitFor(() => {

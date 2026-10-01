@@ -307,7 +307,7 @@ function TradeCard({ signal, archived = false, onUpgrade, onShare, token = "" })
 
 export default function TradeSignalsPage({ token = "", isStaff = false, isAdmin = false, customerPaperAccess = false, onUpgrade = () => {} }) {
   const [signals, setSignals] = useState([]);
-  const [view, setView] = useState(null);
+  const [view, setView] = useState(() => new URLSearchParams(window.location.search).get("view") === "completed" ? "completed" : null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [shareSignal, setShareSignal] = useState(null);
