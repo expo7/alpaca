@@ -2,7 +2,7 @@ name: Quantelle operator action
 
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -87,6 +87,15 @@ jobs:
                   operator_url = "https://quantelle.io/api/operator/trade-signals/publish/"
                   operator_payload = dict(payload)
                   operator_payload.pop("action")
+                  deadline = operator_payload.get("entry_deadline")
+                  if not isinstance(deadline, str):
+                      raise ValueError("entry_deadline must be an ISO 8601 date or timestamp")
+                  try:
+                      operator_payload["entry_deadline"] = datetime.fromisoformat(
+                          deadline.replace("Z", "+00:00")
+                      ).date().isoformat()
+                  except ValueError as exc:
+                      raise ValueError("entry_deadline must be an ISO 8601 date or timestamp") from exc
                   operator_payload["request_id"] = f"github-issue-{issue_number}"
               elif action == "report_run":
                   if not issue.get("title", "").startswith("[Quantelle Operator] Report Run"):
@@ -114,13 +123,24 @@ jobs:
                   expected, started, completed = (stamps[key] for key in ("expected_run_at", "started_at", "completed_at"))
                   now = datetime.now(timezone.utc)
                   slot = expected.astimezone(ZoneInfo("America/Phoenix"))
-                  sessions = {5: "premarket", 7: "premarket", 10: "regular", 12: "regular", 14: "aftermarket"}
-                  if (slot.weekday() >= 5 or slot.hour not in sessions or
+                  scheduled_hours = {5, 7, 10, 12, 14}
+                  if (slot.weekday() >= 5 or slot.hour not in scheduled_hours or
                           slot.minute or slot.second or slot.microsecond or
                           not now - timedelta(days=7) <= expected <= now + timedelta(minutes=5)):
                       raise ValueError("expected_run_at: invalid scheduled Phoenix weekday slot or reporting window")
-                  if payload["session_type"] not in (sessions[slot.hour], "market_closed"):
-                      raise ValueError("session_type: inconsistent with the scheduled Phoenix slot")
+                  market_time = expected.astimezone(ZoneInfo("America/New_York"))
+                  market_minutes = market_time.hour * 60 + market_time.minute
+                  if market_minutes < 9 * 60 + 30:
+                      expected_session = "premarket"
+                  elif market_minutes < 16 * 60:
+                      expected_session = "regular"
+                  else:
+                      expected_session = "aftermarket"
+                  if payload["session_type"] not in (expected_session, "market_closed"):
+                      raise ValueError(
+                          f"session_type: inconsistent with market time "
+                          f"({market_time:%Y-%m-%d %H:%M %Z}; expected {expected_session})"
+                      )
                   if not expected - timedelta(hours=6) <= started <= expected + timedelta(hours=6):
                       raise ValueError("started_at: outside the scheduled slot's six-hour window; check clock skew")
                   if completed < started:
