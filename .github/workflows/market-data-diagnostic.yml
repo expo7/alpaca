@@ -1,0 +1,80 @@
+name: Quantelle market data diagnostic
+on:
+  workflow_dispatch:
+    inputs:
+      contract:
+        description: Exact OCC contract to inspect (read only)
+        required: true
+        default: QQQ261120P00738000
+      preserve_build_backup:
+        description: Move the known stale build backup out of the checkout without deleting it
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: quantelle-market-data-diagnostic
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate contract
+        env:
+          CONTRACT: ${{ inputs.contract }}
+        run: |
+          [[ "$CONTRACT" =~ ^[A-Z]{1,6}[0-9]{6}[CP][0-9]{8}$ ]]
+          python3 -m py_compile scripts/probe_market_data.py
+      - name: Configure SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/quantelle_deploy
+          chmod 600 ~/.ssh/quantelle_deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect production
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'cd /opt/alpaca && git log -1 --oneline && git status --short && docker compose ps && free -m'
+      - name: Preserve known build backup
+        if: inputs.preserve_build_backup
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
+          set -eu
+          cd /opt/alpaca
+          backup=rank-ui/dist.brand-backup-13c50886
+          if [ -d "$backup" ] && [ ! -L "$backup" ]; then
+            destination="/opt/alpaca-build-backups/dist.brand-backup-13c50886-$(date -u +%Y%m%dT%H%M%SZ)"
+            mkdir -p /opt/alpaca-build-backups
+            mv -- "$backup" "$destination"
+            echo "Preserved stale frontend build outside production checkout."
+          fi
+          git status --short
+          REMOTE
+      - name: Probe server credentials and feeds (GET only)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          CONTRACT: ${{ inputs.contract }}
+        run: |
+          set -o pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" "cd /opt/alpaca && docker compose exec -T web python - '$CONTRACT'" < scripts/probe_market_data.py | tee market-data-diagnostic.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: market-data-diagnostic
+          path: market-data-diagnostic.jsonl
+          retention-days: 7
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/quantelle_deploy
