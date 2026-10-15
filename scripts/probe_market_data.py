@@ -105,6 +105,18 @@ if any(x.startswith("stale_or_unusable_stock_") for x in failures):
           {"symbols": "SPY,QQQ,IWM", "feed": "sip"})
     probe("delayed_sip_check", data_url + "/v2/stocks/quotes/latest",
           {"symbols": "SPY,QQQ,IWM", "feed": "delayed_sip"})
+# Exercise the installed primary client through its real GET-only data path.
+# This never calls submit_order or any lifecycle method.
+try:
+    from ranker.alpaca_paper import AlpacaPaperClient
+    observed = AlpacaPaperClient().stock_quote(symbol, allow_delayed=True)
+    print(json.dumps({"test": "installed_primary_underlying_fallback", "result": "pass",
+                      "symbol": symbol, "data": observed}, default=str), flush=True)
+except Exception as exc:
+    failures.append("installed_primary_underlying_fallback")
+    print(json.dumps({"test": "installed_primary_underlying_fallback", "result": "fail",
+                      "error": type(exc).__name__}), flush=True)
+
 print(json.dumps({"summary": "pass" if not failures else "fail", "failures": failures,
                   "quote_age_seconds": age, "contract": contract}), flush=True)
 raise SystemExit(bool(failures))
