@@ -54,8 +54,8 @@ jobs:
           cd /opt/alpaca
           backup=rank-ui/dist.brand-backup-13c50886
           if [ -d "$backup" ] && [ ! -L "$backup" ]; then
-            destination="/opt/alpaca-build-backups/dist.brand-backup-13c50886-$(date -u +%Y%m%dT%H%M%SZ)"
-            mkdir -p /opt/alpaca-build-backups
+            destination="$HOME/quantelle-build-backups/dist.brand-backup-13c50886-$(date -u +%Y%m%dT%H%M%SZ)"
+            mkdir -p $HOME/quantelle-build-backups
             mv -- "$backup" "$destination"
             echo "Preserved stale frontend build outside production checkout."
           fi
