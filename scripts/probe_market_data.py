@@ -97,6 +97,11 @@ for ticker in ("SPY", "QQQ", "IWM"):
     if not valid:
         failures.append("stale_or_unusable_stock_" + ticker)
 print(json.dumps({"stock_quote_ages_seconds": stock_ages}), flush=True)
+if any(x.startswith("stale_or_unusable_stock_") for x in failures):
+    probe("sip_entitlement_check", data_url + "/v2/stocks/quotes/latest",
+          {"symbols": "SPY,QQQ,IWM", "feed": "sip"})
+    probe("delayed_sip_check", data_url + "/v2/stocks/quotes/latest",
+          {"symbols": "SPY,QQQ,IWM", "feed": "delayed_sip"})
 print(json.dumps({"summary": "pass" if not failures else "fail", "failures": failures,
                   "quote_age_seconds": age, "contract": contract}), flush=True)
 raise SystemExit(bool(failures))

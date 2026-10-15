@@ -1,5 +1,7 @@
 name: Quantelle market data diagnostic
 on:
+  issues:
+    types: [opened]
   workflow_dispatch:
     inputs:
       contract:
@@ -12,20 +14,40 @@ on:
         default: false
 permissions:
   contents: read
+  issues: write
 concurrency:
   group: quantelle-market-data-diagnostic
   cancel-in-progress: false
 jobs:
   probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.user.login == 'expo7' &&
+       github.event.issue.author_association == 'OWNER' &&
+       github.event.issue.title == '[Quantelle Data] Probe')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Validate contract
         env:
-          CONTRACT: ${{ inputs.contract }}
+          INPUT_CONTRACT: ${{ inputs.contract }}
         run: |
-          [[ "$CONTRACT" =~ ^[A-Z]{1,6}[0-9]{6}[CP][0-9]{8}$ ]]
+          python3 - <<'PYTHON'
+          import json, os, re
+          event = json.load(open(os.environ['GITHUB_EVENT_PATH']))
+          if os.environ['GITHUB_EVENT_NAME'] == 'issues':
+              payload = json.loads(event['issue']['body'])
+              if set(payload) != {'contract'}:
+                  raise SystemExit('Only contract is accepted')
+              contract = payload['contract']
+          else:
+              contract = os.environ['INPUT_CONTRACT']
+          if not isinstance(contract, str) or not re.fullmatch(r'[A-Z]{1,6}[0-9]{6}[CP][0-9]{8}', contract):
+              raise SystemExit('Invalid OCC contract')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('CONTRACT=' + contract + '\n')
+          PYTHON
           python3 -m py_compile scripts/probe_market_data.py
       - name: Configure SSH
         env:
@@ -65,7 +87,6 @@ jobs:
         env:
           PROD_HOST: ${{ secrets.PROD_HOST }}
           PROD_USER: ${{ secrets.PROD_USER }}
-          CONTRACT: ${{ inputs.contract }}
         run: |
           set -o pipefail
           ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" "cd /opt/alpaca && docker compose exec -T web python - '$CONTRACT'" < scripts/probe_market_data.py | tee market-data-diagnostic.jsonl
@@ -75,6 +96,27 @@ jobs:
           name: market-data-diagnostic
           path: market-data-diagnostic.jsonl
           retention-days: 7
+      - name: Report owner-requested data probe
+        if: always() && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          result = Path('market-data-diagnostic.jsonl')
+          data = result.read_text()[:40000] if result.exists() else 'No data returned; inspect workflow error.'
+          Path('/tmp/probe-comment.md').write_text(
+              'Read-only market data diagnostic: ' + os.environ['JOB_STATUS'] + '\n' +
+              os.environ['RUN_URL'] + '\n\n```json\n' + data + '\n```\n' +
+              'Quotes are indicative; inspect timestamps and summary before use. No orders changed.')
+          PYTHON
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file /tmp/probe-comment.md
+          if [ "$JOB_STATUS" = success ]; then gh issue close "$ISSUE" --repo "$REPO"; fi
       - name: Remove SSH key
         if: always()
         run: rm -f ~/.ssh/quantelle_deploy
