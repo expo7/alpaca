@@ -181,7 +181,7 @@ jobs:
           assert 'allow_delayed=True' in inspect.getsource(_process_published_signal)
           print('Deployed main paper delayed-feed fallback verified.')
           print('Executor:', list(TradeExecutorHealth.objects.values('status', 'entries_paused', 'last_completed_at', 'last_error')))
-          print('Recent signals:', list(TradeSignal.objects.order_by('-id').values('id', 'contract_symbol', 'status', 'entry_deadline', 'paper_execution_enabled', 'paper_order_status', 'paper_last_error')[:3]))
+          print('Recent signals:', list(TradeSignal.objects.order_by('-id').values('id', 'symbol', 'strike', 'expiration', 'status', 'entry_deadline', 'paper_execution_enabled', 'paper_order_status', 'paper_last_error')[:3]))
           print('Recent notifications:', list(TelegramNotification.objects.order_by('-id').values('id', 'status', 'attempt_count', 'sent_at')[:3]))
           from ranker.alpaca_paper import AlpacaPaperClient
           client = AlpacaPaperClient()
