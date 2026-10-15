@@ -54,6 +54,11 @@ jobs:
         working-directory: stockscores
         run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_paper_data_fallback ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
 
+      - name: Build application image off the production server
+        run: |
+          docker build -t quantelle-app:production .
+          docker save quantelle-app:production | gzip -1 > /tmp/quantelle-app-image.tar.gz
+
       - name: Configure production SSH
         env:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
@@ -71,6 +76,7 @@ jobs:
           PROD_USER: ${{ secrets.PROD_USER }}
         run: |
           tar -C rank-ui -czf /tmp/quantelle-rank-ui-dist.tgz dist
+          scp -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/quantelle_deploy /tmp/quantelle-app-image.tar.gz "$PROD_USER@$PROD_HOST:/tmp/quantelle-app-image.tar.gz"
           scp -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/quantelle_deploy /tmp/quantelle-rank-ui-dist.tgz "$PROD_USER@$PROD_HOST:/tmp/quantelle-rank-ui-dist.tgz"
 
       - name: Deploy production branch
@@ -81,8 +87,11 @@ jobs:
           ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/alpaca
+          # Load the CI-built image before any compose command can auto-build.
+          docker load -i /tmp/quantelle-app-image.tar.gz
+          rm -f /tmp/quantelle-app-image.tar.gz
           # Recover the previous interrupted deployment's generated build only.
-          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
+          docker compose run --no-build --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
           if [ -n "$(git status --porcelain)" ]; then
             echo "Refusing to deploy over a dirty production worktree."
             git status --short
@@ -123,7 +132,7 @@ jobs:
           trap cleanup_frontend_stage EXIT
           tar -xzf /tmp/quantelle-rank-ui-dist.tgz -C "$frontend_stage"
           test -f "$frontend_stage/dist/index.html"
-          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
+          docker compose run --no-build --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
           if [ -d /opt/alpaca/rank-ui/dist ]; then
             mv /opt/alpaca/rank-ui/dist /opt/alpaca/rank-ui/dist.previous
           fi
@@ -133,16 +142,16 @@ jobs:
             fi
             exit 1
           fi
-          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
+          docker compose run --no-build --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
 
-          docker compose build web
-          docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
-          docker compose run --rm -T web python manage.py generate_public_sitemap < /dev/null
-          docker compose run --rm -T web python manage.py generate_public_article_pages < /dev/null
+          docker image inspect quantelle-app:production --format 'Loaded application image: {{.Id}}'
+          docker compose run --no-build --rm -T web python manage.py migrate --noinput < /dev/null
+          docker compose run --no-build --rm -T web python manage.py generate_public_sitemap < /dev/null
+          docker compose run --no-build --rm -T web python manage.py generate_public_article_pages < /dev/null
           if ! sudo -n python3 scripts/install_articles_route.py --apply; then
             echo 'Article hub routing needs a one-time server administrator action.'
           fi
-          docker compose up -d web worker beat execution_guardian
+          docker compose up --no-build -d web worker beat execution_guardian
           # Customer experiments are enabled explicitly through the admin-paper profile.
           docker compose stop customer_paper_worker
           docker compose ps
