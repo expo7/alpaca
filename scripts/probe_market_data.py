@@ -4,7 +4,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import requests
 
@@ -98,6 +98,9 @@ for ticker in ("SPY", "QQQ", "IWM"):
         failures.append("stale_or_unusable_stock_" + ticker)
 print(json.dumps({"stock_quote_ages_seconds": stock_ages}), flush=True)
 if any(x.startswith("stale_or_unusable_stock_") for x in failures):
+    probe("iex_recent_quote_history", data_url + "/v2/stocks/quotes",
+          {"symbols": "SPY,QQQ,IWM", "feed": "iex", "sort": "desc", "limit": 3,
+           "start": (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()})
     probe("sip_entitlement_check", data_url + "/v2/stocks/quotes/latest",
           {"symbols": "SPY,QQQ,IWM", "feed": "sip"})
     probe("delayed_sip_check", data_url + "/v2/stocks/quotes/latest",
