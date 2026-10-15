@@ -291,7 +291,7 @@ def _process_published_signal(signal, client, now, config):
         return "expired"
     if signal.instrument_type not in {"call", "put"}:
         raise PaperTradingError("Initial executor supports long call and put signals only")
-    stock = client.stock_quote(signal.symbol)
+    stock = client.stock_quote(signal.symbol, allow_delayed=True)
     trigger = signal.underlying_trigger_price
     if trigger is None:
         raise PaperTradingError("Signal has no underlying trigger price")
@@ -338,7 +338,10 @@ def _process_published_signal(signal, client, now, config):
         "paper_entry_order_id", "paper_order_status", "paper_submitted_at",
         "paper_last_checked_at", "paper_last_error", "updated_at",
     ])
-    _record_update(signal, "entry_submitted", f"Submitted Alpaca paper buy limit for {signal.paper_quantity} contract(s) at ${_money(ask)}.", price=_money(ask))
+    provenance = (f" Underlying trigger used {stock.get('source', 'unknown')} data as of "
+                  f"{stock.get('timestamp', 'unknown')}; delayed paper experiment."
+                  if stock.get("delayed") else "")
+    _record_update(signal, "entry_submitted", f"Submitted Alpaca paper buy limit for {signal.paper_quantity} contract(s) at ${_money(ask)}." + provenance, price=_money(ask))
     return "entry_submitted"
 
 

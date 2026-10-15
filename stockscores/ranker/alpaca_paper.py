@@ -76,7 +76,7 @@ class AlpacaPaperClient:
             return {}
         return response.json()
 
-    def _require_fresh_quote(self, timestamp):
+    def _require_fresh_quote(self, timestamp, *, max_age_seconds=None):
         if not timestamp:
             raise PaperTradingError("Quote has no timestamp")
         try:
@@ -84,7 +84,10 @@ class AlpacaPaperClient:
             age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
         except (TypeError, ValueError):
             raise PaperTradingError("Quote timestamp is invalid")
-        if age < -5 or age > self.config.max_quote_age_seconds:
+        if stamp.tzinfo is None:
+            raise PaperTradingError("Quote timestamp must include timezone")
+        limit = self.config.max_quote_age_seconds if max_age_seconds is None else max_age_seconds
+        if age < -5 or age > limit:
             raise PaperTradingError(f"Quote is stale ({max(0, int(age))} seconds old)")
 
     def clock(self):
@@ -170,18 +173,35 @@ class AlpacaPaperClient:
             },
         )
 
-    def stock_quote(self, symbol):
-        payload = self._request(
-            "GET",
-            f"{self.data_url}/v2/stocks/{symbol}/quotes/latest",
-            params={"feed": self.config.stock_feed},
-        )
-        quote = payload.get("quote") or {}
-        self._require_fresh_quote(quote.get("t"))
-        bid, ask = _decimal(quote.get("bp")), _decimal(quote.get("ap"))
-        if bid is None or ask is None or ask <= 0:
-            raise PaperTradingError(f"No executable stock quote for {symbol}")
-        return {"bid": bid, "ask": ask, "midpoint": (bid + ask) / 2, "timestamp": quote.get("t")}
+    def stock_quote(self, symbol, *, allow_delayed=False):
+        # Only the primary paper experiment opts in. Customer and shadow callers
+        # retain the strict default. Never relabel delayed observations as live.
+        feeds = [self.config.stock_feed]
+        if allow_delayed and self.base_url == PAPER_API_URL and "delayed_sip" not in feeds:
+            feeds.append("delayed_sip")
+        last_error = None
+        for feed in feeds:
+            try:
+                payload = self._request(
+                    "GET", f"{self.data_url}/v2/stocks/{symbol}/quotes/latest",
+                    params={"feed": feed},
+                )
+                quote = payload.get("quote") or {}
+                delayed = feed == "delayed_sip"
+                # 15-minute feed delay plus five minutes delivery tolerance.
+                self._require_fresh_quote(
+                    quote.get("t"),
+                    max_age_seconds=1200 if allow_delayed and delayed else None,
+                )
+                bid, ask = _decimal(quote.get("bp")), _decimal(quote.get("ap"))
+                if (bid is None or ask is None or not bid.is_finite() or
+                        not ask.is_finite() or bid <= 0 or ask < bid):
+                    raise PaperTradingError(f"No usable stock quote for {symbol}")
+                return {"bid": bid, "ask": ask, "midpoint": (bid + ask) / 2,
+                        "timestamp": quote.get("t"), "source": feed, "delayed": delayed}
+            except (PaperTradingError, requests.RequestException) as exc:
+                last_error = exc
+        raise PaperTradingError(f"Underlying data unavailable for {symbol}: {last_error}")
 
     def option_quote(self, contract_symbol):
         payload = self._request(

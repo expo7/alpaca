@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
+        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_paper_data_fallback ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
 
       - name: Configure production SSH
         env:
@@ -156,6 +156,30 @@ jobs:
           docker compose exec -T web python manage.py lifecycle_certification_report --limit 5 < /dev/null
           docker compose exec -T web python manage.py shell -c "from ranker.models import TradeSignal; from ranker.lifecycle_audit import audit_trade_signal; open_signals=TradeSignal.objects.filter(status=TradeSignal.STATUS_OPEN, paper_execution_enabled=True); results=[(s.pk, audit_trade_signal(s).checkpoints['broker_held_protection']['result']) for s in open_signals]; print('Open broker protection:', results); assert all(value == 'pass' for _, value in results)" < /dev/null
           REMOTE
+
+      - name: Verify paper data policy and posted signal
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'cd /opt/alpaca && docker compose exec -T web python manage.py shell' <<'PYTHON'
+          import inspect
+          from ranker.alpaca_paper import AlpacaPaperClient
+          from ranker.models import TradeSignal, TradeExecutorHealth, TelegramNotification
+          from ranker.tasks import _process_published_signal
+          from django.utils import timezone
+          assert 'allow_delayed' in inspect.signature(AlpacaPaperClient.stock_quote).parameters
+          assert 'allow_delayed=True' in inspect.getsource(_process_published_signal)
+          print('Deployed main paper delayed-feed fallback verified.')
+          print('Executor:', list(TradeExecutorHealth.objects.values('status', 'entries_paused', 'last_completed_at', 'last_error')))
+          print('Recent signals:', list(TradeSignal.objects.order_by('-id').values('id', 'contract_symbol', 'status', 'entry_deadline', 'paper_execution_enabled', 'paper_order_status', 'paper_last_error')[:3]))
+          print('Recent notifications:', list(TelegramNotification.objects.order_by('-id').values('id', 'status', 'attempt_count', 'sent_at')[:3]))
+          from ranker.alpaca_paper import AlpacaPaperClient
+          client = AlpacaPaperClient()
+          print('Market clock:', client.clock())
+          print('Paper positions count:', len(client.positions()))
+          print('Paper open orders count:', len([o for o in client.orders() if o.get('status') in ('new', 'accepted', 'partially_filled', 'pending_new')]))
+          PYTHON
 
       - name: Verify public site
         run: |
