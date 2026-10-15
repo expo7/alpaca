@@ -57,6 +57,8 @@ def probe(label, url, params=None, summarize=None):
 clock = probe("clock", paper_url + "/v2/clock")
 stocks = probe("stock_snapshots", data_url + "/v2/stocks/snapshots",
                {"symbols": "SPY,QQQ,IWM", "feed": "iex"})
+stock_quotes = probe("stock_latest_quotes", data_url + "/v2/stocks/quotes/latest",
+                     {"symbols": "SPY,QQQ,IWM", "feed": "iex"})
 quotes = probe("exact_option_quote", data_url + "/v1beta1/options/quotes/latest",
                {"symbols": contract, "feed": "indicative"})
 chain = probe("narrow_option_chain", data_url + "/v1beta1/options/snapshots/" + symbol,
@@ -83,6 +85,18 @@ if not stocks or any(s not in stocks for s in ("SPY", "QQQ", "IWM")):
     failures.append("missing_index_snapshots")
 if not (chain or {}).get("snapshots"):
     failures.append("empty_chain")
+stock_ages = {}
+for ticker in ("SPY", "QQQ", "IWM"):
+    latest = ((stock_quotes or {}).get("quotes") or {}).get(ticker) or {}
+    try:
+        stock_age = (datetime.now(timezone.utc) - datetime.fromisoformat(latest["t"].replace("Z", "+00:00"))).total_seconds()
+        valid = 0 < latest["bp"] <= latest["ap"] and -5 <= stock_age <= 180
+    except (KeyError, TypeError, ValueError):
+        stock_age, valid = None, False
+    stock_ages[ticker] = stock_age
+    if not valid:
+        failures.append("stale_or_unusable_stock_" + ticker)
+print(json.dumps({"stock_quote_ages_seconds": stock_ages}), flush=True)
 print(json.dumps({"summary": "pass" if not failures else "fail", "failures": failures,
                   "quote_age_seconds": age, "contract": contract}), flush=True)
 raise SystemExit(bool(failures))
