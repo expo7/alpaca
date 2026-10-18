@@ -8,7 +8,6 @@ from django.db import models, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .backtest import BacktestResult, run_basket_backtest
 from .alpaca_paper import AlpacaPaperClient, PaperTradingError, load_paper_config
 from .models import (
     Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, TradeExecutorHealth,
@@ -31,6 +30,13 @@ EXECUTOR_STALE_AFTER = timedelta(seconds=45)
 BROKER_TARGET_SWITCH_PROGRESS = Decimal("0.75")
 BROKER_STOP_SWITCH_PROGRESS = Decimal("0.60")
 EXIT_ORDER_TERMINAL_STATUSES = {"canceled", "done_for_day", "expired", "rejected", "replaced"}
+
+
+def run_basket_backtest(*args, **kwargs):
+    # Beat and the independent guardian import this module. Load the expensive
+    # pandas/yfinance research stack only when a backtest is actually requested.
+    from .backtest import run_basket_backtest as run
+    return run(*args, **kwargs)
 
 
 @shared_task(name="ranker.tasks.run_lifecycle_certification_auditor")
@@ -310,7 +316,8 @@ def _process_published_signal(signal, client, now, config):
 
     quote = client.option_quote(signal.contract_symbol)
     ask = quote["ask"]
-    upper = signal.do_not_chase_price or signal.entry_high or signal.entry_low
+    ceilings = [value for value in (signal.do_not_chase_price, signal.entry_high) if value is not None]
+    upper = min(ceilings) if ceilings else signal.entry_low
     if ask < signal.entry_low or ask > upper:
         return "premium_outside_entry_range"
     if quote["spread_pct"] > config.max_spread_pct:
@@ -693,7 +700,7 @@ def run_backtest_batch(batch_id: int) -> Dict[str, Any]:
             bot_serializer.is_valid(raise_exception=True)
             bot_cfg = bot_serializer.validated_data
 
-            result: BacktestResult = run_basket_backtest(
+            result = run_basket_backtest(
                 tickers=bot_cfg["symbols"],
                 start=str(start_date),
                 end=str(end_date),

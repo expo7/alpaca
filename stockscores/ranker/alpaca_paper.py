@@ -68,7 +68,8 @@ class AlpacaPaperClient:
         }
 
     def _request(self, method, url, **kwargs):
-        response = requests.request(method, url, headers=self.headers, timeout=12, **kwargs)
+        timeout = kwargs.pop("timeout", 12)
+        response = requests.request(method, url, headers=self.headers, timeout=timeout, **kwargs)
         if response.status_code >= 400:
             detail = response.text[:200]
             raise PaperTradingError(f"Alpaca returned {response.status_code}: {detail}")
@@ -173,7 +174,7 @@ class AlpacaPaperClient:
             },
         )
 
-    def stock_quote(self, symbol, *, allow_delayed=False):
+    def stock_quote(self, symbol, *, allow_delayed=False, request_timeout=12):
         # Only the primary paper experiment opts in. Customer and shadow callers
         # retain the strict default. Never relabel delayed observations as live.
         feeds = [self.config.stock_feed]
@@ -185,6 +186,7 @@ class AlpacaPaperClient:
                 payload = self._request(
                     "GET", f"{self.data_url}/v2/stocks/{symbol}/quotes/latest",
                     params={"feed": feed},
+                    timeout=request_timeout,
                 )
                 quote = payload.get("quote") or {}
                 delayed = feed == "delayed_sip"
@@ -223,3 +225,28 @@ class AlpacaPaperClient:
             "spread_pct": spread_pct,
             "timestamp": quote.get("t"),
         }
+
+    def option_reference(self, signal):
+        """Optional liquidity metadata; failures do not invalidate the quote."""
+        result = {}
+        try:
+            payload = self._request(
+                "GET", f"{self.data_url}/v1beta1/options/snapshots/{signal.symbol}",
+                params={"feed": self.config.option_feed,
+                        "expiration_date": signal.expiration.isoformat(),
+                        "type": signal.instrument_type,
+                        "strike_price_gte": str(signal.strike),
+                        "strike_price_lte": str(signal.strike), "limit": 1}, timeout=3,
+            )
+            row = (payload.get("snapshots") or {}).get(signal.contract_symbol) or {}
+            result["volume"] = (row.get("dailyBar") or {}).get("v")
+        except (PaperTradingError, requests.RequestException, ValueError):
+            pass
+        try:
+            payload = self._request(
+                "GET", f"{self.base_url}/v2/options/contracts/{signal.contract_symbol}", timeout=3,
+            )
+            result["open_interest"] = payload.get("open_interest")
+        except (PaperTradingError, requests.RequestException, ValueError):
+            pass
+        return result

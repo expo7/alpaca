@@ -2,10 +2,10 @@
 
 from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
+import math
 
 from django.core.cache import cache
 from django.utils import timezone
-import yfinance as yf
 
 from .alpaca_paper import AlpacaPaperClient, PaperTradingError
 
@@ -20,7 +20,7 @@ def _number(value):
         number = float(value)
     except (TypeError, ValueError):
         return None
-    if number != number:
+    if not math.isfinite(number):
         return None
     return round(number, 4)
 
@@ -80,9 +80,42 @@ def get_trade_signal_quote(signal, use_cache=True):
         "option_volume": None,
         "option_open_interest": None,
         "spread_pct": None,
+        "option_quote_at": None,
     }
 
+    # Use the same authorized option feed as execution. Yahoo delayed quotes
+    # remain a fallback, rather than a second mandatory publication dependency.
+    if signal.instrument_type in {"call", "put"}:
+        try:
+            client = AlpacaPaperClient()
+            quote = client.option_quote(signal.contract_symbol)
+            result.update(
+                available=True, status="indicative", status_label="Indicative quote",
+                source=("Alpaca indicative (modified)" if client.config.option_feed == "indicative"
+                        else f"Alpaca {client.config.option_feed}"),
+                option_bid=_number(quote["bid"]), option_ask=_number(quote["ask"]),
+                option_midpoint=_number(quote["midpoint"]),
+                spread_pct=_number(quote["spread_pct"]), option_quote_at=quote["timestamp"],
+            )
+            try:
+                stock = client.stock_quote(signal.symbol, allow_delayed=True, request_timeout=3)
+                result.update(underlying_price=_number(stock["midpoint"]),
+                              market_quote_at=stock["timestamp"], underlying_source=stock["source"])
+            except Exception:
+                pass  # Keep the valid independent option quote; underlying is unknown.
+            try:
+                reference = client.option_reference(signal)
+                result.update(option_volume=_integer(reference.get("volume")),
+                              option_open_interest=_integer(reference.get("open_interest")))
+            except Exception:
+                pass  # Optional reference metadata cannot invalidate a fresh quote.
+            cache.set(cache_key, result, QUOTE_CACHE_SECONDS)
+            return result
+        except Exception as exc:
+            result["primary_error"] = type(exc).__name__
+
     try:
+        import yfinance as yf
         ticker = yf.Ticker(signal.symbol)
         underlying_price, market_stamp = _latest_underlying(ticker)
         result["underlying_price"] = underlying_price
@@ -179,6 +212,8 @@ def apply_publication_snapshot(signal):
     if not quote.get("available"):
         return False
     signal.publication_quote_at = timezone.now()
+    if quote.get("option_quote_at"):
+        signal.publication_quote_at = datetime.fromisoformat(quote["option_quote_at"].replace("Z", "+00:00"))
     signal.publication_underlying_price = _decimal(quote.get("underlying_price"))
     signal.publication_option_bid = _decimal(quote.get("option_bid"))
     signal.publication_option_ask = _decimal(quote.get("option_ask"))

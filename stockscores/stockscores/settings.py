@@ -314,9 +314,11 @@ STORAGES = {
     },
 }
 
-# Isolated customer-paper worker: never competes with house trade jobs.
-CELERY_BEAT_SCHEDULE["customer-paper-dispatch"] = {
-    "task": "ranker.customer_paper_execution.dispatch_customer_paper",
-    "schedule": 15.0,
-    "options": {"queue": "customer-paper", "expires": 15},
-}
+# The customer worker is opt-in. Never enqueue into its unconsumed queue.
+CUSTOMER_PAPER_DISPATCH_ENABLED = os.getenv("CUSTOMER_PAPER_DISPATCH_ENABLED", "false").lower() in ("1", "true", "yes")
+if CUSTOMER_PAPER_DISPATCH_ENABLED:
+    CELERY_BEAT_SCHEDULE["customer-paper-dispatch"] = {
+        "task": "ranker.customer_paper_execution.dispatch_customer_paper",
+        "schedule": 15.0,
+        "options": {"queue": "customer-paper", "expires": 15},
+    }

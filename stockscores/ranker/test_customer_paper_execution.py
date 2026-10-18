@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from cryptography.fernet import Fernet
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -260,6 +261,7 @@ class CustomerPaperTests(APITestCase):
         self.assertEqual(row.entry_order_id, "late-original")
         self.assertEqual(self.broker.submit_limit_order.call_count, 1)
 
+    @override_settings(CELERY_BEAT_SCHEDULE={"customer-paper-dispatch": {"options": {"queue": "customer-paper"}}})
     def test_read_only_preflight_checks_admin_boundary_without_alpaca_requests(self):
         from django.core.management import call_command
         from io import StringIO

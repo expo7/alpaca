@@ -15,6 +15,9 @@ def available_memory_mb():
 
 class Command(BaseCommand):
     help = "Run the independent Quantelle execution guardian and monitored-exit fallback."
+    # URL checks import the web-only ranking/backtesting stack into this
+    # long-lived safety process. Deployment runs Django checks separately.
+    requires_system_checks = []
 
     def add_arguments(self, parser):
         parser.add_argument("--interval", type=int, default=30)
