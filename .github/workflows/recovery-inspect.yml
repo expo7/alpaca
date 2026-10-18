@@ -101,6 +101,17 @@ jobs:
                   print("Option feed diagnostic only:", contract, client.option_quote(contract))
               except Exception as exc:
                   print("Option feed failure:", contract, type(exc).__name__, str(exc)[:180])
+          import requests
+          for url in ("https://quantelle.io/signals", "https://quantelle.io/api/trade-signals/"):
+              try:
+                  response = requests.get(url, timeout=8)
+                  print("Public HTTP:", url, response.status_code)
+                  if "/api/" in url and response.status_code == 200:
+                      data = response.json()
+                      rows = data if isinstance(data, list) else data.get("results", [])
+                      print("Public signals:", [{key: row.get(key) for key in ("id", "symbol", "status", "paper_order_status")} for row in rows])
+              except Exception as exc:
+                  print("Public HTTP failure:", url, type(exc).__name__, str(exc)[:160])
           PY
           docker compose logs --tail 5 execution_guardian < /dev/null
           docker system df
