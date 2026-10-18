@@ -66,6 +66,9 @@ jobs:
               "pandas_loaded_at_setup": "pandas" in sys.modules,
               "yfinance_loaded_at_setup": "yfinance" in sys.modules,
           }))
+          from ranker.alpaca_paper import load_paper_config
+          config = load_paper_config()
+          print("Paper config:", {"enabled": config.enabled, "confirm_seconds": config.confirm_seconds, "max_open_positions": config.max_open_positions, "option_feed": config.option_feed})
           print("Executor:", list(TradeExecutorHealth.objects.values("status", "entries_paused", "last_completed_at", "last_success_at", "last_error")))
           print("Active DB signals:", list(TradeSignal.objects.filter(status__in=["published", "open"]).values("id", "symbol", "status", "paper_execution_enabled")))
           client = AlpacaPaperClient()
