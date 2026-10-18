@@ -42,12 +42,12 @@ jobs:
               docker exec "$container" sh -c 'ps -eo pid,comm,rss 2>/dev/null || true'
             fi
           done
-          docker compose exec -T redis redis-cli INFO memory | grep -E 'used_memory:|used_memory_human:|used_memory_rss_human:|used_memory_peak_human:|maxmemory:|maxmemory_policy:|mem_fragmentation_ratio:'
+          docker compose exec -T redis redis-cli INFO memory < /dev/null | grep -E 'used_memory:|used_memory_human:|used_memory_rss_human:|used_memory_peak_human:|maxmemory:|maxmemory_policy:|mem_fragmentation_ratio:'
           for queue in celery customer-paper; do
             printf '%s queue depth: ' "$queue"
-            docker compose exec -T redis redis-cli LLEN "$queue"
+            docker compose exec -T redis redis-cli LLEN "$queue" < /dev/null
           done
-          docker compose exec -T redis redis-cli INFO keyspace
+          docker compose exec -T redis redis-cli INFO keyspace < /dev/null
           docker system df
           sudo -n -l || true
           printf 'Shadow observer process count: '
