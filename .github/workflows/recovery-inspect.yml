@@ -1,0 +1,53 @@
+name: Quantelle recovery inspection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quantelle-recovery-inspect
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/quantelle_deploy
+          chmod 600 ~/.ssh/quantelle_deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Inspect memory and current services without changing orders
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          date -u
+          uptime
+          free -m
+          df -h /
+          ps -eo pid,ppid,comm,rss,pcpu,pmem --sort=-rss | head -25
+          cd /opt/alpaca
+          git log -1 --oneline
+          docker compose ps
+          timeout 30 docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.MemPerc}} {{.PIDs}}' || true
+          for service in web worker beat execution_guardian; do
+            container=$(docker compose ps -q "$service")
+            if [ -n "$container" ]; then
+              docker exec "$container" sh -c 'ps -eo pid,comm,rss 2>/dev/null || true'
+            fi
+          done
+          sudo -n -l || true
+          printf 'Shadow observer process count: '
+          pgrep -fc '[m]anage.py shadow_observer' || true
+          printf 'HTTP local API: '
+          curl -sS --max-time 8 -o /dev/null -w '%{http_code} %{time_total}\n' http://127.0.0.1:8000/api/trade-signals/ || true
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/quantelle_deploy
