@@ -1,6 +1,9 @@
 name: Quantelle recovery inspection
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/recovery-check-request.json]
 permissions:
   contents: read
 concurrency:
@@ -74,6 +77,30 @@ jobs:
           client = AlpacaPaperClient()
           clock = client.clock()
           print("Broker read-only:", {"is_open": clock.get("is_open"), "positions": len(client.positions()), "open_orders": len([o for o in client.orders() if o.get("status") in ("new", "accepted", "partially_filled", "pending_new")])})
+          from ranker.models import ResearchRun, TelegramNotification, TradeLifecycleCertification
+          from ranker.research_runs import research_health, run_payload
+          print("Research health:", json.dumps(research_health(), default=str))
+          print("Research runs:", json.dumps([run_payload(row) for row in ResearchRun.objects.order_by("-expected_run_at")[:10]], default=str))
+          print("Recent DB signals:", list(TradeSignal.objects.order_by("-id").values("id", "symbol", "status", "published_at", "actual_entry", "final_exit", "paper_entry_order_id", "paper_exit_order_id")[:8]))
+          print("Telegram outbox:", list(TelegramNotification.objects.order_by("-id").values("id", "update__signal_id", "update__event_type", "status", "attempt_count", "sent_at", "last_error")[:12]))
+          print("Certifications:", list(TradeLifecycleCertification.objects.order_by("-checked_at").values("signal_id", "status", "checked_at", "discrepancy_codes", "checkpoints")[:5]))
+          positions = client.positions()
+          orders = client.orders()
+          live_statuses = ("new", "accepted", "partially_filled", "pending_new", "held", "pending_cancel", "pending_replace")
+          print("Broker positions:", [{key: p.get(key) for key in ("symbol", "qty", "avg_entry_price")} for p in positions])
+          print("Broker active orders:", [{key: o.get(key) for key in ("id", "symbol", "side", "qty", "type", "status", "time_in_force", "stop_price", "limit_price", "filled_qty")} for o in orders if o.get("status") in live_statuses])
+          if clock.get("is_open"):
+              for symbol in ("SPY", "QQQ", "IWM"):
+                  try:
+                      print("Underlying feed:", symbol, client.stock_quote(symbol, allow_delayed=True, request_timeout=3))
+                  except Exception as exc:
+                      print("Underlying feed failure:", symbol, type(exc).__name__, str(exc)[:180])
+              signal = TradeSignal.objects.filter(status__in=["published", "open"], instrument_type__in=["call", "put"]).order_by("-id").first()
+              contract = signal.contract_symbol if signal else "IWM261120C00273000"
+              try:
+                  print("Option feed diagnostic only:", contract, client.option_quote(contract))
+              except Exception as exc:
+                  print("Option feed failure:", contract, type(exc).__name__, str(exc)[:180])
           PY
           docker compose logs --tail 5 execution_guardian < /dev/null
           docker system df
