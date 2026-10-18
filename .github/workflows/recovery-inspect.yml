@@ -48,6 +48,31 @@ jobs:
             docker compose exec -T redis redis-cli LLEN "$queue" < /dev/null
           done
           docker compose exec -T redis redis-cli INFO keyspace < /dev/null
+          docker compose exec -T web python - <<'PY'
+          import os, sys, json, inspect
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockscores.settings")
+          import django
+          django.setup()
+          from django.conf import settings
+          from ranker.alpaca_paper import AlpacaPaperClient
+          from ranker.trade_quotes import get_trade_signal_quote
+          from ranker.tasks import _process_published_signal
+          from ranker.models import TradeExecutorHealth, TradeSignal
+          print("Recovery policy:", json.dumps({
+              "customer_dispatch_enabled": settings.CUSTOMER_PAPER_DISPATCH_ENABLED,
+              "customer_dispatch_scheduled": "customer-paper-dispatch" in settings.CELERY_BEAT_SCHEDULE,
+              "publication_alpaca_first": "client.option_quote" in inspect.getsource(get_trade_signal_quote),
+              "entry_high_enforced": "min(ceilings)" in inspect.getsource(_process_published_signal),
+              "pandas_loaded_at_setup": "pandas" in sys.modules,
+              "yfinance_loaded_at_setup": "yfinance" in sys.modules,
+          }))
+          print("Executor:", list(TradeExecutorHealth.objects.values("status", "entries_paused", "last_completed_at", "last_success_at", "last_error")))
+          print("Active DB signals:", list(TradeSignal.objects.filter(status__in=["published", "open"]).values("id", "symbol", "status", "paper_execution_enabled")))
+          client = AlpacaPaperClient()
+          clock = client.clock()
+          print("Broker read-only:", {"is_open": clock.get("is_open"), "positions": len(client.positions()), "open_orders": len([o for o in client.orders() if o.get("status") in ("new", "accepted", "partially_filled", "pending_new")])})
+          PY
+          docker compose logs --tail 5 execution_guardian < /dev/null
           docker system df
           sudo -n -l || true
           printf 'Shadow observer process count: '
