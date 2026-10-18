@@ -48,6 +48,7 @@ jobs:
                   print("Preserved referenced image", image_id)
           print(json.dumps({"removed_old_unused_quantelle_images": removed}))
           PY
+          docker builder prune -af --keep-storage 1GB < /dev/null
           df -h /
           cd /opt/alpaca
           docker compose ps
