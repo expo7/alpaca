@@ -1,0 +1,79 @@
+name: Quantelle recovery maintenance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quantelle-recovery-maintenance
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/quantelle_deploy
+          chmod 600 ~/.ssh/quantelle_deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Remove expired isolated dispatcher jobs and unused build cache
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -s' <<'REMOTE'
+          cd /opt/alpaca
+          set -e
+          test -z "$(docker compose ps -q customer_paper_worker)"
+          docker compose stop beat < /dev/null
+          trap 'docker compose start beat < /dev/null' EXIT
+          docker compose exec -T web python - <<'PY'
+          import os, json
+          from datetime import datetime, timezone
+          import redis
+          r = redis.Redis.from_url(os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0"))
+          queue = "customer-paper"
+          before = r.llen(queue)
+          now = datetime.now(timezone.utc)
+          removed = retained = 0
+          # Beat is stopped and the isolated customer worker is absent. Rotate
+          # exactly the original length; preserve non-expired or unknown messages.
+          for start in range(0, before, 500):
+              count = min(500, before-start)
+              items = r.lrange(queue, 0, count-1)
+              keep = []
+              for raw in items:
+                  expired = False
+                  try:
+                      headers = json.loads(raw).get("headers", {})
+                      stamp = datetime.fromisoformat(headers["expires"].replace("Z", "+00:00"))
+                      expired = headers.get("task") == "ranker.customer_paper_execution.dispatch_customer_paper" and stamp.tzinfo is not None and stamp < now
+                  except (ValueError, TypeError, KeyError, AttributeError):
+                      pass
+                  if expired:
+                      removed += 1
+                  else:
+                      keep.append(raw)
+                      retained += 1
+              pipe = r.pipeline(transaction=True)
+              pipe.ltrim(queue, len(items), -1)
+              if keep:
+                  pipe.rpush(queue, *keep)
+              pipe.execute()
+          try:
+              r.execute_command("MEMORY", "PURGE")
+          except redis.ResponseError:
+              pass
+          print(json.dumps({"queue": queue, "before": before, "expired_dispatchers_removed": removed, "retained": retained, "after": r.llen(queue), "redis_used_bytes": r.info("memory")["used_memory"]}))
+          PY
+          docker builder prune -f --filter until=24h --keep-storage 1GB < /dev/null
+          free -m
+          df -h /
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/quantelle_deploy
