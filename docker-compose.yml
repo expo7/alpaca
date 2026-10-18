@@ -20,6 +20,10 @@ services:
     image: quantelle-app:production
     build: .
     command: celery -A stockscores worker -l info --concurrency=1
+    # CI and the web migration check validate Django. Keep background
+    # processes from importing the unrelated HTTP/research stack at startup.
+    environment:
+      CELERY_SKIP_CHECKS: "1"
     oom_score_adj: -250
     env_file:
       - .env.docker
@@ -52,6 +56,8 @@ services:
     image: quantelle-app:production
     build: .
     command: celery -A stockscores beat -l info
+    environment:
+      CELERY_SKIP_CHECKS: "1"
     env_file:
       - .env.docker
     volumes:
