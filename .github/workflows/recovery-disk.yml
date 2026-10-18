@@ -1,0 +1,57 @@
+name: Quantelle bounded disk recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quantelle-recovery-disk
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/quantelle_deploy
+          chmod 600 ~/.ssh/quantelle_deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Remove only unused Quantelle images older than seven days
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -i ~/.ssh/quantelle_deploy "$PROD_USER@$PROD_HOST" 'bash -s' <<'REMOTE'
+          set -e
+          python3 - <<'PY'
+          import subprocess, json
+          from datetime import datetime, timezone, timedelta
+          cutoff = datetime.now(timezone.utc)-timedelta(days=7)
+          ids = subprocess.check_output(["docker", "image", "ls", "--filter", "dangling=true", "--quiet"], text=True).split()
+          removed = []
+          for image_id in dict.fromkeys(ids):
+              data = json.loads(subprocess.check_output(["docker", "image", "inspect", image_id], text=True))[0]
+              config = data.get("Config") or {}
+              created = datetime.fromisoformat(data["Created"].replace("Z", "+00:00"))
+              command = " ".join(config.get("Cmd") or [])
+              if config.get("WorkingDir") != "/app/stockscores" or "manage.py" not in command or created >= cutoff:
+                  continue
+              # No force: Docker refuses any image still referenced by a container.
+              result = subprocess.run(["docker", "image", "rm", image_id], capture_output=True, text=True)
+              if result.returncode == 0:
+                  removed.append({"id": image_id, "created": data["Created"], "size": data.get("Size")})
+              else:
+                  print("Preserved referenced image", image_id)
+          print(json.dumps({"removed_old_unused_quantelle_images": removed}))
+          PY
+          df -h /
+          cd /opt/alpaca
+          docker compose ps
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/quantelle_deploy
