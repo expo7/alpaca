@@ -55,8 +55,14 @@ def probe(label, url, params=None, summarize=None):
     return None
 
 clock = probe("clock", paper_url + "/v2/clock")
+# One batched discovery request; these are observed symbols, not a claim to
+# have screened the entire market. IEX volume/VWAP are venue-specific.
+universe = list(dict.fromkeys([symbol, "SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "AMD", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "MU", "INTC", "QCOM", "NFLX", "PLTR", "COIN", "HOOD", "JPM", "BAC", "GS", "XOM", "CVX", "LLY", "UNH", "WMT", "COST", "CAT", "BA", "GE", "SMH", "XLK", "XLF", "XLE", "XLV", "GLD", "TLT"]))
 stocks = probe("stock_snapshots", data_url + "/v2/stocks/snapshots",
-               {"symbols": "SPY,QQQ,IWM", "feed": "iex"})
+               {"symbols": ",".join(universe), "feed": "iex"},
+               summarize=lambda p: {ticker: {key: row.get(key) for key in
+                   ("dailyBar", "prevDailyBar", "minuteBar", "latestTrade")}
+                   for ticker, row in p.items()})
 stock_quotes = probe("stock_latest_quotes", data_url + "/v2/stocks/quotes/latest",
                      {"symbols": "SPY,QQQ,IWM", "feed": "iex"})
 quotes = probe("exact_option_quote", data_url + "/v1beta1/options/quotes/latest",
@@ -73,6 +79,52 @@ probe("paper_positions_count", paper_url + "/v2/positions",
       summarize=lambda p: {"count": len(p)})
 probe("paper_open_orders_count", paper_url + "/v2/orders", {"status": "open", "limit": 500},
       summarize=lambda p: {"count": len(p), "limit": 500})
+
+# Inspect the installed application, not the checkout: production revision
+# and image may differ. Never log config objects containing credentials.
+try:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockscores.settings")
+    import django
+    django.setup()
+    import hashlib
+    import inspect
+    from ranker.alpaca_paper import AlpacaPaperClient, load_paper_config
+    from ranker.models import TradeExecutorHealth, TradeSignal, TelegramNotification
+    from ranker.trade_quotes import get_trade_signal_quote
+    config = load_paper_config()
+    client = AlpacaPaperClient()
+    active = list(TradeSignal.objects.filter(status__in=["published", "open"]).values(
+        "id", "symbol", "status", "paper_execution_enabled", "entry_low", "entry_high",
+        "initial_stop", "target_1", "entry_deadline", "paper_entry_order_id"))
+    health = list(TradeExecutorHealth.objects.values(
+        "status", "entries_paused", "last_completed_at", "last_success_at", "last_error"))
+    runtime = {
+        "test": "installed_trade_pipeline", "at": datetime.now(timezone.utc).isoformat(),
+        "policy": {key: getattr(config, key) for key in
+                   ("enabled", "stock_feed", "option_feed", "max_open_positions",
+                    "max_spread_pct", "confirm_seconds", "max_quote_age_seconds")},
+        "executor": health, "active_signals": active,
+        "recent_signals": list(TradeSignal.objects.order_by("-id").values(
+            "id", "symbol", "status", "actual_entry", "final_exit")[:5]),
+        "notifications": list(TelegramNotification.objects.order_by("-id").values(
+            "id", "update__signal_id", "update__event_type", "status", "sent_at")[:8]),
+        "positions": [{key: p.get(key) for key in ("symbol", "qty", "avg_entry_price")}
+                      for p in client.positions()],
+        "orders": [{key: o.get(key) for key in
+                    ("id", "symbol", "side", "qty", "type", "status", "stop_price", "limit_price", "time_in_force")}
+                   for o in client.orders() if o.get("status") in
+                   ("new", "accepted", "partially_filled", "pending_new", "held", "pending_cancel", "pending_replace")],
+        "quote_code_sha256": hashlib.sha256(inspect.getsource(get_trade_signal_quote).encode()).hexdigest(),
+    }
+    print(json.dumps(runtime, default=str), flush=True)
+    if not config.enabled:
+        failures.append("paper_execution_disabled")
+    if not health or any(row.get("entries_paused") for row in health):
+        failures.append("executor_missing_or_entries_paused")
+except Exception as exc:
+    failures.append("installed_trade_pipeline")
+    print(json.dumps({"test": "installed_trade_pipeline", "result": "fail",
+                      "error": type(exc).__name__}), flush=True)
 quote = ((quotes or {}).get("quotes") or {}).get(contract) or {}
 try:
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(quote["t"].replace("Z", "+00:00"))).total_seconds()
