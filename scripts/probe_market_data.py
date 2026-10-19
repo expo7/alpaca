@@ -95,7 +95,9 @@ try:
     client = AlpacaPaperClient()
     active = list(TradeSignal.objects.filter(status__in=["published", "open"]).values(
         "id", "symbol", "status", "paper_execution_enabled", "entry_low", "entry_high",
-        "initial_stop", "target_1", "entry_deadline", "paper_entry_order_id"))
+        "initial_stop", "current_stop", "target_1", "entry_deadline", "paper_entry_order_id",
+        "paper_exit_order_id", "paper_order_status", "paper_last_error", "paper_last_checked_at",
+        "trigger_direction", "underlying_trigger_price", "trigger_first_seen_at", "do_not_chase_price"))
     health = list(TradeExecutorHealth.objects.values(
         "status", "entries_paused", "last_completed_at", "last_success_at", "last_error"))
     runtime = {
