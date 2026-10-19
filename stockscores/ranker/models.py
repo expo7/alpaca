@@ -992,3 +992,47 @@ class CustomerPaperEvent(models.Model):
     kind = models.CharField(max_length=40)
     details = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class OptionStrategy(models.Model):
+    """One paper strategy unit, with immutable legs and explicit net cashflows."""
+
+    request_id = models.CharField(max_length=100, unique=True)
+    symbol = models.CharField(max_length=6)
+    kind = models.CharField(max_length=24)
+    legs = models.JSONField()
+    thesis = models.TextField()
+    invalidation = models.TextField()
+    entry_limit = models.DecimalField(max_digits=12, decimal_places=2)
+    stop_loss_dollars = models.DecimalField(max_digits=12, decimal_places=2)
+    take_profit_dollars = models.DecimalField(max_digits=12, decimal_places=2)
+    risk = models.JSONField(default=dict)
+    entry_deadline = models.DateTimeField()
+    close_by = models.DateTimeField()
+    state = models.CharField(max_length=20, default="pending", db_index=True)
+    entry_order_id = models.CharField(max_length=64, blank=True)
+    exit_order_id = models.CharField(max_length=64, blank=True)
+    entry_attempted = models.BooleanField(default=False)
+    exit_attempted = models.BooleanField(default=False)
+    exit_generation = models.PositiveIntegerField(default=0)
+    entry_fill = models.DecimalField(max_digits=12, decimal_places=4, null=True)
+    exit_value = models.DecimalField(max_digits=12, decimal_places=4, null=True)
+    realized_pl = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    quote = models.JSONField(default=dict)
+    close_requested = models.BooleanField(default=False)
+    order_status = models.CharField(max_length=32, blank=True)
+    last_error = models.CharField(max_length=500, blank=True)
+    checked_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class OptionStrategyEvent(models.Model):
+    strategy = models.ForeignKey(OptionStrategy, on_delete=models.PROTECT, related_name="events")
+    kind = models.CharField(max_length=32)
+    details = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    notification_status = models.CharField(max_length=16, default="none")
+    notification_attempts = models.PositiveIntegerField(default=0)
+    notification_after = models.DateTimeField(null=True)
+    notification_error = models.CharField(max_length=255, blank=True)

@@ -6,6 +6,11 @@ from django.test import SimpleTestCase
 
 
 class ExecutionGuardianCommandTests(SimpleTestCase):
+    def setUp(self):
+        self.complex = patch("ranker.option_strategies.run_option_strategy_executor", return_value={"status": "idle"}).start()
+        patch("ranker.option_strategies.deliver_strategy_events").start()
+        self.addCleanup(patch.stopall)
+
     @patch("ranker.management.commands.execution_guardian.run_paper_trade_executor")
     @patch("ranker.management.commands.execution_guardian.run_execution_guardian")
     def test_stale_heartbeat_runs_original_executor_fallback(self, guardian, executor):

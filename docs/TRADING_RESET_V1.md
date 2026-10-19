@@ -1,5 +1,9 @@
 # Quantelle trading reset — RESET-v1
 
+## Complex strategies release — October 19
+
+The initial single-leg limitation is superseded by [COMPLEX_PAPER_STRATEGIES.md](COMPLEX_PAPER_STRATEGIES.md) once its production release is verified. Supported paper structures are vertical debit/credit spreads, iron condors, long straddles/strangles, calendars, diagonals and double diagonals. Use one strategy unit with one contract per leg and a combined broker order. Preview/publication/close actions, signed prices, risk bounds, actual per-leg fills and expiration management are documented there. Complex exits are monitored whole-position closes, not broker-held stops. Original single-leg stop handling remains intact. Cash-secured put assignment handling and foreign commodity options remain unsupported.
+
 Effective 2026-10-19, authorized by Brendan in the new trade-management conversation.
 
 ## Historical verdict

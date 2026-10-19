@@ -322,20 +322,10 @@ def _process_published_signal(signal, client, now, config):
         return "premium_outside_entry_range"
     if quote["spread_pct"] > config.max_spread_pct:
         return "spread_too_wide"
-    open_count = TradeSignal.objects.filter(
-        paper_execution_enabled=True,
-        status=TradeSignal.STATUS_OPEN,
-    ).count()
-    if open_count >= config.max_open_positions:
+    from .option_strategies import primary_entry_order
+    order = primary_entry_order(signal, client, _money(ask), config)
+    if order is None:
         return "position_limit"
-
-    order = client.submit_limit_order(
-        symbol=signal.contract_symbol,
-        quantity=signal.paper_quantity,
-        side="buy",
-        limit_price=_money(ask),
-        client_order_id=f"quantelle-{signal.pk}-entry",
-    )
     signal.paper_entry_order_id = order["id"]
     signal.paper_order_status = order.get("status", "submitted")[:32]
     signal.paper_submitted_at = now

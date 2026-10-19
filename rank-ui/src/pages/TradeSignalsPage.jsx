@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import TradeShareCard from "../components/TradeShareCard.jsx";
 import CustomerPaperPanel from "../components/CustomerPaperPanel.jsx";
 import BrokerSandboxPanel from "../components/BrokerSandboxPanel.jsx";
+import OptionStrategies from "../components/OptionStrategies.jsx";
 
 const ACTIVE = new Set(["published", "open"]);
 
@@ -377,6 +378,7 @@ export default function TradeSignalsPage({ token = "", isStaff = false, isAdmin 
 
       {(isAdmin || customerPaperAccess) && <CustomerPaperPanel token={token} signals={signals} />}
       {isAdmin && <BrokerSandboxPanel token={token} />}
+      <OptionStrategies />
 
       <nav aria-label="Trade record views" className="mb-6 flex gap-2 overflow-x-auto pb-2">
         {views.map((item) => <button key={item.id} type="button" aria-pressed={selectedView === item.id} onClick={() => setView(item.id)}

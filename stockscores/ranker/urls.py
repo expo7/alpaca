@@ -1,5 +1,6 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
+from .option_strategy_views import OptionStrategyList, OptionStrategyOperator
 from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView, CustomerPaperAccountView, CustomerPaperExecutionsView
 from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView, BrokerSandboxOptionsAccessView
 from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView, StaffShadowDashboardView, StaffShadowAccountView
@@ -116,6 +117,8 @@ bot_forward_runs = BotViewSet.as_view({"get": "forward_runs"})
 bot_forward_latest = BotViewSet.as_view({"get": "forward_runs_latest"})
 
 urlpatterns = [
+    path("option-strategies/", OptionStrategyList.as_view(), name="option-strategies"),
+    path("operator/option-strategies/", OptionStrategyOperator.as_view(), name="option-strategy-operator"),
     # Watchlists + nested items
     path("watchlists/", watchlist_list, name="watchlist-list"),
     path("watchlists/<int:pk>/", watchlist_detail, name="watchlist-detail"),
