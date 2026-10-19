@@ -82,11 +82,9 @@ def models_Q_primary():
 
 
 def primary_entry_order(signal, client, limit_price, config):
-    """Share the existing account position budget with complex strategy units."""
+    """Serialize contract reservations without imposing a position-count cap."""
     with transaction.atomic():
         TradeExecutorHealth.objects.select_for_update().get_or_create(singleton_id=1)
-        if exposure_count() >= config.max_open_positions:
-            return None
         for row in OptionStrategy.objects.filter(state__in=ACTIVE):
             if signal.contract_symbol in {l["symbol"] for l in row.legs}:
                 raise ValueError("Primary contract reserved by complex strategy " + str(row.pk))
@@ -291,9 +289,6 @@ def process(row, client, clock, now):
             return
         with transaction.atomic():
             TradeExecutorHealth.objects.select_for_update().get_or_create(singleton_id=1)
-            if exposure_count() >= client.config.max_open_positions:
-                row.last_error = "Waiting: shared primary/strategy position limit"
-                return
             collision = contract_conflict(row.legs, exclude=row.pk)
             if collision or _terminal_exposure(client, row):
                 raise ValueError(collision or "Broker already holds a reserved leg")

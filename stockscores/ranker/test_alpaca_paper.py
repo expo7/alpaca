@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase
 
-from .alpaca_paper import AlpacaPaperClient
+from .alpaca_paper import AlpacaPaperClient, load_paper_config
 
 
 PAPER_ENV = {
@@ -15,6 +15,10 @@ PAPER_ENV = {
 
 
 class AlpacaPaperOrderTests(SimpleTestCase):
+    @patch.dict(os.environ, {"ALPACA_PAPER_MAX_OPEN_POSITIONS": "2"})
+    def test_legacy_position_cap_is_disabled(self):
+        self.assertIsNone(load_paper_config().max_open_positions)
+
     @patch.dict(os.environ, PAPER_ENV)
     @patch("ranker.alpaca_paper.requests.request")
     def test_stop_order_is_single_leg_sell_to_close_gtc(self, request):

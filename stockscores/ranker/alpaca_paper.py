@@ -24,7 +24,7 @@ class PaperConfig:
     data_url: str
     stock_feed: str
     option_feed: str
-    max_open_positions: int
+    max_open_positions: int | None
     max_spread_pct: Decimal
     confirm_seconds: int
     max_quote_age_seconds: int
@@ -39,7 +39,9 @@ def load_paper_config():
         data_url=os.getenv("ALPACA_PAPER_DATA_URL", "https://data.alpaca.markets").rstrip("/"),
         stock_feed=os.getenv("ALPACA_PAPER_STOCK_FEED", "iex"),
         option_feed=os.getenv("ALPACA_PAPER_OPTION_FEED", "indicative"),
-        max_open_positions=int(os.getenv("ALPACA_PAPER_MAX_OPEN_POSITIONS", "2")),
+        # Primary paper trades are evaluated independently. Keep the diagnostic
+        # field explicit; legacy environment values no longer impose a cap.
+        max_open_positions=None,
         max_spread_pct=Decimal(os.getenv("ALPACA_PAPER_MAX_SPREAD_PCT", "8")),
         confirm_seconds=int(os.getenv("ALPACA_PAPER_CONFIRM_SECONDS", "60")),
         max_quote_age_seconds=int(os.getenv("ALPACA_PAPER_MAX_QUOTE_AGE_SECONDS", "30")),

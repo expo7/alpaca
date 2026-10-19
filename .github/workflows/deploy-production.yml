@@ -185,6 +185,8 @@ jobs:
           print('Recent notifications:', list(TelegramNotification.objects.order_by('-id').values('id', 'status', 'attempt_count', 'sent_at')[:3]))
           from ranker.alpaca_paper import AlpacaPaperClient
           client = AlpacaPaperClient()
+          assert client.config.max_open_positions is None
+          print('Primary paper concurrent trade-count limit: unlimited (legacy env ignored).')
           from ranker.option_strategies import capability
           print('Complex paper capability:', capability(client))
           print('Market clock:', client.clock())
