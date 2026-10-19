@@ -23,7 +23,7 @@ Complex positions do **not** have a broker-held stop. The existing independent G
 
 `close_by` must precede the earliest option expiration date, and `entry_deadline` must precede close_by. If the broker's next session would miss close_by, close during the final hour of the current session. Early assignment or unexpected leg inventory creates a staff incident and stops automatic orders for that affected strategy; inspect shares/options before recovery. Never sell the protective long alone.
 
-The Guardian manages one strategy per cycle, in oldest-check order, after primary recovery. No extra worker or recurring process. Shared account position capacity counts a complex unit once, not once per leg; a DB reservation lock serializes primary/complex entries. Contracts cannot overlap another active primary or complex record. Failed complex monitoring cannot interrupt primary exits. A stale management timestamp is visible.
+The Guardian manages one strategy per cycle, in oldest-check order, after primary recovery. No extra worker or recurring process. As authorized October 19, primary paper entries have no concurrent trade-count limit; each setup is evaluated independently. The legacy ALPACA_PAPER_MAX_OPEN_POSITIONS environment value is ignored and diagnostics report null (unlimited). A DB reservation lock still serializes primary/complex entries. Contracts cannot overlap another active primary or complex record. Broker buying power, quote validation and lifecycle controls still apply. Customer and shadow account limits are unchanged. Failed complex monitoring cannot interrupt primary exits. A stale management timestamp is visible; more active strategies lengthen the oldest-check rotation.
 
 ## Operator actions
 

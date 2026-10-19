@@ -273,12 +273,28 @@ class LifecycleTests(TestCase):
             process(row,self.client,self.client.clock(),timezone.now())
         self.assertNotEqual(row.state,'cancelled')
 
-    def test_shared_capacity_counts_one_strategy_not_each_leg(self):
+    def test_primary_entry_ignores_existing_independent_strategy_count(self):
         row=self.row()
         row.state='open';row.save()
         self.client.config.max_open_positions=1
-        dummy=SimpleNamespace(contract_symbol=occ(120),pk=999,paper_quantity=1)
-        self.assertIsNone(primary_entry_order(dummy,self.client,Decimal('1'),self.client.config))
+        dummy=Mock(contract_symbol=occ(120),pk=999,paper_quantity=1)
+        self.client.submit_limit_order=Mock(return_value={'id':'independent-entry'})
+        self.assertEqual(primary_entry_order(dummy,self.client,Decimal('1'),self.client.config),
+                         {'id':'independent-entry'})
+        self.client.submit_limit_order.assert_called_once()
+
+    def test_complex_entry_ignores_existing_independent_strategy_count(self):
+        occupied=self.open_row()
+        occupied.save()
+        data=dict(self.data)
+        data['request_id']='independent-second'
+        data['legs']=[leg(110),leg(115,'sell')]
+        self.client.prices.update({occ(110):(4,4.1),occ(115):(2.2,2.3)})
+        row,_=publish(data,client=self.client)
+        self.client.config.max_open_positions=1
+        process(row,self.client,self.client.clock(),timezone.now())
+        self.assertEqual(row.state,'entering')
+        self.assertTrue(row.entry_order_id)
 
     def test_pending_deadline_cancels_once_without_order(self):
         row = self.row()
