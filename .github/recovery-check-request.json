@@ -1,1 +1,1 @@
-{"requested_at":"2026-10-19T14:26:52Z","request_id":"verify-cancel17-and-research-2026-10-19T14:26:52Z","purpose":"Verify signal17 cancellation and notification52 delivery; inspect actual regular-session research completion and current healthy services"}
+{"requested_at":"2026-10-19T17:18:52.801Z","request_id":"trade-reset-current-production","purpose":"Verify actual production revision, entries paused/config, current inventory/protection and research before task replacement; default branch missing production modules"}
