@@ -117,7 +117,14 @@ def get_trade_signal_quote(signal, use_cache=True):
     try:
         import yfinance as yf
         ticker = yf.Ticker(signal.symbol)
-        underlying_price, market_stamp = _latest_underlying(ticker)
+        underlying_price, market_stamp = None, None
+        try:
+            underlying_price, market_stamp = _latest_underlying(ticker)
+        except Exception as exc:
+            if signal.instrument_type == "stock":
+                raise
+            # Stock history is optional for an independent delayed option quote.
+            result["underlying_error"] = type(exc).__name__
         result["underlying_price"] = underlying_price
 
         if signal.instrument_type != "stock":
