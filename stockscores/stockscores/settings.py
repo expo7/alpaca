@@ -11,7 +11,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import hashlib
 import os
+import sys
 from decimal import Decimal
 import dj_database_url
 from datetime import timedelta
@@ -23,16 +25,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY", "django-insecure-ey=ruy!1ep34%^k8+qf!zq=fnam%d(&7-wk=4$orxk2td0xf(g"
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes")
+
+# SECURITY WARNING: keep the secret key used in production secret. The
+# deterministic fallback exists only so local tests can boot without secrets.
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY and (DEBUG or "test" in sys.argv):
+    SECRET_KEY = hashlib.sha256(b"quantelle-local-test-key").hexdigest()
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY must be set when DEBUG is false")
 
 ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
-
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "https://quantelle.io,https://www.quantelle.io"
+    ).split(",") if o
+]
 
 # Application definition
 
@@ -47,11 +57,13 @@ INSTALLED_APPS = [
     "ranker",
     "corsheaders",
     "paper.apps.PaperConfig",
+    "macro.apps.MacroConfig",
 ]
-
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -93,7 +105,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     DATABASES["default"] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # DRF auth/permissions
 REST_FRAMEWORK = {
@@ -162,7 +175,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "static/"
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -188,6 +201,10 @@ PAPER_MARKET_DATA_MODE = os.getenv("PAPER_MARKET_DATA_MODE", "live")  # live or 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_BEAT_SCHEDULE = {
+    # V1 NOTE: alert email tasks are not scheduled here.
+    # ranker/management/commands/check_alerts.py and daily_autoscan.py
+    # exist as standalone management commands only and are not invoked
+    # by any beat job. No action needed to disable them for V1.
     "paper-algo-slices": {
         "task": "paper.tasks.run_algo_slices",
         "schedule": 60.0,
@@ -204,6 +221,31 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ranker.tasks.schedule_due_bots",
         "schedule": 30.0,
     },
+}
+
+# Telegram delivery is disabled until explicitly enabled in production. The
+# outbox task is isolated from paper execution and may safely retry failures.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_OPERATIONS_CHAT_ID = os.getenv("TELEGRAM_OPERATIONS_CHAT_ID", "")
+TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv(
+    "TELEGRAM_NOTIFICATIONS_ENABLED", "false"
+).lower() in ("1", "true", "yes")
+QUANTELLE_RESEARCH_OPERATOR_TOKEN = os.getenv("QUANTELLE_RESEARCH_OPERATOR_TOKEN", "")
+QUANTELLE_RESEARCH_OPERATOR_USERNAME = os.getenv(
+    "QUANTELLE_RESEARCH_OPERATOR_USERNAME", "quantelle-research-operator"
+)
+CELERY_BEAT_SCHEDULE["telegram-notification-outbox"] = {
+    "task": "ranker.deliver_pending_telegram_notifications",
+    "schedule": 15.0,
+}
+CELERY_BEAT_SCHEDULE["trade-lifecycle-certification-auditor"] = {
+    "task": "ranker.tasks.run_lifecycle_certification_auditor",
+    "schedule": 120.0,
+}
+CELERY_BEAT_SCHEDULE["research-run-heartbeat"] = {
+    "task": "ranker.tasks.monitor_research_run_heartbeat",
+    "schedule": 300.0,
 }
 
 HTTP_PROXY = os.getenv("HTTP_PROXY", "")
@@ -241,11 +283,42 @@ EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Live trading safeguard
 ALLOW_LIVE_BOTS = os.getenv("ALLOW_LIVE_BOTS", "false").lower() in ("1", "true", "yes")
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "bsavelli66@gmail.com"
-# EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
-EMAIL_HOST_PASSWORD = "jvcu litz cpvo lggs"  # example with spaces removed
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.zoho.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 EMAIL_SUBJECT_PREFIX = ""
+
+# Stripe Billing. Secrets are supplied through .env.docker and are never
+# committed. Checkout remains unavailable until all required values are set.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+STRIPE_APP_URL = os.getenv("STRIPE_APP_URL", "https://quantelle.io").rstrip("/")
+# Keep billing operational while the product is being validated publicly.
+# Set this to true at launch to require an active Pro subscription for active
+# trade details and their live quote/P&L endpoint.
+PRO_GATE_ENABLED = os.getenv("PRO_GATE_ENABLED", "false").lower() in ("1", "true", "yes")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# The customer worker is opt-in. Never enqueue into its unconsumed queue.
+CUSTOMER_PAPER_DISPATCH_ENABLED = os.getenv("CUSTOMER_PAPER_DISPATCH_ENABLED", "false").lower() in ("1", "true", "yes")
+if CUSTOMER_PAPER_DISPATCH_ENABLED:
+    CELERY_BEAT_SCHEDULE["customer-paper-dispatch"] = {
+        "task": "ranker.customer_paper_execution.dispatch_customer_paper",
+        "schedule": 15.0,
+        "options": {"queue": "customer-paper", "expires": 15},
+    }

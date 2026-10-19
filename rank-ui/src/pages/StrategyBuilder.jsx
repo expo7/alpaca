@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 const CONDITION_TYPES = [
   { value: "indicator", label: "Indicator" },

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthProvider.jsx";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 async function apiFetch(path, { token, ...opts } = {}) {
   const headers = { ...(opts.headers || {}) };

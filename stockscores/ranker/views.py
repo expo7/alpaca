@@ -1,3 +1,4 @@
+import os
 from unittest import result
 from rest_framework.views import APIView
 from datetime import timedelta
@@ -12,8 +13,10 @@ from .serializers import (
     BotSerializer,
     BacktestBatchRequestSerializer,
     BotForwardRunSerializer,
+    ArticleSerializer,
+    TradeSignalSerializer, OperatorTradePublicationSerializer, OperatorResearchRunSerializer,
 )
-from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun
+from .models import StockScore, StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRun, BotForwardRun, Article, OperationalTelegramAlert, ResearchRun, TelegramNotification, TradeExecutorHealth, TradeLifecycleCertification, TradeSignal, TradeSignalUpdate
 from .services import rank_symbols, compute_and_store
 from rest_framework.permissions import IsAuthenticated
 from django.core.cache import cache
@@ -39,6 +42,8 @@ from .serializers import AlertEventSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from ranker.scoring import technical_score, fundamental_score
 from ranker.models import WatchlistItem
 from rest_framework import generics, permissions
@@ -46,6 +51,25 @@ from .models import UserSettings
 from .serializers import UserSettingsSerializer
 from .metrics import get_yf_counter, increment_yf_counter
 from .tasks import compute_next_run_at, run_bot_once, run_backtest_batch
+from .analytics import AnalyticsEventThrottle, record_analytics_event
+from .models import AnalyticsEvent
+from .trade_quotes import get_paper_position, get_trade_signal_quote
+from .operator_auth import ResearchOperatorAuthentication
+from .trade_lifecycle import TradeLifecycleError, cancel_pending_signal, publish_trade_signal
+from .lifecycle_audit import certification_payload
+from .research_runs import research_health, report_run, run_payload
+from .billing import (
+    BillingConfigurationError,
+    billing_payload,
+    get_billing_profile,
+    require_stripe_config,
+    stripe_ready,
+    sync_subscription,
+    user_has_pro_access,
+)
+from .models import BillingProfile
+from django.conf import settings
+import stripe
 
 # ranker/views.py
 
@@ -109,6 +133,7 @@ class RegisterView(APIView):
         serializer = UserSignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        record_analytics_event(request, "registration", path="/")
         refresh = RefreshToken.for_user(user)
         return Response(
             {
@@ -159,8 +184,8 @@ class UserPreferenceView(APIView):
     GET  /api/user-prefs/   -> current user's email/scan prefs
     PATCH /api/user-prefs/  -> update fields
     """
-
     permission_classes = [IsAuthenticated]
+
 
     def get(self, request, *args, **kwargs):
         prefs, _ = UserPreference.objects.get_or_create(user=request.user)
@@ -881,6 +906,459 @@ class ConfigView(APIView):
         return Response({"allow_live_bots": getattr(settings, "ALLOW_LIVE_BOTS", False)})
 
 
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        payload = {
+                "id": user.id,
+                "username": user.get_username(),
+                "email": user.email,
+                "customer_paper_access": bool(user.is_superuser or os.getenv("CUSTOMER_PAPER_CUSTOMERS_ENABLED", "false").lower() == "true"),
+                "is_staff": bool(user.is_staff),
+                "is_superuser": bool(user.is_superuser),
+                "is_pro": user_has_pro_access(user),
+            }
+        return Response(payload)
+
+
+class BillingStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(billing_payload(request.user))
+
+
+class BillingCheckoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config()
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        profile = get_billing_profile(request.user)
+        if profile.has_pro_access:
+            return Response({"detail": "This account already has Pro access."}, status=status.HTTP_409_CONFLICT)
+
+        customer_kwargs = {"customer": profile.stripe_customer_id} if profile.stripe_customer_id else {}
+        if not profile.stripe_customer_id and request.user.email:
+            customer_kwargs["customer_email"] = request.user.email
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
+            client_reference_id=str(request.user.pk),
+            metadata={"user_id": str(request.user.pk)},
+            subscription_data={"metadata": {"user_id": str(request.user.pk)}},
+            success_url=f"{settings.STRIPE_APP_URL}/billing?checkout=success",
+            cancel_url=f"{settings.STRIPE_APP_URL}/billing?checkout=cancelled",
+            allow_promotion_codes=True,
+            **customer_kwargs,
+        )
+        return Response({"url": session.url})
+
+
+class BillingPortalView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config()
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        profile = get_billing_profile(request.user)
+        if not profile.stripe_customer_id:
+            return Response({"detail": "No Stripe customer exists for this account."}, status=status.HTTP_409_CONFLICT)
+        session = stripe.billing_portal.Session.create(
+            customer=profile.stripe_customer_id,
+            return_url=f"{settings.STRIPE_APP_URL}/billing",
+        )
+        return Response({"url": session.url})
+
+
+class StripeWebhookView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            require_stripe_config(require_webhook=True)
+            event = stripe.Webhook.construct_event(
+                request.body,
+                request.headers.get("Stripe-Signature", ""),
+                settings.STRIPE_WEBHOOK_SECRET,
+            )
+        except BillingConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except (ValueError, stripe.error.SignatureVerificationError):
+            return Response({"detail": "Invalid webhook signature."}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = event["type"]
+        obj = event["data"]["object"]
+        if event_type == "checkout.session.completed":
+            user_id = (obj.get("metadata") or {}).get("user_id") or obj.get("client_reference_id")
+            profile = BillingProfile.objects.filter(user_id=user_id).first() if user_id else None
+            if profile:
+                profile.stripe_customer_id = obj.get("customer") or profile.stripe_customer_id
+                profile.stripe_subscription_id = obj.get("subscription") or profile.stripe_subscription_id
+                profile.save()
+                if obj.get("subscription"):
+                    sync_subscription(stripe.Subscription.retrieve(obj["subscription"]), user=profile.user)
+        elif event_type in {
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        }:
+            sync_subscription(obj)
+
+        return Response({"received": True})
+
+
+class AnalyticsEventCreateView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnalyticsEventThrottle]
+
+    def post(self, request, *args, **kwargs):
+        record_analytics_event(
+            request,
+            request.data.get("event_name"),
+            path=request.data.get("path", ""),
+            metadata=request.data.get("metadata"),
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnalyticsSummaryView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = min(max(days, 1), 90)
+        since = timezone.now() - timedelta(days=days)
+        events = AnalyticsEvent.objects.filter(occurred_at__gte=since).filter(
+            Q(user__isnull=True) | Q(user__is_staff=False, user__is_superuser=False)
+        )
+        page_views = events.filter(event_name="page_view")
+
+        daily_rows = (
+            page_views.annotate(day=TruncDate("occurred_at"))
+            .values("day")
+            .annotate(
+                page_views=Count("id"),
+                visitors=Count("visitor_hash", distinct=True),
+            )
+            .order_by("day")
+        )
+        top_pages = list(
+            page_views.exclude(path="")
+            .values("path")
+            .annotate(views=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-views")[:12]
+        )
+        referrers = list(
+            page_views.exclude(referrer_host="")
+            .exclude(referrer_host__in=["quantelle.io", "www.quantelle.io"])
+            .values("referrer_host")
+            .annotate(views=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-views")[:10]
+        )
+        event_breakdown = list(
+            events.exclude(event_name="page_view")
+            .values("event_name")
+            .annotate(count=Count("id"), visitors=Count("visitor_hash", distinct=True))
+            .order_by("-count")
+        )
+
+        return Response(
+            {
+                "days": days,
+                "totals": {
+                    "visitors": page_views.values("visitor_hash").distinct().count(),
+                    "page_views": page_views.count(),
+                    "article_views": page_views.filter(path__startswith="/articles/").count(),
+                    "ranking_runs": events.filter(event_name="ranking_run").count(),
+                    "registrations": events.filter(event_name="registration").count(),
+                },
+                "daily": [
+                    {
+                        "date": row["day"].isoformat(),
+                        "page_views": row["page_views"],
+                        "visitors": row["visitors"],
+                    }
+                    for row in daily_rows
+                ],
+                "top_pages": top_pages,
+                "referrers": referrers,
+                "events": event_breakdown,
+            }
+        )
+
+
+class ArticleListCreateView(APIView):
+    """
+    GET /api/articles/ -> public list
+    POST /api/articles/ -> authenticated create
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        articles = Article.objects.all().order_by("-created_at")
+        serializer = ArticleSerializer(articles, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        if not request.user or not request.user.is_authenticated:
+            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({"detail": "Only staff can create articles."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ArticleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ArticleDetailView(APIView):
+    """
+    GET /api/articles/:slug -> public detail
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, slug, *args, **kwargs):
+        article = Article.objects.filter(slug=slug).first()
+        if not article:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ArticleSerializer(article)
+        return Response(serializer.data)
+
+
+class OperatorArticlePublicationView(APIView):
+    """Owner-issue transport for creating one public Markdown article."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if set(request.data) != {"title", "slug", "content"}:
+            return Response({"detail": "Expected title, slug, and content only."}, status=status.HTTP_400_BAD_REQUEST)
+        title, slug, content = (request.data.get(key) for key in ("title", "slug", "content"))
+        if (not isinstance(title, str) or not isinstance(slug, str) or not isinstance(content, str)
+                or not 20 <= len(title.strip()) <= 180 or not 20 <= len(content.strip()) <= 20000
+                or title != title.strip() or slug != slug.strip() or content != content.strip()):
+            return Response({"detail": "Invalid article fields or length."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ArticleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        existing = Article.objects.filter(slug=slug).first()
+        if existing:
+            if existing.title != title or existing.content != content:
+                return Response({"detail": "Slug already belongs to a different article."}, status=status.HTTP_409_CONFLICT)
+            return Response({"slug": slug, "already_applied": True})
+        article = serializer.save()
+        return Response({"slug": article.slug, "already_applied": False}, status=status.HTTP_201_CREATED)
+
+
+class TradeSignalListView(APIView):
+    """Public, read-only trade record. Drafts never leave the staff workflow."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        signals = (
+            TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False)
+            .select_related("lifecycle_certification")
+            .prefetch_related("updates")
+            .order_by("-published_at", "-created_at")
+        )
+        gate_enabled = getattr(settings, "PRO_GATE_ENABLED", False)
+        pro_access = user_has_pro_access(request.user)
+        payload = []
+        for signal in signals:
+            active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
+            if gate_enabled and active and not pro_access:
+                payload.append({
+                    "id": signal.id,
+                    "symbol": signal.symbol,
+                    "company_name": signal.company_name,
+                    "instrument_type": signal.instrument_type,
+                    "status": signal.status,
+                    "status_label": signal.get_status_display(),
+                    "risk_level": signal.risk_level,
+                    "published_at": signal.published_at,
+                    "is_locked": True,
+                })
+                continue
+            item = TradeSignalSerializer(signal, context={"include_staff_updates": bool(request.user and request.user.is_staff)}).data
+            item["is_locked"] = False
+            payload.append(item)
+        return Response(payload)
+
+
+class TradeSignalQuoteView(APIView):
+    """Best-effort delayed quote for one public, non-draft signal."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        signal = TradeSignal.objects.exclude(status=TradeSignal.STATUS_DRAFT).filter(is_test=False, pk=pk).first()
+        if not signal:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        active = signal.status in {TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN}
+        gate_enabled = getattr(settings, "PRO_GATE_ENABLED", False)
+        if gate_enabled and active and not user_has_pro_access(request.user):
+            return Response({"detail": "Quantelle Pro is required."}, status=status.HTTP_403_FORBIDDEN)
+        payload = get_trade_signal_quote(signal)
+        position = get_paper_position(signal)
+        payload["paper_position"] = position
+        payload["option_price_label"] = "Midpoint"
+        if signal.instrument_type != "stock" and not payload.get("option_midpoint"):
+            position_mark = position.get("current_price") if position and position.get("available") else None
+            fallback_mark = position_mark or payload.get("option_last")
+            if fallback_mark and float(fallback_mark) > 0:
+                payload["option_midpoint"] = fallback_mark
+                payload["option_price_label"] = (
+                    "Alpaca position mark" if position_mark else "Last option trade"
+                )
+                payload["option_price_is_fallback"] = True
+        return Response(payload)
+
+
+class TradeSignalLifecycleActionView(APIView):
+    """Narrow lifecycle API used by the unattended Daily Trade Research operator."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk, *args, **kwargs):
+        if request.data.get("action") != "cancel":
+            return Response({"detail": "Unsupported lifecycle action"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = cancel_pending_signal(
+                signal_id=pk,
+                note=request.data.get("note"),
+                expected_status=request.data.get("expected_status", TradeSignal.STATUS_PUBLISHED),
+            )
+        except TradeLifecycleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        notification = TelegramNotification.objects.filter(update=result.update).first()
+        return Response({
+            "signal_id": result.signal.pk,
+            "status": result.signal.status,
+            "event_id": result.update.pk,
+            "notification_id": notification.pk if notification else None,
+            "notification_status": notification.status if notification else "not_applicable",
+            "already_applied": result.already_applied,
+        })
+
+
+class TradeSignalPublicationView(APIView):
+    """Publish a validated setup for public tracking and Alpaca paper execution."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = OperatorTradePublicationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = publish_trade_signal(validated_data=serializer.validated_data)
+        except TradeLifecycleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        notification = TelegramNotification.objects.filter(update=result.update).first()
+        return Response({
+            "signal_id": result.signal.pk,
+            "status": result.signal.status,
+            "contract_symbol": result.signal.contract_symbol,
+            "paper_execution_enabled": result.signal.paper_execution_enabled,
+            "paper_quantity": result.signal.paper_quantity,
+            "test_mode": result.signal.is_test,
+            "event_id": result.update.pk,
+            "notification_id": notification.pk if notification else None,
+            "notification_status": notification.status if notification else "not_applicable",
+            "already_applied": result.already_applied,
+        }, status=status.HTTP_200_OK if result.already_applied else status.HTTP_201_CREATED)
+
+
+class LifecycleCertificationReportView(APIView):
+    """Authenticated, read-only latest lifecycle certification report."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        reports = (
+            TradeLifecycleCertification.objects.select_related("signal")
+            .order_by("-checked_at", "-id")
+        )
+        signal_id = request.query_params.get("signal_id")
+        if signal_id:
+            try:
+                reports = reports.filter(signal_id=int(signal_id))
+            except (TypeError, ValueError):
+                return Response({"detail": "signal_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            limit = min(max(int(request.query_params.get("limit", 25)), 1), 100)
+        except (TypeError, ValueError):
+            return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"count": reports.count(), "results": [certification_payload(item) for item in reports[:limit]]})
+
+
+class ResearchRunReportView(APIView):
+    """Read or submit narrow research heartbeat metadata through the operator token."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        runs = ResearchRun.objects.order_by("-expected_run_at")[:25]
+        return Response({"health": research_health(), "results": [run_payload(run) for run in runs]})
+
+    def post(self, request, *args, **kwargs):
+        serializer = OperatorResearchRunSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            run, already_applied = report_run(serializer.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({**run_payload(run), "already_applied": already_applied},
+                        status=status.HTTP_200_OK if already_applied else status.HTTP_201_CREATED)
+
+
+class OperatorIncidentReportView(APIView):
+    """Read-only internal incident history on the existing restricted token path."""
+
+    authentication_classes = [ResearchOperatorAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            limit = min(max(int(request.query_params.get("limit", 50)), 1), 100)
+        except (TypeError, ValueError):
+            return Response({"detail": "limit must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        updates = TradeSignalUpdate.objects.filter(audience=TradeSignalUpdate.AUDIENCE_STAFF).select_related("signal").order_by("-occurred_at", "-id")[:limit]
+        alerts = OperationalTelegramAlert.objects.select_related("signal").order_by("-created_at", "-id")[:limit]
+        health = TradeExecutorHealth.objects.filter(singleton_id=1).first()
+        return Response({
+            "guardian": None if health is None else {
+                "status": health.status, "entries_paused": health.entries_paused,
+                "last_completed_at": health.last_completed_at, "last_error": health.last_error,
+            },
+            "incidents": [{"id": update.pk, "signal_id": update.signal_id,
+                           "symbol": update.signal.symbol, "event_type": update.event_type,
+                           "note": update.note, "occurred_at": update.occurred_at} for update in updates],
+            "alerts": [{"id": alert.pk, "signal_id": alert.signal_id,
+                        "message": alert.message, "status": alert.status,
+                        "last_error": alert.last_error, "created_at": alert.created_at,
+                        "sent_at": alert.sent_at} for alert in alerts],
+        })
+
+
 class WatchlistViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = WatchlistSerializer
@@ -919,6 +1397,7 @@ DEFAULT_TA_WEIGHTS = {
 
 
 class RankView(APIView):
+    permission_classes = [permissions.AllowAny]
     """
     POST /api/rank
     {
@@ -929,12 +1408,18 @@ class RankView(APIView):
     }
     """
 
-    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         tickers = request.data.get("tickers", [])
         if not tickers or not isinstance(tickers, list):
             return Response({"detail": "tickers must be a non-empty list"}, status=400)
+
+        record_analytics_event(
+            request,
+            "ranking_run",
+            path="/dashboard",
+            metadata={"ticker_count": len(tickers)},
+        )
 
         tech_weight = float(request.data.get("tech_weight", 0.5))
         fund_weight = float(request.data.get("fund_weight", 0.5))

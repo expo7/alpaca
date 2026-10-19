@@ -26,3 +26,11 @@ celery -A stockscores beat -l info
 ```
 
 Repository code and the live service may differ by deployed revision. Verify the deployment before treating a local checkout as production state.
+
+## Branches and deployment
+
+`master` is the integration baseline and contains the production application plus current diagnostics. `production` identifies the tested release deployed on the server. Merge production fixes back into master; prepare future releases from master so fixes cannot remain stranded on the release branch.
+
+The [production workflow](.github/workflows/deploy-production.yml) tests the frontend and backend, builds the image on GitHub's runner, and deploys pushes to `production`. A newer master revision is not automatically a production deployment. Verify the installed commit and broker protection after a release. Keep environment files and credentials out of Git.
+
+The October 19 baseline reconciliation merges the installed `bb61c15` release into master without changing its application code, while preserving the newer read-only diagnostics and [trading reset procedure](docs/TRADING_RESET_V1.md).
