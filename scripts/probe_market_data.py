@@ -55,6 +55,9 @@ def probe(label, url, params=None, summarize=None):
     return None
 
 clock = probe("clock", paper_url + "/v2/clock")
+probe("paper_options_capability", paper_url + "/v2/account",
+      summarize=lambda p: {k: p.get(k) for k in
+                          ("status", "trading_blocked", "options_approved_level", "options_trading_level", "options_buying_power")})
 # One batched discovery request; these are observed symbols, not a claim to
 # have screened the entire market. IEX volume/VWAP are venue-specific.
 universe = list(dict.fromkeys([symbol, "SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "AMD", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "MU", "INTC", "QCOM", "NFLX", "PLTR", "COIN", "HOOD", "JPM", "BAC", "GS", "XOM", "CVX", "LLY", "UNH", "WMT", "COST", "CAT", "BA", "GE", "SMH", "XLK", "XLF", "XLE", "XLV", "GLD", "TLT"]))
