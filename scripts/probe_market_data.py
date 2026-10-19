@@ -122,6 +122,13 @@ try:
         "quote_code_sha256": hashlib.sha256(inspect.getsource(get_trade_signal_quote).encode()).hexdigest(),
     }
     print(json.dumps(runtime, default=str), flush=True)
+    try:
+        from ranker.models import OptionStrategy
+        from ranker.option_strategy_views import payload as strategy_payload
+        print(json.dumps({"test": "complex_paper_strategies", "strategies": [strategy_payload(s, True)
+                         for s in OptionStrategy.objects.order_by("-id")[:10]]}, default=str), flush=True)
+    except ImportError:
+        print(json.dumps({"test": "complex_paper_strategies", "status": "not_installed"}), flush=True)
     if not config.enabled:
         failures.append("paper_execution_disabled")
     if not health or any(row.get("entries_paused") for row in health):

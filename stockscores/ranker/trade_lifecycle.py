@@ -36,6 +36,11 @@ def publish_trade_signal(*, validated_data):
         raise TradeLifecycleError("Publication blocked: executor is not configured for Alpaca paper trading")
     if not config.api_key or not config.secret_key:
         raise TradeLifecycleError("Publication blocked: Alpaca paper credentials are unavailable")
+    from .models import OptionStrategy
+    candidate = TradeSignal(**{k:v for k,v in validated_data.items() if k not in {"request_id", "paper_quantity", "test_mode"}})
+    for strategy in OptionStrategy.objects.filter(state__in=["pending", "entering", "open", "closing", "blocked"]):
+        if candidate.contract_symbol in {leg["symbol"] for leg in strategy.legs}:
+            raise TradeLifecycleError("Publication blocked: contract reserved by complex strategy " + str(strategy.pk))
 
     values = dict(validated_data)
     values.pop("request_id")

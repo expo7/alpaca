@@ -46,6 +46,15 @@ class Command(BaseCommand):
                 self.stdout.write(f"guardian={guardian_result}", ending="\n")
 
             # Observe resources after exit recovery; notice failures cannot interrupt it.
+            # Reuse this existing process; single-leg protection/recovery runs first.
+            try:
+                from ranker.option_strategies import run_option_strategy_executor, deliver_strategy_events
+                complex_result = run_option_strategy_executor()
+                if complex_result.get("status") not in {"idle", "market_closed"}:
+                    self.stdout.write(f"complex={complex_result}")
+                deliver_strategy_events()
+            except Exception as exc:
+                self.stdout.write(f"complex monitoring failed: {type(exc).__name__}: {str(exc)[:255]}")
             try:
                 available = available_memory_mb()
                 if available is not None and available < 128 and not memory_warning:

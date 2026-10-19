@@ -52,7 +52,7 @@ jobs:
 
       - name: Test trade lifecycle infrastructure
         working-directory: stockscores
-        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_paper_data_fallback ranker.test_recovery ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard
+        run: python manage.py test ranker.test_public_sitemap ranker.test_public_article_pages ranker.test_lifecycle_certification ranker.test_trade_lifecycle ranker.test_trade_signals ranker.test_customer_paper ranker.test_customer_paper_execution ranker.test_telegram ranker.test_paper_executor ranker.test_paper_data_fallback ranker.test_recovery ranker.test_execution_guardian_command ranker.test_shadow ranker.test_shadow_executor ranker.test_shadow_observer ranker.test_shadow_dashboard ranker.test_option_strategies
 
       - name: Build application image off the production server
         run: |
@@ -185,6 +185,8 @@ jobs:
           print('Recent notifications:', list(TelegramNotification.objects.order_by('-id').values('id', 'status', 'attempt_count', 'sent_at')[:3]))
           from ranker.alpaca_paper import AlpacaPaperClient
           client = AlpacaPaperClient()
+          from ranker.option_strategies import capability
+          print('Complex paper capability:', capability(client))
           print('Market clock:', client.clock())
           print('Paper positions count:', len(client.positions()))
           print('Paper open orders count:', len([o for o in client.orders() if o.get('status') in ('new', 'accepted', 'partially_filled', 'pending_new')]))

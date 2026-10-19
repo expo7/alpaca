@@ -55,7 +55,16 @@ jobs:
                   raise ValueError("QUANTELLE_RESEARCH_OPERATOR_TOKEN is not configured")
               payload = json.loads(issue.get("body") or "")
               action = payload.get("action")
-              if action == "cancel":
+              if action in {"strategy_publish", "strategy_preview", "strategy_close", "strategy_cancel", "strategy_retry"}:
+                  if not issue.get("title", "").startswith("[Quantelle Operator] Strategy"):
+                      raise ValueError("Complex strategy actions require a Strategy title")
+                  operator_url = "https://quantelle.io/api/operator/option-strategies/"
+                  operator_payload = dict(payload)
+                  if action in {"strategy_publish", "strategy_preview"}:
+                      if "request_id" in payload:
+                          raise ValueError("request_id is derived from the issue")
+                      operator_payload["request_id"] = f"github-strategy-issue-{issue_number}"
+              elif action == "cancel":
                   allowed_keys = {"action", "signal_id", "expected_status", "note"}
                   if set(payload) - allowed_keys:
                       raise ValueError("Cancellation request contains unsupported fields")
@@ -208,7 +217,19 @@ jobs:
               with urllib.request.urlopen(operator_request, timeout=30) as response:
                   result = json.load(response)
 
-              if action == "report_run":
+              if action == "strategy_preview":
+                  summary = "Complex PAPER strategy preview; no orders submitted.\n\n```json\n" + json.dumps(result, indent=2) + "\n```"
+              elif action.startswith("strategy_"):
+                  summary = ("Quantelle complex PAPER strategy action accepted.\n\n"
+                      f"- Strategy: `{result['id']}`\n"
+                      f"- State: `{result['state']}`\n"
+                      f"- Entry order: `{result.get('entry_order_id', '')}`\n"
+                      f"- Exit order: `{result.get('exit_order_id', '')}`\n"
+                      f"- Entry fill: `{result.get('entry_fill')}`\n"
+                      f"- Protection: {result['protection']}\n"
+                      f"- Details: https://quantelle.io/signals#strategy-{result['id']}\n"
+                      f"- Already applied: `{result['already_applied']}`")
+              elif action == "report_run":
                   summary = (
                       "Quantelle research run recorded.\n\n"
                       f"- Expected: `{result['expected_run_at']}`\n"
