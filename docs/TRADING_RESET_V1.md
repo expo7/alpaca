@@ -38,3 +38,7 @@ Historical verdict: the preceding trading-task process was a COMPLETE FAILURE as
 ## Deployment blocker to resolve separately
 
 Default master currently lacks production trading modules, migrations and deploy-production.yml present at bb61c15. This is verified by git tree inspection and GitHub fetch 404. The cause is unverified. Do not deploy master blindly, or describe the diagnostic commit as an application deployment. Before the next application release, reconcile default branch against installed bb61c15, preserve newer diagnostic changes and user work, review the complete diff, run lifecycle tests and restore an auditable deployment path. This deferred repair is important; trigger is BEFORE NEXT APPLICATION DEPLOYMENT. It does not block current installed paper execution or the working on-demand diagnostic.
+
+## Verified entry and protection — 17:22:36 UTC
+
+Probe149 confirms signal18 OPEN, actual_entry17.10; broker quantity1 QQQ261120P00720000 average17.10; exactly one GTC sell stop at15.00, quantity1, status new, order65f46605-c4af-40bc-93cc-69f00a625b3e, matching the stored exit ID. Guardian healthy, entries enabled, last completion17:22:28 UTC, empty error. Notifications53(publication) and54(triggered/fill) sent. Target1 remains20.00. This verifies present primary paper execution/protection; it does not prove future automation execution or a future outcome. Next checks: existing recovery11:00 Phoenix and replacement primary12:00 Phoenix.
