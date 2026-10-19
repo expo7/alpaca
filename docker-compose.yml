@@ -1,22 +1,48 @@
-version: "3.9"
-
 services:
   web:
+    restart: unless-stopped
+    image: quantelle-app:production
     build: .
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && gunicorn stockscores.wsgi:application --bind 0.0.0.0:8000"
     env_file:
       - .env.docker
     volumes:
       - .:/app
     ports:
-      - "8000:8000"
+      # NGINX runs on the host and is the only process that should reach Gunicorn.
+      - "127.0.0.1:8000:8000"
     depends_on:
       - db
       - redis
 
   worker:
+    restart: unless-stopped
+    image: quantelle-app:production
     build: .
-    command: celery -A stockscores worker -l info
+    command: celery -A stockscores worker -l info --concurrency=1
+    # CI and the web migration check validate Django. Keep background
+    # processes from importing the unrelated HTTP/research stack at startup.
+    environment:
+      CELERY_SKIP_CHECKS: "1"
+    oom_score_adj: -250
+    env_file:
+      - .env.docker
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
+  customer_paper_worker:
+    profiles: [admin-paper]
+    restart: "no"
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.25
+    oom_score_adj: 500
+    image: quantelle-app:production
+    build: .
+    command: celery -A stockscores worker -l info -Q customer-paper --concurrency=1 --hostname=customer-paper@%h
     env_file:
       - .env.docker
     volumes:
@@ -26,8 +52,26 @@ services:
       - redis
 
   beat:
+    restart: unless-stopped
+    image: quantelle-app:production
     build: .
     command: celery -A stockscores beat -l info
+    environment:
+      CELERY_SKIP_CHECKS: "1"
+    env_file:
+      - .env.docker
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
+  execution_guardian:
+    oom_score_adj: -500
+    restart: unless-stopped
+    image: quantelle-app:production
+    build: .
+    command: python manage.py execution_guardian --interval 30
     env_file:
       - .env.docker
     volumes:
@@ -37,6 +81,8 @@ services:
       - redis
 
   db:
+    oom_score_adj: -500
+    restart: unless-stopped
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: stockscores
@@ -44,13 +90,11 @@ services:
       POSTGRES_DB: stockscores
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
 
   redis:
+    oom_score_adj: -500
+    restart: unless-stopped
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
 
 volumes:
   db_data:

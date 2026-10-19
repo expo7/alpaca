@@ -1,4 +1,4 @@
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 async function apiFetch(path, token, options = {}) {
   const headers = { ...(options.headers || {}) };

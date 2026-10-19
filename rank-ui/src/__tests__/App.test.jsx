@@ -22,11 +22,11 @@ describe("App routing and navigation smoke tests", () => {
   test("renders Landing when unauthenticated", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({}))));
     renderAppWithAuth();
-    expect(screen.getByText(/Rank stocks by/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sign in to your dashboard/i)).toBeInTheDocument();
+    expect(screen.getByText(/Keep the excitement/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Sign in$/i })).toBeInTheDocument();
   });
 
-  test("renders navbar and switches pages when authenticated", async () => {
+  test("opens trade plans with the focused navigation when authenticated", async () => {
     // Seed token so AuthProvider treats user as logged in
     localStorage.setItem("access", "token");
     localStorage.setItem("username", "tester");
@@ -43,14 +43,87 @@ describe("App routing and navigation smoke tests", () => {
 
     renderAppWithAuth();
 
-    const dashboards = await screen.findAllByText(/Dashboard/i);
-    expect(dashboards.length).toBeGreaterThan(0);
-    // Strategies tab
-    await userEvent.click(screen.getAllByRole("button", { name: /Strategies/i })[0]);
-    await waitFor(() => expect(screen.getByText(/Strategy Builder/i)).toBeInTheDocument());
+    expect(await screen.findByRole("heading", { name: "Published trade setups" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Trade Plans" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Results" })).toHaveAttribute("href", "/signals?view=completed");
+    expect(screen.queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
+    // V1: Alerts and other non-dashboard tabs are hidden
+    expect(screen.queryByRole("button", { name: /^Alerts$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Orders/i })).not.toBeInTheDocument();
+  });
 
-    // Orders tab
-    await userEvent.click(screen.getAllByRole("button", { name: /Orders/i })[0]);
-    await waitFor(() => expect(screen.getByText(/Inline-manage bracket/i)).toBeInTheDocument());
+  test("chart button is hidden in V1 Top Opportunities rows", async () => {
+    window.history.replaceState({}, "", "/opportunities");
+    localStorage.setItem("access", "token");
+    localStorage.setItem("username", "tester");
+
+    const fetchMock = vi.fn((url) => {
+      if (url.includes("/watchlists/")) return Promise.resolve(mockResponse({ results: [] }));
+      if (url.includes("/api/default-tickers")) {
+        return Promise.resolve(mockResponse({ symbols: ["AAPL"] }));
+      }
+      if (url.includes("/api/rank")) {
+        return Promise.resolve(
+          mockResponse({
+            results: [
+              {
+                symbol: "AAPL",
+                final_score: 72.4,
+                tech_score: 70,
+                fund_score: 74,
+                ta_breakdown: {
+                  trend_raw: 0.4,
+                  momentum_raw: 0.3,
+                  volume_raw: 0.2,
+                  meanreversion_raw: -0.1,
+                },
+              },
+            ],
+            errors: [],
+          })
+        );
+      }
+      if (url.includes("/api/macro/dashboard")) {
+        return Promise.resolve(
+          mockResponse({
+            regime: "Risk-On",
+            confidence: 60,
+            summary: "Test summary",
+            themes: [],
+            updated_at: "2026-03-28T12:00:00Z",
+          })
+        );
+      }
+      return Promise.resolve(mockResponse({ results: [] }));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAppWithAuth();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Find opportunities/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("AAPL")).toBeInTheDocument();
+    });
+
+    // V1: action buttons are removed from Top Opportunities
+    expect(screen.queryByRole("button", { name: "Chart" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Why" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Set alert/i })).not.toBeInTheDocument();
+  });
+
+  test("shows a development-only navbar preview without creating authentication", async () => {
+    window.history.replaceState({}, "", "/dashboard?local-navbar-preview=1");
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(mockResponse({ results: [] }))));
+
+    renderAppWithAuth();
+
+    expect(await screen.findByRole("button", { name: /^Log out$/i })).toBeInTheDocument();
+    expect(localStorage.getItem("access")).toBeNull();
+    expect(localStorage.getItem("auth_user")).toBeNull();
+
+    window.history.replaceState({}, "", "/");
   });
 });

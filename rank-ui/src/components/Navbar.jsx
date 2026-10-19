@@ -1,12 +1,9 @@
-// ==============================
-// File: src/components/Navbar.jsx
-// Simple top nav using page + onNavigate, no react-router
-// ==============================
-
-import Logo from "./Logo.jsx";
+import { useState } from "react";
+import { APP_NAME, APP_TAGLINE } from "../brand";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "macro", label: "Macro" },
   { id: "watchlists", label: "Watchlists" },
   { id: "alerts", label: "Alerts" },
   { id: "orders", label: "Orders" },
@@ -20,86 +17,155 @@ const tabs = [
   { id: "strategies", label: "Strategies" },
 ];
 
+const V1_TABS = [
+  { id: "signals", label: "Trade Plans", href: "/signals" },
+  { id: "results", label: "Results", href: "/signals?view=completed" },
+  { id: "articles", label: "Learn", href: "/articles" },
+];
+
 export default function Navbar({
+  isAuthed = false,
   user,
   active,
   onNavigate,
   onLogout,
+  onSignIn,
+  v1Mode = false,
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const desktopNav = v1Mode ? "min-[900px]:flex min-[900px]:items-center min-[900px]:gap-1" : "min-[1350px]:flex min-[1350px]:items-center min-[1350px]:gap-1";
+  const mobileNav = v1Mode ? "min-[900px]:hidden" : "min-[1350px]:hidden";
+  const baseTabs = v1Mode ? V1_TABS : tabs;
+  const visibleTabs = baseTabs;
+  const isStaff = Boolean(user?.is_staff || user?.is_superuser);
+  const staffTabs = [
+    { id: "dashboard", label: "Today" },
+    { id: "opportunities", label: "Opportunities" },
+    { id: "analytics", label: "Analytics" },
+    { id: "shadow", label: "Shadow research" },
+  ];
+
+  function navigate(tabId) {
+    onNavigate(tabId);
+    setMenuOpen(false);
+  }
+
+  const renderTabs = (className) => visibleTabs.map((tab) => {
+    const classNames = `${className} ${active === tab.id
+      ? "bg-indigo-500/15 text-indigo-200"
+      : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"}`;
+    return tab.href ? (
+      <a key={tab.id} href={tab.href} className={classNames}
+        aria-current={active === tab.id ? "page" : undefined}
+        onClick={(event) => {
+          // Results changes the query and must also work from an existing trade view.
+          if (tab.id === "results" || (tab.id === "signals" && window.location.search) || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          navigate(tab.id);
+        }}>{tab.label}</a>
+    ) : (
+      <button key={tab.id} type="button" onClick={() => navigate(tab.id)} className={classNames}>
+        {tab.label}
+      </button>
+    );
+  });
+
   return (
-    <header className="navbar border-b border-slate-800 bg-slate-950/80 backdrop-blur w-full">
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-        {/* Left: logo + brand */}
-        <div className="flex items-center gap-3">
-          <Logo className="w-8 h-8" />
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold tracking-wide">
-              Stock Ranker
-            </span>
-            <span className="text-xs text-slate-400">
-              Tech + fundamentals, one score.
-            </span>
+    <header className="navbar relative w-full border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        <div className="flex min-h-16 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <a href="/" className="flex min-w-0 flex-col">
+              <span className="truncate text-[0.78rem] font-black tracking-[0.14em] text-white">
+                {APP_NAME.toUpperCase()}
+              </span>
+              <span className="hidden text-xs text-slate-400 min-[1350px]:block">
+                {APP_TAGLINE}
+              </span>
+            </a>
+
+            <nav
+              aria-label="Primary navigation"
+              className={`hidden ${desktopNav}`}
+            >
+              {renderTabs("rounded-md px-2 py-2 text-xs transition")}
+            </nav>
+            {v1Mode && isStaff && (
+              <details className="relative">
+                <summary className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">Staff tools</summary>
+                <nav aria-label="Staff tools" className="absolute left-0 top-full z-50 mt-2 grid min-w-48 gap-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-xl">
+                  {staffTabs.map((tab) => (
+                    <button key={tab.id} type="button" className="rounded-md px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-800"
+                      onClick={(event) => {
+                        navigate(tab.id);
+                        event.currentTarget.closest("details").open = false;
+                      }}>{tab.label}</button>
+                  ))}
+                </nav>
+              </details>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 text-xs sm:gap-3">
+            {isAuthed ? (
+              <>
+                {user && (
+                  <div className="hidden flex-col items-end leading-tight min-[1350px]:flex">
+                    <span className="font-medium text-slate-200">
+                      {user.username || user.email || "User"}
+                    </span>
+                    {user.email && (
+                      <span className="text-slate-400">{user.email}</span>
+                    )}
+                  </div>
+                )}
+                <a href="/billing" className="rounded-md px-2 py-1.5 text-xs text-slate-300 hover:text-white">Pro</a>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              onSignIn ? (
+                <button type="button" onClick={onSignIn} className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white transition hover:bg-indigo-500">
+                  Sign in
+                </button>
+              ) : (
+                <a href="/" className="rounded-full border border-indigo-500 bg-indigo-600 px-3 py-1.5 font-semibold text-white transition hover:bg-indigo-500">
+                  Sign in / Create account
+                </a>
+              )
+            )}
+            <button
+              type="button"
+              aria-controls="navbar-menu"
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+              onClick={() => setMenuOpen((isOpen) => !isOpen)}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 ${mobileNav}`}
+            >
+              <span aria-hidden="true" className="text-lg leading-none">
+                {menuOpen ? "×" : "☰"}
+              </span>
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Center: nav tabs */}
-        <nav className="hidden md:flex items-center gap-2 text-sm">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onNavigate(tab.id)}
-              className={`px-3 py-1.5 rounded-full border text-xs transition
-                ${
-                  active === tab.id
-                    ? "bg-indigo-600/90 border-indigo-500 text-white shadow-sm"
-                    : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-                }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {menuOpen && (
+        <nav
+          id="navbar-menu"
+          aria-label="Navigation menu"
+          className={`border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur sm:px-6 ${mobileNav}`}
+        >
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-1 sm:grid-cols-3">
+            {renderTabs("rounded-md px-3 py-2 text-left text-xs transition")}
+          </div>
         </nav>
-
-        {/* Right: user + logout */}
-        <div className="flex items-center gap-3 text-xs">
-          {user && (
-            <div className="hidden sm:flex flex-col items-end leading-tight">
-              <span className="text-slate-200 font-medium">
-                {user.username || user.email || "User"}
-              </span>
-              {user.email && (
-                <span className="text-slate-500">{user.email}</span>
-              )}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={onLogout}
-            className="px-3 py-1.5 rounded-full border border-slate-700 text-slate-200 hover:bg-slate-800 text-xs"
-          >
-            Log out
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile nav row */}
-      <div className="md:hidden border-t border-slate-800 px-3 py-2 flex gap-2 overflow-x-auto text-xs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onNavigate(tab.id)}
-            className={`px-3 py-1.5 rounded-full border whitespace-nowrap ${
-              active === tab.id
-                ? "bg-indigo-600/90 border-indigo-500 text-white"
-                : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      )}
     </header>
   );
 }

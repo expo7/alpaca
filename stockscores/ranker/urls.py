@@ -1,5 +1,8 @@
 # [NOTE-WATCHLIST-URLS]
 from django.urls import path
+from .customer_paper_views import CustomerPaperConnectionView, CustomerPaperConnectView, CustomerPaperCallbackView, CustomerPaperAccountView, CustomerPaperExecutionsView
+from .broker_sandbox_views import BrokerSandboxView, BrokerSandboxOrderView, BrokerSandboxCancelOrderView, BrokerSandboxMirrorPreviewView, BrokerSandboxCreateAccountView, BrokerSandboxFundingView, BrokerSandboxOptionsAccessView
+from .shadow_views import ShadowResearchView, ShadowObservationView, ShadowCorrectionView, StaffShadowDashboardView, StaffShadowAccountView
 from .views import (
     RankView,
     RefreshView,
@@ -28,6 +31,19 @@ from .views import (
     BotViewSet,
     YFinanceUsageView,
     ConfigView,
+    CurrentUserView,
+    ArticleListCreateView,
+    ArticleDetailView,
+    OperatorArticlePublicationView,
+    AnalyticsEventCreateView,
+    AnalyticsSummaryView,
+    TradeSignalListView,
+    TradeSignalQuoteView,
+    TradeSignalLifecycleActionView, TradeSignalPublicationView, LifecycleCertificationReportView, ResearchRunReportView, OperatorIncidentReportView,
+    BillingStatusView,
+    BillingCheckoutView,
+    BillingPortalView,
+    StripeWebhookView,
 )
 
 watchlist_list = WatchlistViewSet.as_view({"get": "list", "post": "create"})
@@ -141,6 +157,19 @@ urlpatterns = [
     path("settings/me", UserSettingsMeView.as_view(), name="user-settings-me"),
     path("user-prefs/", UserPreferenceView.as_view(), name="user-preferences"),
     path("register/", RegisterView.as_view(), name="register"),
+    path("alpaca-paper/account/", CustomerPaperAccountView.as_view(), name="customer-paper-account"),
+    path("alpaca-paper/executions/", CustomerPaperExecutionsView.as_view(), name="customer-paper-executions"),
+    path("alpaca-paper/connection/", CustomerPaperConnectionView.as_view(), name="customer-paper-connection"),
+    path("alpaca-paper/connect/", CustomerPaperConnectView.as_view(), name="customer-paper-connect"),
+    path("alpaca-paper/callback/", CustomerPaperCallbackView.as_view(), name="customer-paper-callback"),
+    path("broker-sandbox/", BrokerSandboxView.as_view(), name="broker-sandbox"),
+    path("broker-sandbox/accounts/create/", BrokerSandboxCreateAccountView.as_view(), name="broker-sandbox-create-account"),
+    path("broker-sandbox/accounts/<uuid:account_id>/", BrokerSandboxView.as_view(), name="broker-sandbox-account"),
+    path("broker-sandbox/accounts/<uuid:account_id>/funding/", BrokerSandboxFundingView.as_view(), name="broker-sandbox-funding"),
+    path("broker-sandbox/accounts/<uuid:account_id>/options-access/", BrokerSandboxOptionsAccessView.as_view(), name="broker-sandbox-options-access"),
+    path("broker-sandbox/accounts/<uuid:account_id>/orders/", BrokerSandboxOrderView.as_view(), name="broker-sandbox-order"),
+    path("broker-sandbox/accounts/<uuid:account_id>/orders/<uuid:order_id>/cancel/", BrokerSandboxCancelOrderView.as_view(), name="broker-sandbox-cancel-order"),
+    path("broker-sandbox/accounts/<uuid:account_id>/mirror-preview/", BrokerSandboxMirrorPreviewView.as_view(), name="broker-sandbox-mirror-preview"),
     path("backtest/", BacktestView.as_view(), name="backtest"),
     path(
         "strategies/validate/",
@@ -185,4 +214,26 @@ urlpatterns = [
     ),
     path("metrics/yfinance/", YFinanceUsageView.as_view(), name="yfinance-usage"),
     path("config/", ConfigView.as_view(), name="config"),
+    path("auth/me/", CurrentUserView.as_view(), name="auth-me"),
+    path("articles/", ArticleListCreateView.as_view(), name="article-list-create"),
+    path("articles/<slug:slug>/", ArticleDetailView.as_view(), name="article-detail"),
+    path("operator/articles/publish/", OperatorArticlePublicationView.as_view(), name="operator-article-publication"),
+    path("analytics/events/", AnalyticsEventCreateView.as_view(), name="analytics-event-create"),
+    path("analytics/summary/", AnalyticsSummaryView.as_view(), name="analytics-summary"),
+    path("trade-signals/", TradeSignalListView.as_view(), name="trade-signal-list"),
+    path("trade-signals/<int:pk>/quote/", TradeSignalQuoteView.as_view(), name="trade-signal-quote"),
+    path("operator/trade-signals/<int:pk>/lifecycle/", TradeSignalLifecycleActionView.as_view(), name="trade-signal-lifecycle-action"),
+    path("operator/trade-signals/publish/", TradeSignalPublicationView.as_view(), name="trade-signal-publication"),
+    path("operator/lifecycle-certifications/", LifecycleCertificationReportView.as_view(), name="lifecycle-certification-report"),
+    path("operator/research-runs/", ResearchRunReportView.as_view(), name="research-run-report"),
+    path("staff/shadow-research/", StaffShadowDashboardView.as_view(), name="staff-shadow-dashboard"),
+    path("staff/shadow-research/account/", StaffShadowAccountView.as_view(), name="staff-shadow-account"),
+    path("operator/shadow-research/", ShadowResearchView.as_view(), name="shadow-research"),
+    path("operator/shadow-research/<int:pk>/observe/", ShadowObservationView.as_view(), name="shadow-observe"),
+    path("operator/shadow-research/<int:pk>/corrections/", ShadowCorrectionView.as_view(), name="shadow-correction"),
+    path("operator/incidents/", OperatorIncidentReportView.as_view(), name="operator-incident-report"),
+    path("billing/status/", BillingStatusView.as_view(), name="billing-status"),
+    path("billing/checkout/", BillingCheckoutView.as_view(), name="billing-checkout"),
+    path("billing/portal/", BillingPortalView.as_view(), name="billing-portal"),
+    path("billing/webhook/", StripeWebhookView.as_view(), name="stripe-webhook"),
 ]

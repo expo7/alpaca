@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 export default function InstrumentSearch({ onSelect }) {
   const [query, setQuery] = useState("");

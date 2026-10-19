@@ -5,7 +5,7 @@ import useQuotes from "../hooks/useQuotes.js";
 import TradingViewChart from "../TradingViewChart.jsx";
 import { simulateOrderFill } from "../api/paper.js";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 const DATA_MODE = import.meta.env.VITE_PAPER_DATA_MODE || "live";
 const QUOTE_REFRESH_MS = 20000;
 const EDITABLE_TYPES = new Set([

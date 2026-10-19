@@ -9,7 +9,7 @@ from .models import StrategySpec, BotConfig, Bot, BacktestBatch, BacktestBatchRu
 from .models import Watchlist, WatchlistItem
 from rest_framework import serializers
 from .models import Alert, AlertEvent
-from .models import UserSettings
+from .models import UserSettings, Article, TradeSignal, TradeSignalUpdate
 
 # ranker/serializers.py
 from .models import BacktestRun
@@ -21,8 +21,11 @@ from .models import BacktestRun
 # ranker/serializers.py
 from rest_framework import serializers
 from .models import UserPreference
+from django.utils.text import slugify
 from itertools import product
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -546,3 +549,191 @@ class StockScoreSerializer(serializers.ModelSerializer):
         if isinstance(delta, (int, float)):
             return round(float(delta), 2)
         return None
+
+
+class ArticleSerializer(serializers.ModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Article
+        fields = ["title", "slug", "content", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def validate_slug(self, value):
+        return (value or "").strip()
+
+    def create(self, validated_data):
+        title = (validated_data.get("title") or "").strip()
+        slug = (validated_data.get("slug") or "").strip()
+        if not slug:
+            slug = slugify(title)
+        if not slug:
+            raise serializers.ValidationError({"slug": "Provide a slug or a title that can be slugified."})
+        validated_data["slug"] = slug
+        return super().create(validated_data)
+
+
+class TradeSignalUpdateSerializer(serializers.ModelSerializer):
+    event_label = serializers.CharField(source="get_event_type_display", read_only=True)
+
+    class Meta:
+        model = TradeSignalUpdate
+        fields = ["id", "event_type", "event_label", "audience", "note", "price", "return_pct", "occurred_at"]
+
+
+class TradeSignalSerializer(serializers.ModelSerializer):
+    instrument = serializers.CharField(source="display_instrument", read_only=True)
+    contract_symbol = serializers.CharField(read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    updates = serializers.SerializerMethodField()
+    protection = serializers.SerializerMethodField()
+    certification_state = serializers.SerializerMethodField()
+
+    def get_protection(self, signal):
+        if (signal.status != TradeSignal.STATUS_OPEN or not signal.paper_exit_order_id
+                or signal.paper_exit_reason not in ("broker_stop", "broker_target")):
+            return None
+        from datetime import timedelta
+        from django.utils import timezone
+        record = getattr(signal, "lifecycle_certification", None)
+        verified = bool(
+            record and record.checked_at and record.checked_at >= timezone.now() - timedelta(minutes=3)
+            and record.checkpoints.get("broker_held_protection", {}).get("result") == "pass"
+        )
+        return {"type": signal.paper_exit_reason,
+                "price": str(signal.target_1 if signal.paper_exit_reason == "broker_target" else signal.current_stop or signal.initial_stop),
+                "verified": verified, "verified_at": record.checked_at if verified else None}
+
+    def get_certification_state(self, signal):
+        if signal.status in (TradeSignal.STATUS_PUBLISHED, TradeSignal.STATUS_OPEN):
+            return None
+        record = getattr(signal, "lifecycle_certification", None)
+        return record.status if record else "pending"
+
+    def get_updates(self, signal):
+        updates = signal.updates.all()
+        if not self.context.get("include_staff_updates"):
+            updates = [update for update in updates if update.audience == TradeSignalUpdate.AUDIENCE_CUSTOMER]
+        return TradeSignalUpdateSerializer(updates, many=True).data
+
+    class Meta:
+        model = TradeSignal
+        fields = [
+            "id", "symbol", "company_name", "instrument_type", "instrument", "contract_symbol", "strike", "expiration",
+            "status", "status_label", "risk_level", "trigger_direction", "underlying_trigger_price",
+            "trigger_confirmation", "do_not_chase_price", "entry_deadline", "official_fill_method",
+            "entry_low", "entry_high", "initial_stop", "current_stop",
+            "target_1", "target_2", "target_3", "actual_entry", "final_exit", "realized_return_pct",
+            "max_return_pct", "thesis", "invalidation", "evidence_tags", "publication_underlying_price",
+            "publication_option_bid", "publication_option_ask", "publication_option_midpoint", "publication_option_spread_pct",
+            "publication_option_volume", "publication_option_open_interest", "publication_quote_at",
+            "publication_quote_source", "published_at", "closed_at", "updates",
+            "paper_execution_enabled", "paper_quantity", "paper_order_status", "paper_filled_at", "paper_exit_reason",
+            "protection", "certification_state",
+        ]
+
+
+class OperatorResearchRunSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=("report_run",))
+    request_id = serializers.RegexField(r"^github-issue-[1-9][0-9]{0,11}$", max_length=64)
+    expected_run_at = serializers.DateTimeField()
+    started_at = serializers.DateTimeField()
+    completed_at = serializers.DateTimeField()
+    session_type = serializers.ChoiceField(choices=("premarket", "regular", "aftermarket", "market_closed"))
+    outcome = serializers.ChoiceField(choices=("publication", "cancellation", "watchlist_no_trade", "failure"))
+    market_regime = serializers.CharField(min_length=3, max_length=80)
+    candidates_reviewed = serializers.IntegerField(min_value=0, max_value=200)
+    operator_action = serializers.ChoiceField(choices=("none", "publish", "cancel", "multiple", "failed"))
+    verified_result = serializers.CharField(max_length=500, allow_blank=True)
+    error_summary = serializers.CharField(max_length=500, allow_blank=True)
+
+    def validate(self, attrs):
+        from datetime import datetime
+        from django.utils import timezone
+        from .research_runs import is_scheduled_slot
+
+        for key in ("expected_run_at", "started_at", "completed_at"):
+            raw = self.initial_data.get(key)
+            try:
+                aware = isinstance(raw, str) and datetime.fromisoformat(raw.replace("Z", "+00:00")).tzinfo is not None
+            except ValueError:
+                aware = False
+            if not aware:
+                raise serializers.ValidationError({key: "Timestamp must be ISO 8601 with an explicit timezone."})
+
+        expected, started, completed = (attrs[key] for key in ("expected_run_at", "started_at", "completed_at"))
+        now = timezone.now()
+        errors = {}
+        if not is_scheduled_slot(expected) or expected > now + timedelta(minutes=5) or expected < now - timedelta(days=7):
+            errors["expected_run_at"] = "Use an actual scheduled weekday slot within the last seven days."
+        if started < expected - timedelta(hours=6) or started > expected + timedelta(hours=6):
+            errors["started_at"] = "Start must be within six hours of the scheduled slot."
+        if completed < started or completed > now:
+            errors["completed_at"] = "Completion must follow start and cannot be in the future."
+        if attrs["outcome"] == "failure" and not attrs["error_summary"].strip():
+            errors["error_summary"] = "Summarize the failure."
+        if attrs["operator_action"] != "none" and not attrs["verified_result"].strip():
+            errors["verified_result"] = "Record the verified operator result."
+        if errors:
+            raise serializers.ValidationError(errors)
+        attrs.pop("action")
+        return attrs
+
+
+class OperatorTradePublicationSerializer(serializers.Serializer):
+    request_id = serializers.RegexField(r"^[A-Za-z0-9._:-]+$", max_length=64)
+    symbol = serializers.RegexField(r"^[A-Za-z][A-Za-z0-9.-]{0,15}$", max_length=16)
+    company_name = serializers.CharField(max_length=160, allow_blank=True, required=False, default="")
+    instrument_type = serializers.ChoiceField(choices=("call", "put"))
+    strike = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    expiration = serializers.DateField()
+    risk_level = serializers.ChoiceField(choices=("low", "moderate", "high"))
+    trigger_direction = serializers.ChoiceField(choices=("above", "below"))
+    underlying_trigger_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    trigger_confirmation = serializers.CharField(min_length=20, max_length=255)
+    do_not_chase_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    entry_deadline = serializers.DateField()
+    official_fill_method = serializers.ChoiceField(choices=("ask",), default="ask")
+    entry_low = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    entry_high = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    initial_stop = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    target_1 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    target_2 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"), required=False, allow_null=True)
+    target_3 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"), required=False, allow_null=True)
+    thesis = serializers.CharField(min_length=40, max_length=5000)
+    invalidation = serializers.CharField(min_length=20, max_length=3000)
+    evidence_tags = serializers.ListField(
+        child=serializers.CharField(min_length=2, max_length=48),
+        min_length=2,
+        max_length=8,
+    )
+    paper_quantity = serializers.IntegerField(min_value=1, max_value=1, default=1)
+    test_mode = serializers.BooleanField(required=False, default=False, write_only=True)
+
+    def validate(self, attrs):
+        today = timezone.localdate()
+        if attrs["expiration"] <= today:
+            raise serializers.ValidationError({"expiration": "Expiration must be in the future."})
+        if not today <= attrs["entry_deadline"] <= attrs["expiration"]:
+            raise serializers.ValidationError({"entry_deadline": "Entry deadline must be between today and expiration."})
+        if attrs["entry_high"] < attrs["entry_low"]:
+            raise serializers.ValidationError({"entry_high": "Entry high cannot be below entry low."})
+        if attrs["do_not_chase_price"] < attrs["entry_high"]:
+            raise serializers.ValidationError({"do_not_chase_price": "Do-not-chase price cannot be below entry high."})
+        if attrs["initial_stop"] >= attrs["entry_low"]:
+            raise serializers.ValidationError({"initial_stop": "Initial stop must be below the entry range."})
+        targets = [attrs["target_1"], attrs.get("target_2"), attrs.get("target_3")]
+        present_targets = [target for target in targets if target is not None]
+        targets_not_strictly_increasing = any(
+            later <= earlier for earlier, later in zip(present_targets, present_targets[1:])
+        )
+        if targets_not_strictly_increasing or present_targets[0] <= attrs["entry_high"]:
+            raise serializers.ValidationError({"target_1": "Targets must increase above the entry range."})
+        attrs["symbol"] = attrs["symbol"].upper()
+        attrs["trigger_confirmation"] = attrs["trigger_confirmation"].strip()
+        attrs["thesis"] = attrs["thesis"].strip()
+        attrs["invalidation"] = attrs["invalidation"].strip()
+        attrs["evidence_tags"] = list(dict.fromkeys(tag.strip() for tag in attrs["evidence_tags"]))
+        if len(attrs["evidence_tags"]) < 2:
+            raise serializers.ValidationError({"evidence_tags": "Provide at least two distinct evidence tags."})
+        return attrs

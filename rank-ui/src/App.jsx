@@ -21,11 +21,22 @@ import StrategyBacktestPage from "./pages/StrategyBacktestPage.jsx";
 import BotsPage from "./pages/BotsPage.jsx";
 import BacktestHistoryPage from "./pages/BacktestHistoryPage.jsx";
 import BotDetailPage from "./pages/BotDetailPage.jsx";
+import MacroDashboardPage from "./pages/MacroDashboardPage.jsx";
 import Landing from "./Landing.jsx";  // <-- NEW
+import ArticlesListPage from "./pages/ArticlesListPage.jsx";
+import ArticleDetailPage from "./pages/ArticleDetailPage.jsx";
 import useQuotes from "./hooks/useQuotes.js";
+import AnalyticsPage from "./pages/AnalyticsPage.jsx";
+import ShadowResearchPage from "./pages/ShadowResearchPage.jsx";
+import TradeSignalsPage from "./pages/TradeSignalsPage.jsx";
+import PolicyPage from "./pages/PolicyPage.jsx";
+import BillingPage from "./pages/BillingPage.jsx";
+import SiteFooter from "./components/SiteFooter.jsx";
+import { trackEvent } from "./analytics.js";
+import { updateSeo } from "./seo.js";
 
 // [NOTE-CONFIG] If you add a Vite proxy, set BASE = "" and call "/api/...".
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 // [NOTE-API-HELPER] Centralized fetch wrapper with JWT.
 async function apiFetch(path, { token, ...opts }) {
@@ -63,6 +74,34 @@ const SCREEN_CHOICES = [
   "undervalued_large_caps",
 ];
 
+const CHART_STUDIES = [
+  "RSI@tv-basicstudies",
+  "MACD@tv-basicstudies",
+  "OBV@tv-basicstudies",
+];
+
+const V1_MODE = true;
+const V1_ALLOWED_PAGES = new Set(["dashboard", "signals", "billing", "opportunities", "analytics", "shadow"]);
+const MIN_LOADING_MS = 300;
+const DEBUG_CHART = false;
+const CHART_DEBUG_LIMIT = 24;
+const LOCAL_NAVBAR_PREVIEW_USER = {
+  username: "Preview User",
+  is_staff: false,
+  is_superuser: false,
+};
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMinimum(startedAt, minimumMs = MIN_LOADING_MS) {
+  const elapsed = Date.now() - startedAt;
+  if (elapsed < minimumMs) {
+    await sleep(minimumMs - elapsed);
+  }
+}
+
 function IndicatorCell({
   value,
   delta,
@@ -77,9 +116,8 @@ function IndicatorCell({
       <span>{formattedValue}</span>
       {showDelta && (
         <span
-          className={`text-xs ${
-            delta > 0 ? "text-emerald-400" : "text-rose-400"
-          }`}
+          className={`text-xs ${delta > 0 ? "text-emerald-400" : "text-rose-400"
+            }`}
         >
           {delta > 0 ? "+" : ""}
           {delta.toFixed(deltaPrecision)}
@@ -92,11 +130,117 @@ function IndicatorCell({
 export default function App() {
   const { token, user, logout } = useAuth();
   const isAuthed = Boolean(token);
+  const [isLocalNavbarPreview] = useState(() => (
+    import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get("local-navbar-preview") === "1"
+  ));
+  const [pathname, setPathname] = useState(() => window.location.pathname || "/");
+
+  useEffect(() => {
+    updateSeo(pathname);
+  }, [pathname]);
+
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname || "/");
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const route = useMemo(() => {
+    if (["/support", "/privacy", "/terms"].includes(pathname)) {
+      return { kind: "policy", type: pathname.slice(1) };
+    }
+    if (pathname === "/articles") return { kind: "articles-list" };
+    if (pathname.startsWith("/articles/")) {
+      const slug = decodeURIComponent(pathname.replace(/^\/articles\//, "")).trim();
+      if (slug) return { kind: "article-detail", slug };
+    }
+    return { kind: "app" };
+  }, [pathname]);
+
+  useEffect(() => {
+    if (["/analytics", "/shadow"].includes(pathname)) return;
+    trackEvent("page_view", { path: pathname });
+  }, [pathname]);
+
+  const navigatePath = useCallback((nextPath) => {
+    if (!nextPath) return;
+    const normalizedPath = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
+    if (normalizedPath === pathname) return;
+    window.history.pushState({}, "", normalizedPath);
+    setPathname(normalizedPath);
+  }, [pathname]);
 
   // -------------------
   // [NOTE-NAV-STATE]
   // -------------------
-  const [page, setPage] = useState("dashboard"); // "dashboard" | "watchlists" | "alerts" | "settings"
+  const [page, setPage] = useState(() => {
+    if (window.location.pathname === "/") return "signals";
+    if (window.location.pathname === "/shadow") return "shadow";
+    if (window.location.pathname === "/analytics") return "analytics";
+    if (window.location.pathname === "/signals") return "signals";
+    if (window.location.pathname === "/billing") return "billing";
+    if (window.location.pathname === "/opportunities") return "opportunities";
+    return "dashboard";
+  });
+
+  useEffect(() => {
+    if (route.kind !== "app") return;
+    if (pathname === "/") setPage("signals");
+    else if (pathname === "/shadow") setPage("shadow");
+    else if (pathname === "/analytics") setPage("analytics");
+    else if (pathname === "/signals") setPage("signals");
+    else if (pathname === "/billing") setPage("billing");
+    else if (pathname === "/opportunities") setPage("opportunities");
+    else setPage("dashboard");
+  }, [pathname, route.kind]);
+
+  const isBlockedPage = useCallback(
+    (nextPage) => V1_MODE && !V1_ALLOWED_PAGES.has(nextPage),
+    []
+  );
+
+  const navigateToPage = useCallback(
+    (nextPage) => {
+      // Handle articles navigation separately using path routing
+      if (nextPage === "articles") {
+        navigatePath("/articles");
+        return;
+      }
+      if (nextPage === "shadow") {
+        setPage("shadow");
+        navigatePath("/shadow");
+        return;
+      }
+      if (nextPage === "analytics") {
+        setPage("analytics");
+        navigatePath("/analytics");
+        return;
+      }
+      if (nextPage === "signals") {
+        setPage("signals");
+        navigatePath("/signals");
+        return;
+      }
+      if (nextPage === "billing") {
+        setPage("billing");
+        navigatePath("/billing");
+        return;
+      }
+      if (nextPage === "opportunities") {
+        setPage("opportunities");
+        navigatePath("/opportunities");
+        return;
+      }
+      if (isBlockedPage(nextPage)) {
+        setPage("dashboard");
+        return;
+      }
+      setPage(nextPage);
+      if (nextPage === "dashboard") navigatePath("/dashboard");
+    },
+    [isBlockedPage, navigatePath]
+  );
 
   // -------------------
   // [NOTE-STATE]
@@ -110,6 +254,20 @@ export default function App() {
   const [sparkMap, setSparkMap] = useState({}); // { AAPL: [closes...] }
   const [selectedBotId, setSelectedBotId] = useState(null);
   const [watchlistOptions, setWatchlistOptions] = useState([]);
+  const [dashboardWatchlist, setDashboardWatchlist] = useState(null);
+  const [watchlistInput, setWatchlistInput] = useState("");
+  const [watchlistSectionLoading, setWatchlistSectionLoading] = useState(false);
+  const [watchlistAddingSymbol, setWatchlistAddingSymbol] = useState("");
+  const [watchlistRemovingItemId, setWatchlistRemovingItemId] = useState(null);
+  const [watchlistFeedback, setWatchlistFeedback] = useState("");
+  const [watchlistSectionErr, setWatchlistSectionErr] = useState("");
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [recentAlertsLoading, setRecentAlertsLoading] = useState(false);
+  const [recentAlertsErr, setRecentAlertsErr] = useState("");
+  const [latestInsights, setLatestInsights] = useState([]);
+  const [latestInsightsLoading, setLatestInsightsLoading] = useState(false);
+  const [latestInsightsErr, setLatestInsightsErr] = useState("");
+  const [macroSnapshot, setMacroSnapshot] = useState(null);
   const [screenCache, setScreenCache] = useState({});
   const [screenLoading, setScreenLoading] = useState(false);
   const [screenErr, setScreenErr] = useState("");
@@ -127,27 +285,160 @@ export default function App() {
     const saved = localStorage.getItem("taWeights");
     return saved ? JSON.parse(saved) : DEFAULT_TA;
   });
-  // [NOTE-ONBOARDING]
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    // default: show if we've never set the flag
-    return localStorage.getItem("seenOnboarding") !== "1";
-  });
-
   const [loading, setLoading] = useState(false);
+  const [showRankingControls, setShowRankingControls] = useState(false);
   const [rows, setRows] = useState([]);
   const [errors, setErrors] = useState([]);
   const [explain, setExplain] = useState(null);
   const [chartSym, setChartSym] = useState(null);
+  const [chartDebugEvents, setChartDebugEvents] = useState([]);
   // [NOTE-QUICK-ALERT-STATE]
   const [quickAlertSym, setQuickAlertSym] = useState(null);
   const [quickAlertFinal, setQuickAlertFinal] = useState(null);
   const [quickAlertMinFinal, setQuickAlertMinFinal] = useState("");
   const [quickAlertTriggerOnce, setQuickAlertTriggerOnce] = useState(true);
   const [quickAlertErr, setQuickAlertErr] = useState("");
+  const [quickAlertSaving, setQuickAlertSaving] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [explainingSymbol, setExplainingSymbol] = useState(null);
 
   const [errMsg, setErrMsg] = useState("");
 
+  useEffect(() => {
+    if (!isAuthed || route.kind !== "app") return;
+
+    let alive = true;
+
+    async function fetchLatestInsights() {
+      setLatestInsightsLoading(true);
+      setLatestInsightsErr("");
+      try {
+        const res = await fetch(`${BASE}/api/articles/`);
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.detail || "Failed to load insights.");
+
+        const sorted = (Array.isArray(json) ? json : [])
+          .slice()
+          .sort((a, b) => {
+            const aTime = new Date(a?.created_at || 0).getTime();
+            const bTime = new Date(b?.created_at || 0).getTime();
+            return bTime - aTime;
+          })
+          .slice(0, 3);
+
+        if (!alive) return;
+        setLatestInsights(sorted);
+      } catch (e) {
+        if (!alive) return;
+        setLatestInsightsErr(e?.message || "Failed to load insights.");
+      } finally {
+        if (alive) setLatestInsightsLoading(false);
+      }
+    }
+
+    fetchLatestInsights();
+    return () => {
+      alive = false;
+    };
+  }, [isAuthed, route.kind]);
+
+  const pushChartDebug = useCallback((message, meta = {}) => {
+    if (!DEBUG_CHART) return;
+    const event = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      at: new Date().toISOString(),
+      message,
+      meta,
+    };
+    setChartDebugEvents((prev) => [event, ...prev].slice(0, CHART_DEBUG_LIMIT));
+    const hasMeta = meta && Object.keys(meta).length > 0;
+    if (hasMeta) {
+      console.log(`[chart-debug] ${message}`, meta);
+      return;
+    }
+    console.log(`[chart-debug] ${message}`);
+  }, []);
+
   const liveQuotes = useQuotes(rows.map((r) => r.symbol));
+
+  const rankedBySymbol = useMemo(() => {
+    const map = new Map();
+    rows.forEach((row) => {
+      map.set(row.symbol, row);
+    });
+    return map;
+  }, [rows]);
+
+  const watchlistRows = useMemo(() => {
+    const items = dashboardWatchlist?.items || [];
+    return items.map((item) => {
+      const symbol = item.symbol;
+      const ranked = rankedBySymbol.get(symbol);
+      const delta = ranked?.tech_score_delta;
+      let status = "Neutral";
+      if (typeof delta === "number" && delta > 0.25) status = "Improving";
+      if (typeof delta === "number" && delta < -0.25) status = "Weakening";
+
+      return {
+        id: item.id,
+        symbol,
+        name: item.name || item.company_name || ranked?.name || "",
+        rating:
+          typeof ranked?.final_score === "number"
+            ? Number(ranked.final_score).toFixed(1)
+            : "-",
+        status,
+      };
+    });
+  }, [dashboardWatchlist, rankedBySymbol]);
+
+  const dashboardAlertRows = useMemo(() => {
+    const synthetic = [];
+    if (macroSnapshot?.regime) {
+      synthetic.push({
+        id: "market-direction",
+        symbol: null,
+        tag: "Market",
+        text: `Market direction is ${macroSnapshot.regime}.`,
+        timestamp: macroSnapshot.asOf || new Date().toISOString(),
+      });
+    }
+
+    const topRanked = rows[0];
+    if (topRanked && typeof topRanked.final_score === "number") {
+      synthetic.push({
+        id: `top-ranked-${topRanked.symbol}`,
+        symbol: topRanked.symbol,
+        tag: "Ranking",
+        text: `${topRanked.symbol} moved into the top-ranked names.`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const watchlistSymbols = new Set((dashboardWatchlist?.items || []).map((it) => it.symbol));
+    const apiAlerts = (recentAlerts || []).map((evt) => {
+      const symbol = evt.symbol || null;
+      const isWatchlist = symbol && watchlistSymbols.has(symbol);
+      const tag = isWatchlist ? "Watchlist" : "Alert";
+      const rating = typeof evt.final_score === "number" ? evt.final_score.toFixed(1) : null;
+      const text = symbol
+        ? `${symbol} triggered an alert${rating ? ` at rating ${rating}` : ""}.`
+        : "An alert was triggered.";
+      return {
+        id: `alert-${evt.id}`,
+        symbol,
+        tag,
+        text,
+        timestamp: evt.triggered_at,
+      };
+    });
+
+    const merged = [...synthetic, ...apiAlerts]
+      .filter((row) => row.timestamp)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return merged.slice(0, 8);
+  }, [dashboardWatchlist, macroSnapshot, recentAlerts, rows]);
 
   // [NOTE-PERSIST]
   useEffect(() => {
@@ -212,6 +503,7 @@ export default function App() {
 
   // [NOTE-ACTIONS] Rank
   async function rank() {
+    const startedAt = Date.now();
     setLoading(true);
     setErrors([]);
     setErrMsg("");
@@ -232,13 +524,17 @@ export default function App() {
     } catch (e) {
       setErrMsg(String(e));
     } finally {
+      await waitForMinimum(startedAt);
       setLoading(false);
     }
   }
 
   // [NOTE-WATCHLISTS-FOR-SAVE] load into modal
   const fetchWatchlistsForSave = useCallback(async () => {
+    const startedAt = Date.now();
     try {
+      setWatchlistSectionLoading(true);
+      setWatchlistSectionErr("");
       const data = await apiFetch("/api/watchlists/", { token });
       const list = Array.isArray(data) ? data : data.results || [];
       setListsForSave(list);
@@ -246,14 +542,98 @@ export default function App() {
       if (!saveListId && list.length) {
         setSaveListId(list[0].id);
       }
+      setDashboardWatchlist(list[0] || null);
     } catch {
-      // ignore
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistSectionLoading(false);
     }
   }, [token, saveListId]);
-  useEffect(() => {
-    localStorage.setItem("seenOnboarding", showOnboarding ? "0" : "1");
-  }, [showOnboarding]);
 
+  const fetchRecentAlerts = useCallback(async () => {
+    if (!token) return;
+    const startedAt = Date.now();
+    try {
+      setRecentAlertsLoading(true);
+      setRecentAlertsErr("");
+      const data = await apiFetch("/api/alert-events/", { token });
+      const events = Array.isArray(data) ? data : data.results || [];
+      const sorted = [...events].sort((a, b) => {
+        const ta = new Date(a.triggered_at || 0).getTime();
+        const tb = new Date(b.triggered_at || 0).getTime();
+        return tb - ta;
+      });
+      setRecentAlerts(sorted);
+    } catch {
+      setRecentAlertsErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setRecentAlertsLoading(false);
+    }
+  }, [token]);
+
+  async function ensureDashboardWatchlistId() {
+    if (dashboardWatchlist?.id) return dashboardWatchlist.id;
+    const created = await apiFetch(`/api/watchlists/`, {
+      token,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "My Watchlist" }),
+    });
+    await fetchWatchlistsForSave();
+    return created.id;
+  }
+
+  async function addTickerToWatchlist(rawSymbol) {
+    const symbol = String(rawSymbol || "").trim().toUpperCase();
+    if (!symbol) return;
+    const startedAt = Date.now();
+    try {
+      setWatchlistFeedback("");
+      setWatchlistSectionErr("");
+      setWatchlistAddingSymbol(symbol);
+      const watchlistId = await ensureDashboardWatchlistId();
+      await apiFetch(`/api/watchlists/${watchlistId}/items/`, {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      }).catch(() => {
+        // duplicates are fine for V1
+      });
+      setWatchlistInput("");
+      setWatchlistFeedback(`${symbol} saved to your watchlist.`);
+      trackEvent("watchlist_add", { path: "/dashboard", metadata: { symbol } });
+      await fetchWatchlistsForSave();
+    } catch {
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistAddingSymbol("");
+    }
+  }
+
+  async function removeTickerFromWatchlist(itemId) {
+    if (!dashboardWatchlist?.id || !itemId) return;
+    const startedAt = Date.now();
+    try {
+      setWatchlistFeedback("");
+      setWatchlistSectionErr("");
+      setWatchlistRemovingItemId(itemId);
+      await apiFetch(`/api/watchlists/${dashboardWatchlist.id}/items/${itemId}/`, {
+        token,
+        method: "DELETE",
+      });
+      setWatchlistFeedback("Ticker removed.");
+      await fetchWatchlistsForSave();
+    } catch {
+      setWatchlistSectionErr("Something went wrong. Retry.");
+    } finally {
+      await waitForMinimum(startedAt);
+      setWatchlistRemovingItemId(null);
+    }
+  }
   useEffect(() => {
     if (saveOpen) {
       fetchWatchlistsForSave();
@@ -265,6 +645,12 @@ export default function App() {
       fetchWatchlistsForSave();
     }
   }, [token, fetchWatchlistsForSave]);
+
+  useEffect(() => {
+    if (isBlockedPage(page)) {
+      setPage("dashboard");
+    }
+  }, [page, isBlockedPage]);
 
   // refetch sparklines when period changes
   useEffect(() => {
@@ -290,6 +676,7 @@ export default function App() {
   }
 
   async function handleScreenSelect(e) {
+    const startedAt = Date.now();
     const screen = e.target.value;
     if (!screen) return;
     setScreenErr("");
@@ -312,6 +699,7 @@ export default function App() {
     } catch (err) {
       setScreenErr(err.message || String(err));
     } finally {
+      await waitForMinimum(startedAt);
       setScreenLoading(false);
       e.target.value = "";
     }
@@ -319,7 +707,9 @@ export default function App() {
   // [NOTE-QUICK-ALERT-ACTION]
   async function createQuickAlert() {
     if (!quickAlertSym) return;
+    const startedAt = Date.now();
     setQuickAlertErr("");
+    setQuickAlertSaving(true);
 
     try {
       const payload = {
@@ -343,6 +733,9 @@ export default function App() {
       setQuickAlertSym(null);
     } catch (e) {
       setQuickAlertErr(e.message || String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setQuickAlertSaving(false);
     }
   }
 
@@ -358,8 +751,52 @@ export default function App() {
     setQuickAlertErr("");
   }
 
+  function openChart(symbol, buttonLabel = "Chart") {
+    const resolved = String(symbol || "").trim().toUpperCase();
+    pushChartDebug(`Chart button clicked: ${buttonLabel}`, {
+      button: buttonLabel,
+      rawSymbol: symbol || null,
+      handlerFired: true,
+    });
+    if (!resolved) {
+      pushChartDebug("Chart action blocked: missing ticker", {
+        button: buttonLabel,
+        rawSymbol: symbol || null,
+        blocked: true,
+      });
+      return;
+    }
+    pushChartDebug(`Chart fetch started for ${resolved} / range=D`, {
+      symbol: resolved,
+      range: "D",
+      asyncStarted: true,
+    });
+    setChartSym(resolved);
+    trackEvent("chart_opened", { path: "/dashboard", metadata: { symbol: resolved } });
+  }
+
+  function closeChart(reason = "manual") {
+    if (chartSym) {
+      pushChartDebug(`Chart drawer closed (${reason})`, {
+        symbol: chartSym,
+        reason,
+      });
+    }
+    setChartSym(null);
+  }
+
+  useEffect(() => {
+    if (!chartSym || !DEBUG_CHART) return;
+    pushChartDebug(`Chart drawer rendered for ${chartSym}`, {
+      symbol: chartSym,
+      rendered: true,
+    });
+  }, [chartSym, pushChartDebug]);
+
   // [NOTE-ACTIONS] Explain
   async function openExplain(symbol) {
+    const startedAt = Date.now();
+    setExplainingSymbol(symbol);
     setErrMsg("");
     try {
       const params = new URLSearchParams({
@@ -377,13 +814,19 @@ export default function App() {
         token,
       });
       setExplain(json);
+      trackEvent("explanation_opened", { path: "/dashboard", metadata: { symbol } });
     } catch (e) {
       setErrMsg(String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setExplainingSymbol(null);
     }
   }
 
   // [NOTE-ACTIONS] Save current tickers into a watchlist
   async function saveCurrentTickers() {
+    const startedAt = Date.now();
+    setSaveBusy(true);
     try {
       let targetId = saveListId;
 
@@ -414,6 +857,9 @@ export default function App() {
       setSaveOpen(false);
     } catch (e) {
       setErrMsg(String(e));
+    } finally {
+      await waitForMinimum(startedAt);
+      setSaveBusy(false);
     }
   }
 
@@ -421,106 +867,225 @@ export default function App() {
     return typeof n === "number" ? n.toFixed(d) : n;
   }
 
+  function formatRelativeTime(ts) {
+    if (!ts) return "Just now";
+    const diffMs = Date.now() - new Date(ts).getTime();
+    if (Number.isNaN(diffMs)) return "Just now";
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
   // ==============================
   // [NOTE-UI] App Shell
   // ==============================
   if (!isAuthed) {
+  if (route.kind === "policy") {
+    return <PolicyPage type={route.type} />;
+  }
+  if (pathname === "/") {
     return <Landing />;
+  }
+
+  if (route.kind === "articles-list") {
+    return (
+      <ArticlesListPage
+        apiBase={BASE}
+        token={token}
+        isAuthed={isAuthed}
+        user={user}
+        onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
+  }
+
+  if (route.kind === "article-detail") {
+    return (
+      <ArticleDetailPage
+        apiBase={BASE}
+        slug={route.slug}
+        isAuthed={isAuthed}
+        user={user}
+        onBackToArticles={() => navigatePath("/articles")}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
+  }
+
+// allow access to dashboard without auth
+}
+
+  if (route.kind === "policy") {
+    return <PolicyPage type={route.type} />;
+  }
+
+  if (route.kind === "articles-list") {
+    return (
+      <ArticlesListPage
+        apiBase={BASE}
+        token={token}
+        isAuthed={isAuthed}
+        user={user}
+        onOpenArticle={(slug) => navigatePath(`/articles/${slug}`)}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
+  }
+
+  if (route.kind === "article-detail") {
+    return (
+      <ArticleDetailPage
+        apiBase={BASE}
+        slug={route.slug}
+        isAuthed={isAuthed}
+        user={user}
+        onBackToArticles={() => navigatePath("/articles")}
+        onNavigateDashboard={() => navigatePath("/dashboard")}
+        onNavigateSignals={() => navigatePath("/signals")}
+        onNavigateBilling={() => navigatePath("/billing")}
+        onNavigateOpportunities={() => navigatePath("/opportunities")}
+        onNavigateAnalytics={() => navigatePath("/analytics")}
+        onNavigateShadow={() => navigatePath("/shadow")}
+        onLogout={logout}
+        onSignUp={() => navigatePath("/")}
+        onLogIn={() => navigatePath("/")}
+      />
+    );
   }
 
   return (
     <div className="app-shell">
       {/* NAVBAR */}
       <Navbar
-        user={user}
-        onLogout={logout}
+        isAuthed={isLocalNavbarPreview || isAuthed}
+        user={isLocalNavbarPreview ? LOCAL_NAVBAR_PREVIEW_USER : user}
+        onLogout={isLocalNavbarPreview ? () => {} : logout}
         active={page}
-        onNavigate={setPage}
+        onNavigate={navigateToPage}
+        v1Mode={V1_MODE}
       />
 
       <main className="app-main">
+        {page === "signals" && <TradeSignalsPage token={token} isStaff={Boolean(user?.is_staff || user?.is_superuser)} isAdmin={Boolean(user?.is_superuser)} customerPaperAccess={Boolean(user?.customer_paper_access)} onUpgrade={() => navigateToPage("billing")} />}
+        {page === "billing" && <BillingPage token={token} isAuthed={isAuthed} />}
         {/* ==============================
           DASHBOARD PAGE
          ============================== */}
-        {page === "dashboard" && (
+        {(page === "dashboard" || page === "opportunities") && (
           <>
-            {/* [NOTE-ONBOARDING-PANEL] */}
-            {showOnboarding && (
-              <div className="bg-indigo-950/40 border border-indigo-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-start gap-4">
-                <div className="flex-1">
-                  <div className="text-sm font-semibold mb-1">
-                    Welcome to Stock Ranker
+            {page === "dashboard" && (
+            <>
+              <MacroDashboardPage
+                onSnapshotChange={(snapshot) => setMacroSnapshot(snapshot)}
+              />
+              <section className="mx-4 mb-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 lg:mx-6 lg:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Five to research</div>
+                    <h2 className="mt-1 text-xl font-semibold text-slate-100">Today&apos;s shortlist</h2>
+                    <p className="mt-1 text-sm text-slate-400">The highest-rated names from your latest opportunity scan—not trade instructions.</p>
                   </div>
-                  <p className="text-xs text-slate-300 mb-2">
-                    Here’s a quick path to get useful output in under a minute:
-                  </p>
-                  <ol className="list-decimal ml-4 space-y-1 text-xs text-slate-200">
-                    <li>Enter a basket of tickers you care about.</li>
-                    <li>Adjust tech vs fund weights and TA sub-weights.</li>
-                    <li>
-                      Click <span className="font-semibold">Rank</span> to score
-                      the basket.
-                    </li>
-                    <li>
-                      Use <span className="font-semibold">Chart</span> and{" "}
-                      <span className="font-semibold">Explain</span> on
-                      interesting names.
-                    </li>
-                    <li>
-                      Save a watchlist or set{" "}
-                      <span className="font-semibold">Alerts</span> so you get an
-                      email when scores move.
-                    </li>
-                    <li>
-                      Try the{" "}
-                      <span className="font-semibold">
-                        Strategy Backtest (Exp)
-                      </span>{" "}
-                      tab to validate JSON specs and run explicit backtests.
-                    </li>
-                  </ol>
-                </div>
-                <div className="flex flex-col gap-2 text-xs">
                   <button
-                    onClick={() => setShowOnboarding(false)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white"
+                    type="button"
+                    onClick={() => navigateToPage("opportunities")}
+                    className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
                   >
-                    Got it, hide this
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowOnboarding(false);
-                      rank();
-                    }}
-                    className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-900"
-                  >
-                    Run a first rank
+                    {rows.length ? "Update shortlist" : "Find opportunities"}
                   </button>
                 </div>
-              </div>
+
+                {rows.length ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    {rows.slice(0, 5).map((row, index) => (
+                      <article key={row.symbol} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-slate-500">#{index + 1}</span>
+                          <span className="rounded-full bg-indigo-950 px-2 py-1 text-xs font-semibold text-indigo-200">
+                            {number(row.final_score, 1)}
+                          </span>
+                        </div>
+                        <div className="mt-3 text-lg font-bold text-slate-100">{row.symbol}</div>
+                        <div className="mt-3 space-y-1 text-xs text-slate-400">
+                          <div className="flex justify-between"><span>Technical</span><span className="text-slate-200">{number(row.tech_score, 1)}</span></div>
+                          <div className="flex justify-between"><span>Fundamental</span><span className="text-slate-200">{number(row.fundamental_score, 1)}</span></div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/30 px-4 py-6 text-sm text-slate-400">
+                    Run an opportunity scan to create a focused five-name research list.
+                  </div>
+                )}
+              </section>
+            </>
             )}
+
+            {page === "opportunities" && (
+            <>
 
             {/* === your existing Dashboard CTA + controls + table === */}
 
             {/* CTA card */}
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-lg font-semibold">{APP_NAME} Dashboard</div>
+                <div className="text-lg font-semibold">Stock opportunities</div>
                 <div className="text-sm text-slate-400">
-                  Tune weights • Rank basket • Inspect components
+                  Rank a ticker list using Quantelle's technical and fundamental model.
                 </div>
               </div>
-              <button
-                onClick={rank}
-                disabled={loading}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 shadow"
-              >
-                {loading ? "Ranking..." : "Rank"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRankingControls((open) => !open)}
+                  className="px-4 py-2 rounded-xl border border-slate-700 text-sm text-slate-200 hover:bg-slate-800"
+                  aria-expanded={showRankingControls}
+                >
+                  {showRankingControls ? "Hide settings" : "Customize"}
+                </button>
+                <button
+                  onClick={rank}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 shadow"
+                >
+                  {loading ? "Updating..." : rows.length ? "Refresh rankings" : "Find opportunities"}
+                </button>
+              </div>
             </div>
 
             {/* Controls */}
-            <section className="grid lg:grid-cols-2 gap-4">
+            {showRankingControls && (
+            <section className="grid lg:grid-cols-2 gap-4" aria-label="Ranking settings">
               <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <label className="block text-sm mb-1">
                   Tickers (comma-separated)
@@ -532,6 +1097,7 @@ export default function App() {
                   placeholder="AAPL, MSFT, NVDA, TSLA, AMD"
                 />
                 <div className="flex flex-col gap-2">
+  {isAuthed && (
                   <select
                     defaultValue=""
                     onChange={handleWatchlistSelect}
@@ -544,7 +1110,9 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <select
+  )}
+
+  <select
                     defaultValue=""
                     onChange={handleScreenSelect}
                     disabled={screenLoading}
@@ -601,18 +1169,23 @@ export default function App() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  TA sub-weights apply inside the technical score.
+                  TA sub-weights apply inside technical strength.
                 </p>
               </div>
             </section>
+            )}
 
             {/* Errors */}
             {!!errMsg && (
-              <div className="bg-rose-950/50 text-rose-200 border border-rose-900 p-3 rounded-xl">
-                <div className="font-semibold">Request Error</div>
-                <pre className="text-sm whitespace-pre-wrap break-words">
-                  {errMsg}
-                </pre>
+              <div className="bg-rose-950/50 text-rose-200 border border-rose-900 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm font-semibold">Something went wrong. Retry.</div>
+                <button
+                  onClick={rank}
+                  disabled={loading}
+                  className="px-3 py-1.5 rounded-lg border border-rose-700 text-xs hover:bg-rose-900/30 disabled:opacity-60"
+                >
+                  {loading ? "Loading..." : "Retry"}
+                </button>
               </div>
             )}
             {!!errors.length && (
@@ -632,7 +1205,7 @@ export default function App() {
             <section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 overflow-auto">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold text-slate-300">
-                  Results
+                  Top opportunities
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-slate-500">Spark period:</span>
@@ -640,6 +1213,7 @@ export default function App() {
                     <button
                       key={p}
                       onClick={() => setSparkPeriod(p)}
+                      disabled={loading}
                       className={`px-2 py-1 rounded-full border text-xs ${sparkPeriod === p
                         ? "bg-indigo-600 border-indigo-500 text-white"
                         : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
@@ -651,153 +1225,292 @@ export default function App() {
                 </div>
               </div>
 
-              <table className="w-full text-sm">
-                <thead className="text-slate-400">
-                  <tr className="text-left">
-                    <Th>Symbol</Th>
-                    <Th>Live</Th>
-                    <Th>Spark</Th>
-                    <Th>Tech</Th>
-                    <Th>Fund</Th>
-                    <Th>Final</Th>
-                    <Th>Trend</Th>
-                    <Th>Momo</Th>
-                    <Th>Vol</Th>
-                    <Th>MeanRev</Th>
-                    <Th></Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
-                    const t = r.components?.technical || {};
-                    const deltas = r.technical_deltas || {};
-                    return (
-                      <tr
-                        key={r.symbol}
-                        className="border-t border-slate-800"
-                      >
-                        <Td className="font-semibold">{r.symbol}</Td>
-                        <Td className="text-emerald-200">
-                          {liveQuotes[r.symbol]
-                            ? `$${Number(liveQuotes[r.symbol]).toFixed(2)}`
-                            : "—"}
-                        </Td>
-                        <Td>
-                          <Sparkline data={sparkMap[r.symbol]} />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={
-                              typeof r.tech_score === "number"
-                                ? r.tech_score
-                                : Number(r.tech_score)
-                            }
-                            delta={r.tech_score_delta}
-                            precision={1}
-                            deltaPrecision={1}
-                          />
-                        </Td>
-                        <Td>{number(r.fundamental_score)}</Td>
-                        <Td>
-                          <ScorePill value={number(r.final_score)} />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.trend_raw}
-                            delta={deltas.trend_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.momentum_raw}
-                            delta={deltas.momentum_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.volume_raw}
-                            delta={deltas.volume_raw}
-                          />
-                        </Td>
-                        <Td>
-                          <IndicatorCell
-                            value={t.meanreversion_raw}
-                            delta={deltas.meanreversion_raw}
-                          />
-                        </Td>
-                        <Td className="text-right">
-                          <div className="inline-flex gap-2">
-                            <button
-                              onClick={() => openExplain(r.symbol)}
-                              className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                            >
-                              Explain
-                            </button>
-                            <button
-                              onClick={() => setChartSym(r.symbol)}
-                              className="px-3 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
-                              title="Open chart"
-                            >
-                              Chart
-                            </button>
-                            <button
-                              onClick={() =>
-                                openQuickAlert(r.symbol, r.final_score)
-                              }
-                              className="px-3 py-1 rounded-lg border border-emerald-700 text-emerald-200 hover:bg-emerald-950 text-xs"
-                            >
-                              Alert
-                            </button>
-                          </div>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                  {!rows.length && !loading && (
-                    <tr>
-                      <td
-                        className="py-6 text-center text-slate-500"
-                        colSpan={10}
-                      >
-                        No data yet. Click “Rank”.
-                      </td>
+              {loading && !rows.length ? (
+                <div className="space-y-3" aria-live="polite">
+                  {[0, 1, 2, 3, 4].map((idx) => (
+                    <div
+                      key={`ranker-skeleton-${idx}`}
+                      className="h-10 rounded-lg bg-slate-800/60 animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-slate-400">
+                    <tr className="text-left">
+                      <Th>Symbol</Th>
+                      <Th>Live</Th>
+                      <Th>Spark</Th>
+                      <Th>Tech Strength</Th>
+                      <Th>Fund Strength</Th>
+                      <Th>Overall Rating</Th>
+                      <Th>Trend</Th>
+                      <Th>Momo</Th>
+                      <Th>Vol</Th>
+                      <Th>MeanRev</Th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => {
+                      const t = r.components?.technical || {};
+                      const deltas = r.technical_deltas || {};
+                      return (
+                        <tr
+                          key={r.symbol}
+                          className="border-t border-slate-800"
+                        >
+                          <Td className="font-semibold">{r.symbol}</Td>
+                          <Td className="text-emerald-200">
+                            {liveQuotes[r.symbol]
+                              ? `$${Number(liveQuotes[r.symbol]).toFixed(2)}`
+                              : "—"}
+                          </Td>
+                          <Td>
+                            <Sparkline data={sparkMap[r.symbol]} />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={
+                                typeof r.tech_score === "number"
+                                  ? r.tech_score
+                                  : Number(r.tech_score)
+                              }
+                              delta={r.tech_score_delta}
+                              precision={1}
+                              deltaPrecision={1}
+                            />
+                          </Td>
+                          <Td>{number(r.fundamental_score)}</Td>
+                          <Td>
+                            <ScorePill value={number(r.final_score)} />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.trend_raw}
+                              delta={deltas.trend_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.momentum_raw}
+                              delta={deltas.momentum_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.volume_raw}
+                              delta={deltas.volume_raw}
+                            />
+                          </Td>
+                          <Td>
+                            <IndicatorCell
+                              value={t.meanreversion_raw}
+                              delta={deltas.meanreversion_raw}
+                            />
+                          </Td>
+
+                        </tr>
+                      );
+                    })}
+                    {!rows.length && !loading && (
+                      <tr>
+                        <td
+                          className="py-6 text-center text-slate-500"
+                          colSpan={9}
+                        >
+                          No data yet. Click "Update ratings".
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </section>
 
-            <footer className="pt-2 text-xs text-slate-500">
-              © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
-            </footer>
+            {DEBUG_CHART && (
+              <section className="bg-amber-950/30 border border-amber-700/60 rounded-2xl p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-amber-100">Chart Debug (Temporary)</h3>
+                  <button
+                    type="button"
+                    onClick={() => setChartDebugEvents([])}
+                    className="text-xs px-2 py-1 rounded border border-amber-600 text-amber-200 hover:bg-amber-900/40"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto space-y-1 text-xs">
+                  {!chartDebugEvents.length && (
+                    <div className="text-amber-200/80">No chart interactions yet.</div>
+                  )}
+                  {chartDebugEvents.map((evt) => (
+                    <div key={evt.id} className="text-amber-100/95">
+                      <span className="font-mono text-[11px] text-amber-300 mr-2">
+                        {new Date(evt.at).toLocaleTimeString()}
+                      </span>
+                      <span>{evt.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {isAuthed && (
+<section className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-base font-semibold">My Watchlist</h3>
+                  <p className="text-xs text-slate-400">Save tickers here to track their latest ratings in one place.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-3">
+                <input
+                  value={watchlistInput}
+                  onChange={(e) => setWatchlistInput(e.target.value.toUpperCase())}
+                  placeholder="Enter ticker (e.g., AAPL)"
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm flex-1 min-w-[180px]"
+                />
+                <button
+                  onClick={() => addTickerToWatchlist(watchlistInput)}
+                  disabled={!watchlistInput.trim() || Boolean(watchlistAddingSymbol)}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm disabled:opacity-60"
+                >
+                  {watchlistAddingSymbol ? "Loading..." : "Add"}
+                </button>
+              </div>
+
+              {watchlistFeedback && (
+                <div className="mb-2 text-xs text-emerald-300">{watchlistFeedback}</div>
+              )}
+              {watchlistSectionErr && (
+                <div className="mb-2 text-xs text-rose-300 flex items-center gap-2">
+                  <span>{watchlistSectionErr}</span>
+                  <button
+                    onClick={fetchWatchlistsForSave}
+                    className="px-2 py-1 rounded-md border border-rose-700 hover:bg-rose-900/20"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {watchlistSectionLoading ? (
+                <div className="space-y-2" aria-live="polite">
+                  {[0, 1, 2].map((idx) => (
+                    <div key={`watchlist-skeleton-${idx}`} className="h-10 rounded-lg bg-slate-800/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : watchlistRows.length ? (
+                <div className="space-y-2">
+                  {watchlistRows.map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border border-slate-800 rounded-xl px-3 py-2 text-sm">
+                      <div>
+                        <div className="font-semibold text-slate-100">{item.symbol}</div>
+                        {item.name && <div className="text-xs text-slate-400">{item.name}</div>}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-300">Rating: {item.rating}</div>
+                        <div className="text-xs text-slate-500">{item.status}</div>
+                      </div>
+                      <button
+                        onClick={() => removeTickerFromWatchlist(item.id)}
+                        disabled={watchlistRemovingItemId === item.id}
+                        className="px-3 py-1.5 rounded-lg text-xs border border-rose-900 text-rose-200 hover:bg-rose-950 disabled:opacity-60"
+                      >
+                        {watchlistRemovingItemId === item.id ? "Loading..." : "Remove"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">No tickers saved yet. Add one above.</div>
+              )}
+            </section>
+            )}
+
+            <section className="bg-slate-900/35 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h3 className="text-sm font-semibold text-slate-200">Latest Insight</h3>
+                <button
+                  type="button"
+                  onClick={() => navigatePath("/articles")}
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  View all
+                </button>
+              </div>
+
+              {latestInsightsLoading && (
+                <p className="text-xs text-slate-500">Loading insights...</p>
+              )}
+
+              {!latestInsightsLoading && latestInsightsErr && (
+                <p className="text-xs text-rose-300">{latestInsightsErr}</p>
+              )}
+
+              {!latestInsightsLoading && !latestInsightsErr && latestInsights.length === 0 && (
+                <p className="text-xs text-slate-500">No insights published yet.</p>
+              )}
+
+              {!latestInsightsLoading && !latestInsightsErr && latestInsights.length > 0 && (
+                <ul className="space-y-2">
+                  {latestInsights.map((article) => (
+                    <li key={article.slug}>
+                      <button
+                        type="button"
+                        onClick={() => navigatePath(`/articles/${article.slug}`)}
+                        className="text-sm text-left text-slate-300 hover:text-indigo-300 transition"
+                      >
+                        {article.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            </>
+            )}
           </>
+        )}
+
+        {page === "shadow" && <ShadowResearchPage token={token} isStaff={Boolean(user?.is_staff || user?.is_superuser)} />}
+
+        {page === "analytics" && (
+          <AnalyticsPage
+            token={token}
+            isStaff={Boolean(user?.is_staff || user?.is_superuser)}
+          />
         )}
 
         {/* ==============================
           OTHER PAGES
          ============================== */}
-        {page === "watchlists" && (
+        {!V1_MODE && page === "alerts" && <Alerts />}
+
+        {!V1_MODE && page === "watchlists" && (
           <Watchlists
             onUseTickers={(symbols) => {
               setTickers(symbols.join(","));
-              setPage("dashboard");
+              navigateToPage("dashboard");
             }}
           />
         )}
 
-        {page === "alerts" && <Alerts />}
+        {!V1_MODE && page === "macro" && <MacroDashboardPage />}
 
-        {page === "strategy-backtest" && <StrategyBacktestPage onNavigate={setPage} />}
+        {!V1_MODE && page === "strategy-backtest" && <StrategyBacktestPage onNavigate={navigateToPage} />}
 
-        {page === "orders" && <Orders />}
+        {!V1_MODE && page === "orders" && <Orders />}
 
-        {page === "positions" && <Positions />}
+        {!V1_MODE && page === "positions" && <Positions />}
 
-        {page === "performance" && <Performance />}
+        {!V1_MODE && page === "performance" && <Performance />}
 
-        {page === "leaderboards" && <Leaderboards />}
+        {!V1_MODE && page === "leaderboards" && <Leaderboards />}
 
-        {page === "bots" && (
+        {!V1_MODE && page === "bots" && (
           <BotsPage
             onSelectBot={(id) => {
               setSelectedBotId(id);
@@ -806,16 +1519,16 @@ export default function App() {
           />
         )}
 
-        {page === "bot-detail" && selectedBotId && (
+        {!V1_MODE && page === "bot-detail" && selectedBotId && (
           <BotDetailPage
             botId={selectedBotId}
             onBack={() => setPage("bots")}
           />
         )}
 
-        {page === "backtest-history" && <BacktestHistoryPage />}
+        {!V1_MODE && page === "backtest-history" && <BacktestHistoryPage />}
 
-        {page === "settings" && (
+        {!V1_MODE && page === "settings" && (
           <Settings
             tickers={tickers}
             techWeight={techWeight}
@@ -828,8 +1541,10 @@ export default function App() {
           />
         )}
 
-        {page === "strategies" && <StrategyBuilder />}
+        {!V1_MODE && page === "strategies" && <StrategyBuilder />}
       </main>
+
+      <SiteFooter />
 
       {/* ==============================
         SAVE-TO-WATCHLIST MODAL
@@ -914,9 +1629,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={saveCurrentTickers}
+                  disabled={saveBusy}
                   className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500"
                 >
-                  Save
+                  {saveBusy ? "Loading..." : "Save"}
                 </button>
               </div>
             </div>
@@ -924,170 +1640,11 @@ export default function App() {
         </div>
       )}
 
-      {/* QUICK ALERT MODAL */}
-      {quickAlertSym && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-40"
-          onClick={() => setQuickAlertSym(null)}
-        >
-          <div
-            className="w-full max-w-sm bg-slate-950 border border-slate-800 rounded-2xl p-4 m-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold">
-                Create alert for {quickAlertSym}
-              </h2>
-              <button
-                onClick={() => setQuickAlertSym(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
+      {/* QUICK ALERT MODAL — hidden in V1 */}
 
-            <div className="space-y-3 text-sm">
-              {quickAlertFinal != null && (
-                <div className="text-xs text-slate-400">
-                  Current final score:{" "}
-                  <span className="text-slate-100 font-semibold">
-                    {Number(quickAlertFinal).toFixed(2)}
-                  </span>
-                </div>
-              )}
+      {/* EXPLAIN DRAWER — hidden in V1 */}
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  Alert when final score ≥
-                </label>
-                <input
-                  type="number"
-                  value={quickAlertMinFinal}
-                  onChange={(e) => setQuickAlertMinFinal(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm"
-                />
-              </div>
-
-              <label className="inline-flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={quickAlertTriggerOnce}
-                  onChange={() =>
-                    setQuickAlertTriggerOnce((v) => !v)
-                  }
-                />
-                Trigger once (disable after first hit)
-              </label>
-
-              {quickAlertErr && (
-                <div className="text-xs text-rose-300">
-                  {quickAlertErr}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setQuickAlertSym(null)}
-                  className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-900 text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={createQuickAlert}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs"
-                >
-                  Save alert
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EXPLAIN DRAWER */}
-      {explain && (
-        <div
-          className="fixed inset-0 bg-black/40 flex justify-end"
-          onClick={() => setExplain(null)}
-        >
-          <div
-            className="w-full max-w-2xl h-full bg-slate-950 border-l border-slate-800 p-6 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Explain: {explain.symbol}</h2>
-              <button
-                onClick={() => setExplain(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <Card title="Tech" value={number(explain.tech_score)} />
-              <Card
-                title="Fund"
-                value={number(explain.fundamental_score)}
-              />
-              <Card title="Final" value={number(explain.final_score)} />
-            </div>
-
-            <Section title="Technical">
-              <JSONBlock data={explain.components?.technical} />
-            </Section>
-            <Section title="Fundamental">
-              <JSONBlock data={explain.components?.fundamental} />
-            </Section>
-            <Section title="Weights">
-              <JSONBlock data={explain.components?.weights} />
-            </Section>
-          </div>
-        </div>
-      )}
-
-      {/* CHART DRAWER */}
-      {chartSym && (
-        <div
-          className="fixed inset-0 bg-black/40 flex justify-end"
-          onClick={() => setChartSym(null)}
-        >
-          <div
-            className="w-full max-w-4xl h-full bg-slate-950 border-l border-slate-800 p-4 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold">Chart: {chartSym}</h2>
-              <button
-                onClick={() => setChartSym(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="rounded-xl overflow-hidden border border-slate-800 h-[78vh]">
-              <TradingViewChart
-                symbol={chartSym}
-                exchangePrefix=""
-                interval="D"
-                studies={[
-                  "RSI@tv-basicstudies",
-                  "MACD@tv-basicstudies",
-                  "OBV@tv-basicstudies",
-                ]}
-                autosize={false}
-                height={720}
-              />
-            </div>
-
-            <div className="mt-3 text-slate-400 text-sm">
-              Tip: use the chart toolbar to add EMAs/Bollinger Bands and change
-              intervals.
-            </div>
-          </div>
-        </div>
-      )}
+      {/* CHART DRAWER — hidden in V1 */}
     </div>
   );
 

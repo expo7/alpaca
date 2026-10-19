@@ -5,7 +5,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import AlertHistoryPanel from "../components/AlertHistoryPanel";
 import InstrumentSearch from "../components/InstrumentSearch.jsx";
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = "";
 
 async function apiFetch(path, { token, ...opts }) {
   const headers = { ...(opts.headers || {}) };

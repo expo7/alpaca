@@ -1,0 +1,252 @@
+"""Small, paper-only Alpaca client used by the published-signal executor."""
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import os
+
+import requests
+
+
+PAPER_API_URL = "https://paper-api.alpaca.markets"
+
+
+class PaperTradingError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class PaperConfig:
+    enabled: bool
+    api_key: str
+    secret_key: str
+    base_url: str
+    data_url: str
+    stock_feed: str
+    option_feed: str
+    max_open_positions: int
+    max_spread_pct: Decimal
+    confirm_seconds: int
+    max_quote_age_seconds: int
+
+
+def load_paper_config():
+    return PaperConfig(
+        enabled=os.getenv("ALPACA_PAPER_EXECUTION_ENABLED", "false").lower() == "true",
+        api_key=os.getenv("ALPACA_PAPER_API_KEY", ""),
+        secret_key=os.getenv("ALPACA_PAPER_SECRET_KEY", ""),
+        base_url=os.getenv("ALPACA_PAPER_BASE_URL", PAPER_API_URL).rstrip("/"),
+        data_url=os.getenv("ALPACA_PAPER_DATA_URL", "https://data.alpaca.markets").rstrip("/"),
+        stock_feed=os.getenv("ALPACA_PAPER_STOCK_FEED", "iex"),
+        option_feed=os.getenv("ALPACA_PAPER_OPTION_FEED", "indicative"),
+        max_open_positions=int(os.getenv("ALPACA_PAPER_MAX_OPEN_POSITIONS", "2")),
+        max_spread_pct=Decimal(os.getenv("ALPACA_PAPER_MAX_SPREAD_PCT", "8")),
+        confirm_seconds=int(os.getenv("ALPACA_PAPER_CONFIRM_SECONDS", "60")),
+        max_quote_age_seconds=int(os.getenv("ALPACA_PAPER_MAX_QUOTE_AGE_SECONDS", "30")),
+    )
+
+
+def _decimal(value):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+class AlpacaPaperClient:
+    def __init__(self):
+        self.config = load_paper_config()
+        self.base_url = self.config.base_url
+        self.data_url = self.config.data_url
+        if self.base_url != PAPER_API_URL:
+            raise PaperTradingError("Refusing execution: Alpaca base URL is not the paper endpoint")
+        if not self.config.api_key or not self.config.secret_key:
+            raise PaperTradingError("Alpaca paper credentials are not configured")
+        self.headers = {
+            "APCA-API-KEY-ID": self.config.api_key,
+            "APCA-API-SECRET-KEY": self.config.secret_key,
+        }
+
+    def _request(self, method, url, **kwargs):
+        timeout = kwargs.pop("timeout", 12)
+        response = requests.request(method, url, headers=self.headers, timeout=timeout, **kwargs)
+        if response.status_code >= 400:
+            detail = response.text[:200]
+            raise PaperTradingError(f"Alpaca returned {response.status_code}: {detail}")
+        if response.status_code == 204 or not response.content:
+            return {}
+        return response.json()
+
+    def _require_fresh_quote(self, timestamp, *, max_age_seconds=None):
+        if not timestamp:
+            raise PaperTradingError("Quote has no timestamp")
+        try:
+            stamp = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
+        except (TypeError, ValueError):
+            raise PaperTradingError("Quote timestamp is invalid")
+        if stamp.tzinfo is None:
+            raise PaperTradingError("Quote timestamp must include timezone")
+        limit = self.config.max_quote_age_seconds if max_age_seconds is None else max_age_seconds
+        if age < -5 or age > limit:
+            raise PaperTradingError(f"Quote is stale ({max(0, int(age))} seconds old)")
+
+    def clock(self):
+        return self._request("GET", f"{self.base_url}/v2/clock")
+
+    def order(self, order_id, *, nested=False):
+        params = {"nested": "true"} if nested else None
+        return self._request("GET", f"{self.base_url}/v2/orders/{order_id}", params=params)
+
+    def cancel_order(self, order_id):
+        """Request cancellation; callers must confirm the terminal status."""
+        return self._request("DELETE", f"{self.base_url}/v2/orders/{order_id}")
+
+    def position(self, symbol):
+        """Return Alpaca's current paper position for an exact asset symbol."""
+        return self._request("GET", f"{self.base_url}/v2/positions/{symbol}")
+
+    def orders(self):
+        """Return recent paper orders for read-only reconciliation."""
+        return self._request(
+            "GET",
+            f"{self.base_url}/v2/orders",
+            params={"status": "all", "limit": 500, "direction": "desc", "nested": "true"},
+        )
+
+    def positions(self):
+        """Return all current paper positions for read-only reconciliation."""
+        return self._request("GET", f"{self.base_url}/v2/positions")
+
+    def submit_limit_order(self, *, symbol, quantity, side, limit_price, client_order_id, time_in_force="day"):
+        intent = "buy_to_open" if side == "buy" else "sell_to_close"
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": side,
+                "type": "limit",
+                "time_in_force": time_in_force,
+                "limit_price": str(limit_price),
+                "client_order_id": client_order_id,
+                "position_intent": intent,
+            },
+        )
+
+    def submit_stop_order(self, *, symbol, quantity, stop_price, client_order_id):
+        """Leave one broker-held GTC stop protecting a long option position."""
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": "sell",
+                "type": "stop",
+                "time_in_force": "gtc",
+                "stop_price": str(stop_price),
+                "client_order_id": client_order_id,
+                "position_intent": "sell_to_close",
+            },
+        )
+
+    def submit_market_order(self, *, symbol, quantity, side, client_order_id):
+        """Submit a simple day market order for an option position.
+
+        Alpaca does not support OCO order classes for options, but it does
+        support simple market orders.  The executor uses this only to close a
+        long paper option after its published stop has already been crossed.
+        """
+        intent = "buy_to_open" if side == "buy" else "sell_to_close"
+        return self._request(
+            "POST",
+            f"{self.base_url}/v2/orders",
+            json={
+                "symbol": symbol,
+                "qty": str(quantity),
+                "side": side,
+                "type": "market",
+                "time_in_force": "day",
+                "client_order_id": client_order_id,
+                "position_intent": intent,
+            },
+        )
+
+    def stock_quote(self, symbol, *, allow_delayed=False, request_timeout=12):
+        # Only the primary paper experiment opts in. Customer and shadow callers
+        # retain the strict default. Never relabel delayed observations as live.
+        feeds = [self.config.stock_feed]
+        if allow_delayed and self.base_url == PAPER_API_URL and "delayed_sip" not in feeds:
+            feeds.append("delayed_sip")
+        last_error = None
+        for feed in feeds:
+            try:
+                payload = self._request(
+                    "GET", f"{self.data_url}/v2/stocks/{symbol}/quotes/latest",
+                    params={"feed": feed},
+                    timeout=request_timeout,
+                )
+                quote = payload.get("quote") or {}
+                delayed = feed == "delayed_sip"
+                # 15-minute feed delay plus five minutes delivery tolerance.
+                self._require_fresh_quote(
+                    quote.get("t"),
+                    max_age_seconds=1200 if allow_delayed and delayed else None,
+                )
+                bid, ask = _decimal(quote.get("bp")), _decimal(quote.get("ap"))
+                if (bid is None or ask is None or not bid.is_finite() or
+                        not ask.is_finite() or bid <= 0 or ask < bid):
+                    raise PaperTradingError(f"No usable stock quote for {symbol}")
+                return {"bid": bid, "ask": ask, "midpoint": (bid + ask) / 2,
+                        "timestamp": quote.get("t"), "source": feed, "delayed": delayed}
+            except (PaperTradingError, requests.RequestException) as exc:
+                last_error = exc
+        raise PaperTradingError(f"Underlying data unavailable for {symbol}: {last_error}")
+
+    def option_quote(self, contract_symbol):
+        payload = self._request(
+            "GET",
+            f"{self.data_url}/v1beta1/options/quotes/latest",
+            params={"symbols": contract_symbol, "feed": self.config.option_feed},
+        )
+        quote = (payload.get("quotes") or {}).get(contract_symbol) or {}
+        self._require_fresh_quote(quote.get("t"))
+        bid, ask = _decimal(quote.get("bp")), _decimal(quote.get("ap"))
+        if bid is None or ask is None or bid <= 0 or ask <= 0 or ask < bid:
+            raise PaperTradingError(f"No executable option quote for {contract_symbol}")
+        midpoint = (bid + ask) / 2
+        spread_pct = ((ask - bid) / midpoint) * 100 if midpoint else Decimal("999")
+        return {
+            "bid": bid,
+            "ask": ask,
+            "midpoint": midpoint,
+            "spread_pct": spread_pct,
+            "timestamp": quote.get("t"),
+        }
+
+    def option_reference(self, signal):
+        """Optional liquidity metadata; failures do not invalidate the quote."""
+        result = {}
+        try:
+            payload = self._request(
+                "GET", f"{self.data_url}/v1beta1/options/snapshots/{signal.symbol}",
+                params={"feed": self.config.option_feed,
+                        "expiration_date": signal.expiration.isoformat(),
+                        "type": signal.instrument_type,
+                        "strike_price_gte": str(signal.strike),
+                        "strike_price_lte": str(signal.strike), "limit": 1}, timeout=3,
+            )
+            row = (payload.get("snapshots") or {}).get(signal.contract_symbol) or {}
+            result["volume"] = (row.get("dailyBar") or {}).get("v")
+        except (PaperTradingError, requests.RequestException, ValueError):
+            pass
+        try:
+            payload = self._request(
+                "GET", f"{self.base_url}/v2/options/contracts/{signal.contract_symbol}", timeout=3,
+            )
+            result["open_interest"] = payload.get("open_interest")
+        except (PaperTradingError, requests.RequestException, ValueError):
+            pass
+        return result

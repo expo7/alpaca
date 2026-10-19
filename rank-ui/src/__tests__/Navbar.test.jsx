@@ -1,29 +1,62 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Navbar from "../components/Navbar.jsx";
 
 describe("Navbar", () => {
-  test("renders tabs and fires navigation", async () => {
+  test("renders V1 tabs and fires navigation from the collapsed menu", async () => {
     const onNavigate = vi.fn();
     render(
       <Navbar
         user={{ username: "tester" }}
         active="dashboard"
         onNavigate={onNavigate}
-        onLogout={() => {}}
+        onLogout={() => { }}
+        v1Mode
       />
     );
 
-    const dashboards = screen.getAllByRole("button", { name: /^Dashboard$/i });
-    expect(dashboards.length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Strategies/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Orders/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Leaderboards/i }).length).toBeGreaterThan(0);
+    const user = userEvent.setup();
+    const menuButton = screen.getByRole("button", { name: /open navigation menu/i });
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
 
-    await userEvent.click(screen.getAllByRole("button", { name: /Orders/i })[0]);
-    expect(onNavigate).toHaveBeenCalledWith("orders");
+    await user.click(menuButton);
+    const menu = screen.getByRole("navigation", { name: /navigation menu/i });
+    expect(within(menu).queryByRole("button", { name: /^Today$/i })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("link", { name: /^Results$/i })).toHaveAttribute("href", "/signals?view=completed");
+    expect(within(menu).getByRole("link", { name: /^Trade Plans$/i })).toBeInTheDocument();
+    expect(within(menu).queryByRole("button", { name: /Alerts/i })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole("button", { name: /Strategies/i })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getAllByRole("button", { name: /Strategies/i })[0]);
-    expect(onNavigate).toHaveBeenCalledWith("strategies");
+    await user.click(within(menu).getByRole("link", { name: /^Trade Plans$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("signals");
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("preserves the authentication controls and staff-only Analytics visibility", async () => {
+    const user = userEvent.setup();
+    const onLogout = vi.fn();
+    render(
+      <Navbar
+        isAuthed
+        user={{ username: "owner", is_staff: true }}
+        active="dashboard"
+        onNavigate={() => {}}
+        onLogout={onLogout}
+        v1Mode
+      />
+    );
+
+    const primary = screen.getByRole("navigation", { name: /primary navigation/i });
+    expect(within(primary).queryByRole("button", { name: "Today" })).not.toBeInTheDocument();
+    expect(within(primary).getByRole("link", { name: "Trade Plans" })).toBeInTheDocument();
+    await user.click(screen.getByText("Staff tools"));
+    expect(
+      within(screen.getByRole("navigation", { name: /^staff tools$/i })).getByRole(
+        "button",
+        { name: /^Analytics$/i }
+      )
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Log out$/i }));
+    expect(onLogout).toHaveBeenCalledOnce();
   });
 });

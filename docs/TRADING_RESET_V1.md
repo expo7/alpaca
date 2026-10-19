@@ -35,9 +35,11 @@ Historical verdict: the preceding trading-task process was a COMPLETE FAILURE as
 - Operator issue 146 accepted fresh QQQ paper signal 18; notification 53 sent. At 17:21:18 UTC it was pending with no broker order yet, QQQ midpoint 719.625, option ask 16.97, trigger below 720.20, 60-second confirmation, entry 16.20–17.50, stop 15.00, target 20.00. Check subsequent probes for actual fills/protection; never infer them from publication.
 - Production accepted reports remain overdue from the FAILED process. Do not manufacture retrospective completions to turn the monitor green.
 
-## Deployment blocker to resolve separately
+## Branch baseline reconciliation — October 19
 
-Default master currently lacks production trading modules, migrations and deploy-production.yml present at bb61c15. This is verified by git tree inspection and GitHub fetch 404. The cause is unverified. Do not deploy master blindly, or describe the diagnostic commit as an application deployment. Before the next application release, reconcile default branch against installed bb61c15, preserve newer diagnostic changes and user work, review the complete diff, run lifecycle tests and restore an auditable deployment path. This deferred repair is important; trigger is BEFORE NEXT APPLICATION DEPLOYMENT. It does not block current installed paper execution or the working on-demand diagnostic.
+The mismatch came from divergent branches: the installed application and recent fixes were on `production`, while default `master` still had an older application baseline. The files were not deleted from production. Reconciliation merges the complete installed bb61c15 production tree into master, resolves only README/CI conflicts, and preserves newer diagnostics. Application paths stockscores/, rank-ui/, Dockerfile, docker-compose.yml and requirements.txt are byte-for-byte identical to the installed release. The deployment workflow is restored on master. No production restart is required to fix this repository mismatch.
+
+`master` is the integration branch; `production` remains the deployed release branch. CI now verifies that production is an ancestor of the tested integration revision, preventing production-only fixes from remaining silently absent. Future releases start from master. A newer master SHA is not proof of deployment. Verify the installed revision and broker protection after actual application releases.
 
 ## Verified entry and protection — 17:22:36 UTC
 

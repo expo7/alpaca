@@ -1,0 +1,231 @@
+"""Best-effort delayed quotes for published trade records."""
+
+from datetime import datetime, timezone as dt_timezone
+from decimal import Decimal, InvalidOperation
+import math
+
+from django.core.cache import cache
+from django.utils import timezone
+
+from .alpaca_paper import AlpacaPaperClient, PaperTradingError
+
+
+QUOTE_SOURCE = "Yahoo Finance (delayed)"
+QUOTE_CACHE_SECONDS = 90
+POSITION_CACHE_SECONDS = 15
+
+
+def _number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return round(number, 4)
+
+
+def _integer(value):
+    number = _number(value)
+    return int(number) if number is not None and number >= 0 else None
+
+
+def _decimal(value):
+    number = _number(value)
+    if number is None:
+        return None
+    try:
+        return Decimal(str(number)).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return None
+
+
+def _latest_underlying(ticker):
+    history = ticker.history(period="1d", interval="1m", prepost=True, auto_adjust=False)
+    if history is None or history.empty:
+        return None, None
+    closes = history.get("Close")
+    if closes is None:
+        return None, None
+    closes = closes.dropna()
+    if closes.empty:
+        return None, None
+    stamp = closes.index[-1]
+    if hasattr(stamp, "to_pydatetime"):
+        stamp = stamp.to_pydatetime()
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=dt_timezone.utc)
+    return _number(closes.iloc[-1]), stamp.astimezone(dt_timezone.utc)
+
+
+def get_trade_signal_quote(signal, use_cache=True):
+    cache_key = f"trade-signal-quote-v1:{signal.pk}:{signal.updated_at.timestamp() if signal.updated_at else 0}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    fetched_at = timezone.now()
+    result = {
+        "available": False,
+        "status": "unavailable",
+        "status_label": "Quote unavailable",
+        "source": QUOTE_SOURCE,
+        "fetched_at": fetched_at.isoformat(),
+        "underlying_price": None,
+        "option_bid": None,
+        "option_ask": None,
+        "option_midpoint": None,
+        "option_last": None,
+        "option_volume": None,
+        "option_open_interest": None,
+        "spread_pct": None,
+        "option_quote_at": None,
+    }
+
+    # Use the same authorized option feed as execution. Yahoo delayed quotes
+    # remain a fallback, rather than a second mandatory publication dependency.
+    if signal.instrument_type in {"call", "put"}:
+        try:
+            client = AlpacaPaperClient()
+            quote = client.option_quote(signal.contract_symbol)
+            result.update(
+                available=True, status="indicative", status_label="Indicative quote",
+                source=("Alpaca indicative (modified)" if client.config.option_feed == "indicative"
+                        else f"Alpaca {client.config.option_feed}"),
+                option_bid=_number(quote["bid"]), option_ask=_number(quote["ask"]),
+                option_midpoint=_number(quote["midpoint"]),
+                spread_pct=_number(quote["spread_pct"]), option_quote_at=quote["timestamp"],
+            )
+            try:
+                stock = client.stock_quote(signal.symbol, allow_delayed=True, request_timeout=3)
+                result.update(underlying_price=_number(stock["midpoint"]),
+                              market_quote_at=stock["timestamp"], underlying_source=stock["source"])
+            except Exception:
+                pass  # Keep the valid independent option quote; underlying is unknown.
+            try:
+                reference = client.option_reference(signal)
+                result.update(option_volume=_integer(reference.get("volume")),
+                              option_open_interest=_integer(reference.get("open_interest")))
+            except Exception:
+                pass  # Optional reference metadata cannot invalidate a fresh quote.
+            cache.set(cache_key, result, QUOTE_CACHE_SECONDS)
+            return result
+        except Exception as exc:
+            result["primary_error"] = type(exc).__name__
+
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(signal.symbol)
+        underlying_price, market_stamp = None, None
+        try:
+            underlying_price, market_stamp = _latest_underlying(ticker)
+        except Exception as exc:
+            if signal.instrument_type == "stock":
+                raise
+            # Stock history is optional for an independent delayed option quote.
+            result["underlying_error"] = type(exc).__name__
+        result["underlying_price"] = underlying_price
+
+        if signal.instrument_type != "stock":
+            if not signal.expiration or signal.strike is None:
+                raise ValueError("Option contract is incomplete")
+            chain = ticker.option_chain(signal.expiration.isoformat())
+            table = chain.calls if signal.instrument_type == "call" else chain.puts
+            matches = table[(table["strike"] - float(signal.strike)).abs() < 0.001]
+            if matches.empty:
+                raise ValueError("Contract was not found in the current chain")
+            row = matches.iloc[0]
+            bid = _number(row.get("bid"))
+            ask = _number(row.get("ask"))
+            # Closed option chains commonly return 0/0. Those values mean
+            # "no current market", not that the contract is worthless.
+            bid = bid if bid is not None and bid > 0 else None
+            ask = ask if ask is not None and ask > 0 else None
+            midpoint = (
+                round((bid + ask) / 2, 4)
+                if bid is not None and ask is not None and ask >= bid
+                else None
+            )
+            spread_pct = round(((ask - bid) / midpoint) * 100, 2) if midpoint and ask >= bid else None
+            result.update(
+                option_bid=bid,
+                option_ask=ask,
+                option_midpoint=midpoint,
+                option_last=_number(row.get("lastPrice")),
+                option_volume=_integer(row.get("volume")),
+                option_open_interest=_integer(row.get("openInterest")),
+                spread_pct=spread_pct,
+            )
+
+        age_seconds = (fetched_at - market_stamp).total_seconds() if market_stamp else None
+        if age_seconds is not None and age_seconds > 45 * 60:
+            result["status"] = "market_closed"
+            result["status_label"] = "Market closed · last available"
+        else:
+            result["status"] = "delayed"
+            result["status_label"] = "Delayed quote"
+        result["market_quote_at"] = market_stamp.isoformat() if market_stamp else None
+        result["available"] = underlying_price is not None or result["option_bid"] is not None or result["option_ask"] is not None
+    except Exception as exc:
+        result["error"] = str(exc)[:160]
+
+    cache.set(cache_key, result, QUOTE_CACHE_SECONDS)
+    return result
+
+
+def get_paper_position(signal, use_cache=True):
+    """Return a short-lived snapshot of the position opened for this signal."""
+    if not signal.paper_execution_enabled or signal.status != signal.STATUS_OPEN:
+        return None
+
+    cache_key = f"trade-signal-paper-position-v1:{signal.pk}:{signal.contract_symbol}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    result = {
+        "available": False,
+        "source": "Alpaca paper account",
+        "fetched_at": timezone.now().isoformat(),
+    }
+    try:
+        position = AlpacaPaperClient().position(signal.contract_symbol)
+        result.update(
+            available=True,
+            quantity=_number(position.get("qty")),
+            average_entry_price=_number(position.get("avg_entry_price")),
+            current_price=_number(position.get("current_price")),
+            market_value=_number(position.get("market_value")),
+            cost_basis=_number(position.get("cost_basis")),
+            unrealized_pl=_number(position.get("unrealized_pl")),
+            unrealized_pl_pct=(
+                round(float(position["unrealized_plpc"]) * 100, 2)
+                if position.get("unrealized_plpc") not in (None, "") else None
+            ),
+        )
+    except (PaperTradingError, TypeError, ValueError) as exc:
+        result["error"] = str(exc)[:160]
+
+    cache.set(cache_key, result, POSITION_CACHE_SECONDS)
+    return result
+
+
+def apply_publication_snapshot(signal):
+    """Populate any blank publication quote fields without blocking publication."""
+    quote = get_trade_signal_quote(signal, use_cache=False)
+    signal.publication_quote_source = quote.get("source") or QUOTE_SOURCE
+    if not quote.get("available"):
+        return False
+    signal.publication_quote_at = timezone.now()
+    if quote.get("option_quote_at"):
+        signal.publication_quote_at = datetime.fromisoformat(quote["option_quote_at"].replace("Z", "+00:00"))
+    signal.publication_underlying_price = _decimal(quote.get("underlying_price"))
+    signal.publication_option_bid = _decimal(quote.get("option_bid"))
+    signal.publication_option_ask = _decimal(quote.get("option_ask"))
+    signal.publication_option_midpoint = _decimal(quote.get("option_midpoint"))
+    signal.publication_option_spread_pct = _decimal(quote.get("spread_pct"))
+    signal.publication_option_volume = quote.get("option_volume")
+    signal.publication_option_open_interest = quote.get("option_open_interest")
+    return True
