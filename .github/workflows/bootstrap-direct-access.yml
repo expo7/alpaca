@@ -1,0 +1,38 @@
+name: Bootstrap direct Quantelle access
+on:
+  push:
+    branches: [repair/direct-operations-access]
+    paths: [.github/workflows/bootstrap-direct-access.yml]
+permissions:
+  contents: read
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure deployment SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$PROD_SSH_KEY" | base64 --decode > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Register existing owner device key without restarting services
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=20 -i ~/.ssh/deploy "$PROD_USER@$PROD_HOST" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          touch "$HOME/.ssh/authorized_keys"
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          key='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPG7TE/r2fUlPbl6NqT5kvX/0b3Lrc9lTLjklaVM7IZT brendan@arch-thinkpad'
+          if ! grep -qF 'AAAAC3NzaC1lZDI1NTE5AAAAIPG7TE/r2fUlPbl6NqT5kvX/0b3Lrc9lTLjklaVM7IZT' "$HOME/.ssh/authorized_keys"; then
+            printf 'restrict %s\n' "$key" >> "$HOME/.ssh/authorized_keys"
+          fi
+          echo 'Owner device direct key registered; services unchanged.'
+          id -un
+          REMOTE
