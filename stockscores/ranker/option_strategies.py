@@ -7,7 +7,7 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -310,9 +310,10 @@ def run_option_strategy_executor():
         clock = client.clock()
         if not clock.get("is_open"):
             return {"status": "market_closed"}
-        # In-flight orders and open risks precede fresh entries.
+        # PostgreSQL sorts ascending NULLs last by default. Never-checked
+        # entries must join the rotation instead of starving behind open rows.
         qs = OptionStrategy.objects.filter(state__in=ACTIVE).exclude(state="blocked")
-        row = qs.order_by("checked_at", "id").first()
+        row = qs.order_by(F("checked_at").asc(nulls_first=True), "id").first()
         if not row:
             return {"status": "blocked"}
         previous_error = row.last_error

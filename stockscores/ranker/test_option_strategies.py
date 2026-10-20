@@ -6,6 +6,8 @@ from unittest.mock import patch, Mock
 from django.test import TestCase, SimpleTestCase
 from django.utils import timezone
 from django.core.cache import cache
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from .alpaca_paper import AlpacaPaperClient, PAPER_API_URL
@@ -332,6 +334,23 @@ class LifecycleTests(TestCase):
         with patch('ranker.option_strategies.AlpacaPaperClient',return_value=self.client):
             result=run_option_strategy_executor()
         self.assertEqual(result['state'],'closing')
+
+    def test_never_checked_entry_joins_rotation_with_existing_open_strategy(self):
+        existing = self.row()
+        existing.state = 'open'
+        existing.checked_at = timezone.now() - timedelta(minutes=2)
+        existing.save()
+        self.data.update(request_id='test-second', legs=[leg(110), leg(115, 'sell')])
+        self.client.prices.update({occ(110):(4,4.1),occ(115):(2.2,2.3)})
+        pending = self.row()
+        with patch('ranker.option_strategies.AlpacaPaperClient',return_value=self.client), patch('ranker.option_strategies.process'), CaptureQueriesContext(connection) as queries:
+            first = run_option_strategy_executor()
+            second = run_option_strategy_executor()
+        self.assertEqual(first['strategy_id'], pending.pk)
+        self.assertEqual(second['strategy_id'], existing.pk)
+        # SQLite otherwise hides the production PostgreSQL NULL-ordering bug.
+        selections = [q['sql'] for q in queries if 'ORDER BY' in q['sql'] and 'checked_at' in q['sql']]
+        self.assertTrue(any('NULLS FIRST' in sql for sql in selections))
 
     def test_degraded_guardian_stops_strategy_entries(self):
         row=self.row()
