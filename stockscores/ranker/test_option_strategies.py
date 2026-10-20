@@ -375,3 +375,49 @@ class LifecycleTests(TestCase):
         process(row,self.client,self.client.clock(),timezone.now())
         self.assertEqual(row.exit_value,-1)
         self.assertEqual(row.realized_pl,100)
+
+
+class ManagementSessionTests(TestCase):
+    def setUp(self):
+        self.row = OptionStrategy.objects.create(
+            symbol="TST", kind="vertical", state="open", legs=[leg(100), leg(105, "sell")],
+            checked_at=timezone.now() - timedelta(days=1),
+            entry_deadline=timezone.now(), close_by=timezone.now() + timedelta(days=2),
+            entry_limit=1, stop_loss_dollars=50, take_profit_dollars=50,
+        )
+
+    def status(self, session, now=None):
+        from .option_strategy_views import payload
+        with patch("ranker.option_strategy_views.management_session", return_value=session):
+            if now:
+                with patch("ranker.option_strategy_views.timezone.now", return_value=now):
+                    return payload(self.row)
+            return payload(self.row)
+
+    def test_closed_session_suppresses_age_but_not_real_errors(self):
+        self.assertFalse(self.status("closed")["management_attention"])
+        self.row.last_error = "Broker rejected close"
+        self.assertTrue(self.status("closed")["management_attention"])
+
+    def test_open_and_unavailable_clock_do_not_hide_stale_management(self):
+        from datetime import datetime, timezone as tz
+        now = datetime(2026, 10, 20, 16, tzinfo=tz.utc)
+        for session in ("open", "unknown"):
+            self.assertTrue(self.status(session, now)["management_stale"])
+
+    def test_opening_rotation_grace_expires(self):
+        from datetime import datetime, timezone as tz
+        self.assertFalse(self.status("open", datetime(2026, 10, 20, 13, 31, tzinfo=tz.utc))["management_stale"])
+        self.assertTrue(self.status("open", datetime(2026, 10, 20, 13, 33, tzinfo=tz.utc))["management_stale"])
+
+    def test_broker_clock_is_cached_and_errors_remain_unknown(self):
+        from .option_strategy_views import management_session
+        cache.clear()
+        with patch("ranker.option_strategy_views.AlpacaPaperClient") as client:
+            client.return_value.clock.return_value = {"is_open": False}
+            self.assertEqual(management_session(), "closed")
+            self.assertEqual(management_session(), "closed")
+            self.assertEqual(client.return_value.clock.call_count, 1)
+            cache.clear()
+            client.return_value.clock.side_effect = RuntimeError("offline")
+            self.assertEqual(management_session(), "unknown")
