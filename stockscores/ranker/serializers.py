@@ -635,7 +635,7 @@ class TradeSignalSerializer(serializers.ModelSerializer):
 
 class OperatorResearchRunSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=("report_run",))
-    request_id = serializers.RegexField(r"^github-issue-[1-9][0-9]{0,11}$", max_length=64)
+    request_id = serializers.RegexField(r"^(?:github-issue-[1-9][0-9]{0,11}|direct-[A-Za-z0-9][A-Za-z0-9._:-]{0,56})$", max_length=64)
     expected_run_at = serializers.DateTimeField()
     started_at = serializers.DateTimeField()
     completed_at = serializers.DateTimeField()
