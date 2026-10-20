@@ -19,6 +19,12 @@ describe("complex paper records", () => {
     expect(screen.getByText(/no broker-held complex stop/)).toBeInTheDocument();
     expect(screen.getByText(/credit/)).toBeInTheDocument();
   });
+  it("explains after-hours monitoring while retaining real error warnings", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ strategies: [{ ...row, management_session: "closed", management_attention: true }] }) }));
+    render(<OptionStrategies />);
+    expect(await screen.findByText(/Market closed; monitoring resumes/)).toBeInTheDocument();
+    expect(screen.getByText(/Management needs operator attention/)).toBeInTheDocument();
+  });
   it("keeps a cancelled setup out of completed-trade results", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ strategies: [{ ...row, state: "cancelled" }] }) }));
     render(<OptionStrategies />);

@@ -44,6 +44,7 @@ export default function OptionStrategies() {
       </div>
       <p className="mt-3 text-sm text-slate-300">Monitored dollar stop {cash(r.stop_loss_dollars)} · profit target {cash(r.take_profit_dollars)} · close all legs by {when(r.close_by)}</p>
       <p className="mt-2 text-xs text-amber-200">{r.protection}. {r.risk.basis}</p>
+      {r.management_session === "closed" && <p className="mt-2 text-sm text-slate-400">Market closed; monitoring resumes at the next regular session. P/L reflects the last stored quote.</p>}
       {r.management_attention && <p className="mt-2 text-sm font-semibold text-amber-300">Management needs operator attention. Review the latest run report.</p>}
       <p className="mt-3 text-sm text-slate-200">{r.thesis}</p>
       <details className="mt-3 text-sm text-slate-400"><summary className="cursor-pointer">Invalidation, quotes and lifecycle</summary>
