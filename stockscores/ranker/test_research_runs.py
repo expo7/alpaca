@@ -29,6 +29,23 @@ class ResearchRunTests(APITestCase):
     def authenticate(self):
         self.client.credentials(HTTP_AUTHORIZATION="Bearer test-research-operator-token-more-than-32-characters")
 
+    def test_direct_operator_report_is_accepted_and_idempotent(self):
+        self.authenticate()
+        data = dict(self.data, request_id="direct-20261020-1200-research")
+        first = self.client.post(self.url, data, format="json")
+        self.assertEqual(first.status_code, 201)
+        replay = self.client.post(self.url, data, format="json")
+        self.assertEqual(replay.status_code, 200)
+        self.assertTrue(replay.data["already_applied"])
+        self.assertEqual(ResearchRun.objects.count(), 1)
+
+    def test_direct_operator_id_does_not_allow_arbitrary_text(self):
+        self.authenticate()
+        for request_id in ("direct-", "direct-has spaces", "unscoped-123"):
+            response = self.client.post(self.url, dict(self.data, request_id=request_id), format="json")
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("request_id", response.data)
+
     def test_only_restricted_operator_can_report_or_read(self):
         self.assertIn(self.client.get(self.url).status_code, (401, 403))
         self.assertIn(self.client.post(self.url, self.data, format="json").status_code, (401, 403))
