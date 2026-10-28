@@ -14,17 +14,19 @@ class ShadowObserverTests(TestCase):
     def test_read_only_sampling_and_quote_replay(self):
         now = timezone.now()
         decided = now - timedelta(minutes=2)
+        expiry = now.date() + timedelta(days=30)
+        contract_symbol = f"SPY{expiry:%y%m%d}C00500000"
         run = ResearchRun.objects.create(expected_run_at=decided, started_at=decided,
                                          completed_at=decided, session_type="regular")
         setup = ShadowSetup.objects.create(
             research_run=run, request_id="observer-1", category="index", ruleset_version="v1",
-            contract_symbol="SPY261023C00500000", decided_at=decided,
+            contract_symbol=contract_symbol, decided_at=decided,
             trigger_first_seen_at=now - timedelta(seconds=61),
-            decision={"symbol": "SPY", "direction": "bullish", "option_symbol": "SPY261023C00500000",
+            decision={"symbol": "SPY", "direction": "bullish", "option_symbol": contract_symbol,
                       "underlying_trigger_price": "500", "trigger_direction": "above", "confirmation_seconds": 60,
                       "underlying_invalidation": "495", "entry_low": "5", "entry_high": "5.50",
                       "do_not_chase": "5.60", "entry_deadline": (now + timedelta(hours=1)).isoformat(),
-                      "expiration": "2026-10-23", "volume": 100, "open_interest": 1000,
+                      "expiration": expiry.isoformat(), "volume": 100, "open_interest": 1000,
                       "stop": "4.00", "target_1": "8.00", "contract_multiplier": 100})
         client = Mock(spec=ShadowMarketDataClient)
         client.clock.return_value = {"is_open": True}
