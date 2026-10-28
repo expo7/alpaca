@@ -345,12 +345,89 @@ class LifecycleTests(TestCase):
         pending = self.row()
         with patch('ranker.option_strategies.AlpacaPaperClient',return_value=self.client), patch('ranker.option_strategies.process'), CaptureQueriesContext(connection) as queries:
             first = run_option_strategy_executor()
-            second = run_option_strategy_executor()
-        self.assertEqual(first['strategy_id'], pending.pk)
-        self.assertEqual(second['strategy_id'], existing.pk)
+        self.assertEqual([r['strategy_id'] for r in first['results']], [pending.pk, existing.pk])
         # SQLite otherwise hides the production PostgreSQL NULL-ordering bug.
         selections = [q['sql'] for q in queries if 'ORDER BY' in q['sql'] and 'checked_at' in q['sql']]
         self.assertTrue(any('NULLS FIRST' in sql for sql in selections))
+
+    def test_sweep_checks_fifteen_positions_and_isolates_broker_errors(self):
+        original = self.row()
+        ids = [original.pk]
+        for i in range(14):
+            original.pk = None
+            original.request_id = f"rotation-{i}"
+            original.save()
+            ids.append(original.pk)
+        def check(row, *args):
+            if row.pk == ids[0]:
+                raise ValueError("One broker request failed")
+        with patch('ranker.option_strategies.AlpacaPaperClient', return_value=self.client), \
+             patch('ranker.option_strategies.process', side_effect=check) as process_mock:
+            result = run_option_strategy_executor()
+        self.assertEqual(result['checked_count'], 15)
+        self.assertEqual(result['remaining_count'], 0)
+        self.assertEqual(process_mock.call_count, 15)
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(OptionStrategy.objects.filter(checked_at__isnull=False).count(), 15)
+        self.assertEqual(result['results'][-1]['status'], 'ok')
+        self.assertIsNone(cache.get('quantelle-complex-executor'))
+
+    def test_sweep_evaluates_whole_position_exits_for_every_open_strategy(self):
+        for i in range(15):
+            legs = [leg(100 + i * 10), leg(105 + i * 10, 'sell')]
+            OptionStrategy.objects.create(
+                request_id=f'exit-sweep-{i}', symbol='TST', kind='vertical', legs=legs,
+                state='open', entry_fill=1, entry_limit=2,
+                stop_loss_dollars=50, take_profit_dollars=50,
+                entry_deadline=timezone.now(), close_by=timezone.now()+timedelta(days=2))
+            self.client.prices.update({legs[0]['symbol']:(4, 4.1), legs[1]['symbol']:(2.2, 2.3)})
+            self.client.positions.extend({'symbol': l['symbol'], 'qty': '1' if l['side']=='buy' else '-1'} for l in legs)
+        with patch('ranker.option_strategies.AlpacaPaperClient', return_value=self.client):
+            result = run_option_strategy_executor()
+            run_option_strategy_executor()
+        self.assertEqual(result['checked_count'], 15)
+        self.assertEqual(OptionStrategy.objects.filter(state='closing').count(), 15)
+        submissions = [k['json'] for m, u, k in self.client.calls if m == 'POST']
+        self.assertEqual(len(submissions), 15)
+        self.assertTrue(all(p['order_class'] == 'mleg' and p['type'] == 'market' for p in submissions))
+
+    def test_time_budget_leaves_unchecked_rows_first_next_cycle(self):
+        first = self.row()
+        second = OptionStrategy.objects.get(pk=first.pk)
+        second.pk = None
+        second.request_id = 'budget-second'
+        second.save()
+        with patch('ranker.option_strategies.AlpacaPaperClient', return_value=self.client), \
+             patch('ranker.option_strategies.process'), \
+             patch('ranker.option_strategies.time.monotonic', side_effect=[0, 21]):
+            result = run_option_strategy_executor()
+        self.assertEqual(result['checked_count'], 1)
+        self.assertEqual(result['remaining_count'], 1)
+        with patch('ranker.option_strategies.AlpacaPaperClient', return_value=self.client), \
+             patch('ranker.option_strategies.process'):
+            result = run_option_strategy_executor()
+        self.assertEqual([r['strategy_id'] for r in result['results']], [second.pk, first.pk])
+
+    def test_public_risk_uses_actual_signed_fill_without_overwriting_snapshot(self):
+        from .option_strategy_views import payload
+        row = self.row()
+        row.entry_fill = Decimal('1.80')
+        result = payload(row)
+        self.assertEqual(Decimal(result['risk']['max_loss_dollars']), 180)
+        self.assertEqual(Decimal(result['risk']['max_profit_dollars']), 320)
+        self.assertEqual(Decimal(result['publication_risk']['max_loss_dollars']), 200)
+        self.assertEqual(result['risk_entry_basis'], 'actual_fill')
+        row.entry_limit = Decimal('-2.00')
+        row.entry_fill = Decimal('-2.20')
+        row.risk = {'max_loss_dollars': '300', 'max_profit_dollars': '200'}
+        result = payload(row)
+        self.assertEqual(Decimal(result['risk']['max_loss_dollars']), 280)
+        self.assertEqual(Decimal(result['risk']['max_profit_dollars']), 220)
+        row.risk = {'max_loss_dollars': '700', 'max_profit_dollars': None}
+        self.assertIsNone(payload(row)['risk']['max_profit_dollars'])
+        row.entry_fill = None
+        self.assertEqual(payload(row)['risk'], row.risk)
+        self.assertEqual(payload(row)['risk_entry_basis'], 'entry_limit')
 
     def test_degraded_guardian_stops_strategy_entries(self):
         row=self.row()
@@ -379,9 +456,10 @@ class LifecycleTests(TestCase):
 
 class ManagementSessionTests(TestCase):
     def setUp(self):
+        from datetime import datetime, timezone as tz
         self.row = OptionStrategy.objects.create(
             symbol="TST", kind="vertical", state="open", legs=[leg(100), leg(105, "sell")],
-            checked_at=timezone.now() - timedelta(days=1),
+            checked_at=datetime(2026, 10, 19, 16, tzinfo=tz.utc),
             entry_deadline=timezone.now(), close_by=timezone.now() + timedelta(days=2),
             entry_limit=1, stop_loss_dollars=50, take_profit_dollars=50,
         )

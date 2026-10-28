@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from .operator_auth import ResearchOperatorAuthentication
 from .alpaca_paper import AlpacaPaperClient
 from .models import OptionStrategy
+from .option_strategy_rules import number
 from .option_strategies import publish, event, capability, ACTIVE, order_lookup
 
 
@@ -31,6 +32,17 @@ def payload(row, internal=False):
             "close_by", "state", "stop_loss_dollars", "take_profit_dollars", "risk", "entry_fill",
             "exit_value", "realized_pl", "quote", "checked_at", "created_at")
     result = {k:getattr(row,k) for k in keys}
+    # Preserve the immutable publication snapshot; all payoff bounds shift by
+    # the actual signed premium improvement, including credit/time spreads.
+    result["publication_risk"] = row.risk
+    result["risk_entry_basis"] = "entry_limit"
+    if row.entry_fill is not None and row.risk.get("max_loss_dollars") is not None:
+        difference = (row.entry_fill - row.entry_limit) * 100
+        result["risk"] = dict(row.risk,
+            max_loss_dollars=str(max(0, number(row.risk["max_loss_dollars"]) + difference)),
+            max_profit_dollars=(None if row.risk.get("max_profit_dollars") is None else
+                                str(number(row.risk["max_profit_dollars"]) - difference)))
+        result["risk_entry_basis"] = "actual_fill"
     result["protection"] = "Defined-risk legs and monitored whole-position exits; no broker-held complex stop"
     active = row.state in {"entering", "open", "closing"}
     session = management_session() if active else "inactive"

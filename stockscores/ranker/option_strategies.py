@@ -4,6 +4,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import requests
+import time
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
@@ -298,7 +299,12 @@ def process(row, client, clock, now):
 
 
 def run_option_strategy_executor():
-    """One bounded strategy per existing guardian cycle; primary work runs first."""
+    """Drain an oldest-first sweep within a 20-second guardian work budget.
+
+    Snapshot IDs once so no row is checked twice in a sweep. If the budget
+    expires, unchecked rows remain oldest and lead the next sweep. The lock
+    also serializes operator recovery with all broker submissions.
+    """
     if not OptionStrategy.objects.filter(state__in=ACTIVE).exists():
         return {"status": "idle"}
     if not cache.add("quantelle-complex-executor", "1", timeout=120):
@@ -310,27 +316,38 @@ def run_option_strategy_executor():
         clock = client.clock()
         if not clock.get("is_open"):
             return {"status": "market_closed"}
-        # PostgreSQL sorts ascending NULLs last by default. Never-checked
-        # entries must join the rotation instead of starving behind open rows.
-        qs = OptionStrategy.objects.filter(state__in=ACTIVE).exclude(state="blocked")
-        row = qs.order_by(F("checked_at").asc(nulls_first=True), "id").first()
-        if not row:
+        deadline = time.monotonic() + 20
+        ids = list(OptionStrategy.objects.filter(state__in=ACTIVE).exclude(state="blocked")
+                   .order_by(F("checked_at").asc(nulls_first=True), "id")
+                   .values_list("pk", flat=True))
+        if not ids:
             return {"status": "blocked"}
-        previous_error = row.last_error
-        row.last_error = ""
-        try:
-            process(row, client, clock, timezone.now())
-        except Exception as exc:
-            row.last_error = str(exc)[:500]
-            if row.last_error != previous_error:
-                event(row, "warning", error=row.last_error)
-            bucket = int(timezone.now().timestamp()) // 300
-            OperationalTelegramAlert.objects.get_or_create(idempotency_key=f"complex:{row.pk}:{bucket}",
-                defaults={"message": f"Paper strategy {row.pk}: {row.last_error}"})
-        row.checked_at = timezone.now()
-        row.save()
-        return {"status": "error" if row.last_error else "ok", "strategy_id": row.pk,
-                "state": row.state, "error": row.last_error}
+        results = []
+        for pk in ids:
+            if results and time.monotonic() >= deadline:
+                break
+            row = OptionStrategy.objects.filter(pk=pk, state__in=ACTIVE).exclude(state="blocked").first()
+            if row is None:
+                continue
+            previous_error = row.last_error
+            row.last_error = ""
+            try:
+                process(row, client, clock, timezone.now())
+            except Exception as exc:
+                row.last_error = str(exc)[:500]
+                if row.last_error != previous_error:
+                    event(row, "warning", error=row.last_error)
+                bucket = int(timezone.now().timestamp()) // 300
+                OperationalTelegramAlert.objects.get_or_create(idempotency_key=f"complex:{row.pk}:{bucket}",
+                    defaults={"message": f"Paper strategy {row.pk}: {row.last_error}"})
+            row.checked_at = timezone.now()
+            row.save()
+            results.append({"status": "error" if row.last_error else "ok", "strategy_id": row.pk,
+                            "state": row.state, "error": row.last_error})
+        return {**(results[-1] if results else {}),
+                "status": "error" if any(r["status"] == "error" for r in results) else "ok",
+                "checked_count": len(results), "remaining_count": len(ids) - len(results),
+                "results": results}
     finally:
         cache.delete("quantelle-complex-executor")
 
