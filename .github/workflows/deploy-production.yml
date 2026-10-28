@@ -92,11 +92,6 @@ jobs:
           rm -f /tmp/quantelle-app-image.tar.gz
           # Recover the previous interrupted deployment's generated build only.
           docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Refusing to deploy over a dirty production worktree."
-            git status --short
-            exit 1
-          fi
           python3 - <<'PY'
           from pathlib import Path
           values = {}
@@ -127,7 +122,42 @@ jobs:
           if ! git diff --quiet HEAD FETCH_HEAD -- rank-ui; then
             frontend_changed=true
           fi
-          git switch -C production FETCH_HEAD
+          # Preserve only unrelated, unstaged frontend work during backend-only
+          # releases. Reject staged changes, other paths, or frontend overlap.
+          dirty_manifest=$(python3 - <<'PYLOCAL'
+          import hashlib, json, os, subprocess, tarfile, tempfile
+          from pathlib import Path
+          raw = subprocess.check_output(['git', 'status', '--porcelain', '-z'])
+          entries = [item.decode() for item in raw.split(b'\0') if item]
+          if entries:
+              if (subprocess.run(['git', 'diff', '--quiet', 'HEAD', 'FETCH_HEAD', '--', 'rank-ui']).returncode != 0
+                      or any(e[:2] not in {' M', '??'} or not e[3:].startswith('rank-ui/src/') for e in entries)):
+                  raise SystemExit('Dirty production files overlap this release or are outside unstaged frontend sources; refusing deployment.')
+              paths = [e[3:] for e in entries]
+              if any(not Path(p).is_file() or Path(p).is_symlink() for p in paths):
+                  raise SystemExit('Only regular frontend source files can be preserved automatically.')
+              fd, name = tempfile.mkstemp(prefix='quantelle-local-frontend-', suffix='.json')
+              with os.fdopen(fd, 'w') as out:
+                  json.dump({'status': raw.decode(), 'files': {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths}}, out)
+              with tarfile.open(name + '.tgz', 'w:gz') as archive:
+                  for path in paths:
+                      archive.add(path, arcname=path)
+              os.chmod(name + '.tgz', 0o600)
+              print(name)
+          PYLOCAL
+          )
+          test "$(git branch --show-current)" = production
+          git merge --ff-only FETCH_HEAD
+          if [ -n "$dirty_manifest" ]; then
+            python3 - "$dirty_manifest" <<'PYVERIFY'
+          import hashlib, json, subprocess, sys
+          from pathlib import Path
+          saved = json.loads(Path(sys.argv[1]).read_text())
+          assert subprocess.check_output(['git', 'status', '--porcelain', '-z']).decode() == saved['status'], 'Local frontend status changed'
+          assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest() == digest for p, digest in saved['files'].items()), 'Local frontend contents changed'
+          print('Local frontend sources preserved byte-for-byte; backup:', sys.argv[1] + '.tgz')
+          PYVERIFY
+          fi
           python3 scripts/configure_customer_paper.py
 
           if [ "$frontend_changed" = true ]; then
