@@ -121,28 +121,39 @@ jobs:
           print('Staff alert destination and restricted operator credential configured.')
           PY
           git fetch origin production
+          # Backend-only releases must preserve the currently served frontend.
+          # Rebuild/swap it only when tracked frontend sources changed.
+          frontend_changed=false
+          if ! git diff --quiet HEAD FETCH_HEAD -- rank-ui; then
+            frontend_changed=true
+          fi
           git switch -C production FETCH_HEAD
           python3 scripts/configure_customer_paper.py
 
-          frontend_stage="$(mktemp -d /opt/alpaca/rank-ui/.dist-stage.XXXXXX)"
-          cleanup_frontend_stage() {
-            rm -rf "$frontend_stage"
-            rm -f /tmp/quantelle-rank-ui-dist.tgz
-          }
-          trap cleanup_frontend_stage EXIT
-          tar -xzf /tmp/quantelle-rank-ui-dist.tgz -C "$frontend_stage"
-          test -f "$frontend_stage/dist/index.html"
-          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
-          if [ -d /opt/alpaca/rank-ui/dist ]; then
-            mv /opt/alpaca/rank-ui/dist /opt/alpaca/rank-ui/dist.previous
-          fi
-          if ! mv "$frontend_stage/dist" /opt/alpaca/rank-ui/dist; then
-            if [ -d /opt/alpaca/rank-ui/dist.previous ]; then
-              mv /opt/alpaca/rank-ui/dist.previous /opt/alpaca/rank-ui/dist
+          if [ "$frontend_changed" = true ]; then
+            frontend_stage="$(mktemp -d /opt/alpaca/rank-ui/.dist-stage.XXXXXX)"
+            cleanup_frontend_stage() {
+              rm -rf "$frontend_stage"
+              rm -f /tmp/quantelle-rank-ui-dist.tgz
+            }
+            trap cleanup_frontend_stage EXIT
+            tar -xzf /tmp/quantelle-rank-ui-dist.tgz -C "$frontend_stage"
+            test -f "$frontend_stage/dist/index.html"
+            docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
+            if [ -d /opt/alpaca/rank-ui/dist ]; then
+              mv /opt/alpaca/rank-ui/dist /opt/alpaca/rank-ui/dist.previous
             fi
-            exit 1
+            if ! mv "$frontend_stage/dist" /opt/alpaca/rank-ui/dist; then
+              if [ -d /opt/alpaca/rank-ui/dist.previous ]; then
+                mv /opt/alpaca/rank-ui/dist.previous /opt/alpaca/rank-ui/dist
+              fi
+              exit 1
+            fi
+            docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
+          else
+            rm -f /tmp/quantelle-rank-ui-dist.tgz
+            echo 'Backend-only release: preserving the deployed frontend bundle.'
           fi
-          docker compose run --rm -T web sh -c 'rm -rf /app/rank-ui/dist.previous' < /dev/null
 
           docker image inspect quantelle-app:production --format 'Loaded application image: {{.Id}}'
           docker compose run --rm -T web python manage.py migrate --noinput < /dev/null
